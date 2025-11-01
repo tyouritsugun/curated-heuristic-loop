@@ -1,0 +1,60 @@
+# Configuration template for CHL maintenance scripts.
+# Fill in the values that match your environment. CLI flags can still override
+# these defaults when necessary.
+
+# Global defaults shared by export/import scripts (optional)
+data_path: ../data
+google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+
+export:
+  # Optional override for the SQLite database filename (relative to data_path)
+  database_filename: chl.db
+
+  # Absolute or relative path to the Google credentials JSON (falls back to
+  # top-level google_credentials_path if omitted).
+  google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+
+  # Base sheet ID used when categories/experiences/manuals do not specify their
+  # own IDs.
+  # sheet_id: your-review-sheet-id
+
+  category_sheet:
+    id: 1VQgEp82MBOa6dhCttkGgKDJDR8fJcjwsRgHmGxZBZVg
+    worksheet: Categories
+
+  experiences_sheet:
+    # Optional dedicated sheet ID (defaults to export.sheet_id when omitted)
+    id: 1SmbNLdE98FUjHuGjm8pF-waC0reT8eqXhv18pLkvHfI
+    worksheet: Experiences
+
+  manuals_sheet:
+    id: 1QyB5kSRtWH4eHd_8gV4XRS8GUKBxUh0AuXpeLHhiF_M
+    worksheet: Manuals
+
+  # Set to true to preview counts without writing to Google Sheets.
+  dry_run: false
+  verbose: false
+
+import:
+  # Optional override for the SQLite database filename (relative to data_path)
+  # database_filename: chl.db
+
+  google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+
+  # Base sheet ID used when categories/experiences/manuals do not specify their
+  # own IDs.
+  # sheet_id: your-published-sheet-id
+
+  category_sheet:
+    id: 1VQgEp82MBOa6dhCttkGgKDJDR8fJcjwsRgHmGxZBZVg
+    worksheet: Categories
+
+  experiences_sheet:
+    id: 1SmbNLdE98FUjHuGjm8pF-waC0reT8eqXhv18pLkvHfI
+    worksheet: Experiences
+
+  manuals_sheet:
+    id: 1QyB5kSRtWH4eHd_8gV4XRS8GUKBxUh0AuXpeLHhiF_M
+    worksheet: Manuals
+
+  verbose: false

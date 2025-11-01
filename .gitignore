@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Credentials and sensitive files
+scripts/scripts_config.yaml
+credentials/
+*.pem
+*.key
+data/
+src/storage/migrations/
+
+# OS
+.DS_Store
