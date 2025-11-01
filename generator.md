@@ -9,11 +9,12 @@ Use this playbook when the user asks you to perform work (e.g., “draft the log
 ### 2. Load the most relevant library context
 1. Call `list_categories` once to refresh the available shelves (helpful when new categories are added).
 2. Choose the single category that best matches the task. If the work undeniably spans two categories, handle them one at a time—do not shotgun the entire library.
-3. Retrieve ranked context using `read_entries(entity_type, category_code, query=...)`. Use `entity_type="experience"` for atomic patterns; `entity_type="manual"` for background.
-4. Decide what you actually need:
+3. Shape each search query before calling `read_entries`: spell out the persona, task, and need (e.g., `Role: spec author. Task: document access control. Need: heuristics to include.`) and end with a noun-heavy `Query:` line. Issue 2–3 variants (role-focused, outcome-focused, checklist-focused) so at least one lines up with the library.
+4. Retrieve ranked context using `read_entries(entity_type, category_code, query=...)`. Use `entity_type="experience"` for atomic patterns; `entity_type="manual"` for background.
+5. Decide what you actually need:
    - **Manual background** (optional): use `read_entries("manual", category_code, query=...)` when broader context will change the plan you produce.
    - **Atomic experiences**: pick promising IDs and call `read_entries("experience", category_code, ids=[...])` to pull full playbooks. Keep the set small and intentional (defaults limit ~10 items).
-5. Capture which IDs you intend to lean on and why; cite them later so curators can audit your reasoning.
+6. Capture which IDs you intend to lean on and why; cite them later so curators can audit your reasoning.
 
 ### 3. Execute with the retrieved playbooks
 1. Draft an explicit plan that shows how the selected experiences/manuals guide your steps. If you diverge from them, explain why.
