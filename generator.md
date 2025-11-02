@@ -1,37 +1,39 @@
-## Generator Workflow Guidelines
+## Generator Workflow (Search-First)
 
-Use this playbook when the user asks you to perform work (e.g., “draft the login page specification”). The MCP server defaults every session to **Generator mode**, so you should load this guidance first and only switch to Evaluator once the deliverable is complete. Your goal is to leverage the CHL library first, apply the best guidance, and surface any gaps for later curation.
+Load these notes whenever you are in Generator mode. The goal is to surface the most relevant experiences and manuals before you draft anything.
 
-### 1. Orient and restate
-1. Rephrase the request in your own words so the user can confirm scope.
-2. If the ask is unclear, ask for clarification before touching the MCP tools.
+### 1. Align on the request
+1. Restate the user’s ask in your own words and confirm any missing details.
+2. Capture the intended persona, output format, and success criteria in your scratchpad—this informs the queries you compose next.
 
-### 2. Load the most relevant library context
-1. Call `list_categories` once to refresh the available shelves (helpful when new categories are added).
-2. Choose the single category that best matches the task. If the work undeniably spans two categories, handle them one at a time—do not shotgun the entire library.
-3. Retrieve ranked context using `read_entries(entity_type, category_code, query=...)`. Use `entity_type="experience"` for atomic patterns; `entity_type="manual"` for background.
-4. Decide what you actually need:
-   - **Manual background** (optional): use `read_entries("manual", category_code, query=...)` when broader context will change the plan you produce.
-   - **Atomic experiences**: pick promising IDs and call `read_entries("experience", category_code, ids=[...])` to pull full playbooks. Keep the set small and intentional (defaults limit ~10 items).
-5. Capture which IDs you intend to lean on and why; cite them later so curators can audit your reasoning.
+### 2. Pick a single shelf
+1. Run `list_categories` only if you need a refresher of the available shelves.
+2. Choose the one category that best matches the work. If you truly need two, finish one pass end-to-end before switching.
 
-### 3. Execute with the retrieved playbooks
-1. Draft an explicit plan that shows how the selected experiences/manuals guide your steps. If you diverge from them, explain why.
-2. Produce the work product requested by the user (spec draft, code outline, etc.), weaving in the retrieved guidance and referencing experience IDs inline (e.g., “Applying EXP-PGS-… warns that…”).
-3. Flag any contradictions you notice between the library and current reality. If the MCP tools are temporarily unavailable, describe the fallback approach and note the outage.
+-### 3. Craft high-signal queries
+- Remember the library holds **process guidance**, not domain knowledge about the specific artifact you are creating. Query for the *pattern* (e.g., “database schema authoring playbook”), not the exact schema you need to build.
+- Brainstorm persona / task / need for yourself, but send **only** the final noun-heavy string to `read_entries`.
+- Issue 2–3 variants that cover:  
+  • the concrete outcome you want (`access control spec heuristics`)  
+  • a synonym set or alternate phrasing (`permissions filtering checklist`)  
+  • a risk or failure phrasing if relevant (`access control retrofit pitfalls`)
+- Keep each query short (<12 words), focused on nouns and verbs that could appear in titles or playbooks.
 
-### 4. Record observations for the Evaluator
-1. Keep a running list of:
-   - Gaps where no suitable experience/manual existed.
-   - Playbook steps that felt outdated or incorrect.
-   - Successes that should be celebrated or codified.
-2. Do **not** create or update entries yourself in Generator mode; only note candidates. The Evaluator flow will decide whether to write experiences or manuals.
+### 4. Pull experiences first
+1. Call `read_entries(entity_type=\"experience\", category_code=..., query=...)` for each variant.
+2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the query immediately instead of skimming everything.
+3. When you find strong hits, fetch the full text with `read_entries(..., ids=[...])` and note the IDs you intend to use.
 
-### 5. Hand off cleanly
-1. When you believe the task is satisfied, summarize the deliverable and ask the user if they want an Evaluator pass.
-2. Share the bullet list of observations so the Evaluator (or the user) knows what to inspect.
+### 5. Layer manuals only when they change the plan
+- Use `entity_type=\"manual\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
+- Limit yourself to the top 1–2 manuals; if nothing useful appears, treat it as a knowledge gap and flag it later.
+
+### 6. Check coverage and gaps
+- If every variant still yields weak matches, log the gap (include queries tried and their best scores) so an Evaluator can curate a new entry.
+- Otherwise, proceed with the work product, weaving in the cited experience IDs for traceability.
 
 ### Guiding principles
-- **Atomic first**: Experiences capture tactical steps; manuals provide just enough background. Reach for manuals only when the context genuinely changes the plan.
-- **Stay project-agnostic**: When paraphrasing guidance, keep it general enough to reuse across repositories. Avoid hard-coded paths, IDs, or local usernames.
-- **Leave breadcrumbs**: Cite IDs, mention remaining questions, and highlight risks. This keeps the Evaluator’s job straightforward and helps curators review your work later.
+- **Atomic first**: default to experiences; they carry the actionable steps.
+- **Seek patterns, not answers**: manuals and experiences teach how to work; they will not contain the exact schema, spec, or code your user is asking for.
+- **Stay concise**: shorter, cleaner queries produce better rankings.
+- **Leave breadcrumbs**: record which IDs informed your work and any missing coverage you discovered.

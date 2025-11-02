@@ -34,6 +34,16 @@ def _validate_entity_type(entity_type: str) -> Optional[str]:
     return None
 
 
+def _make_preview(text: Optional[str], limit: int = 320) -> tuple[Optional[str], bool]:
+    """Return a truncated preview and whether truncation occurred."""
+    if text is None:
+        return None, False
+    trimmed = text.strip()
+    if len(trimmed) <= limit:
+        return trimmed, False
+    return trimmed[:limit].rstrip() + "...", True
+
+
 
 def make_read_entries_handler(db, config, search_service):
     def read_entries(
@@ -48,7 +58,12 @@ def make_read_entries_handler(db, config, search_service):
             if err:
                 return create_error_response("INVALID_REQUEST", err)
             if db is None:
-                return create_error_response("SERVER_ERROR", "Server not initialized")
+                return create_error_response(
+                    "SERVER_ERROR",
+                    "Server not initialized",
+                    hint="Call init_server() before invoking MCP tools.",
+                    retryable=True,
+                )
             meta_code = category_code
             meta_name = category_code
             if limit is None:
@@ -58,7 +73,12 @@ def make_read_entries_handler(db, config, search_service):
                 cat_repo = CategoryRepository(session)
                 category = cat_repo.get_by_code(category_code)
                 if not category:
-                    return create_error_response("CATEGORY_NOT_FOUND", f"Category '{category_code}' not found")
+                    return create_error_response(
+                        "CATEGORY_NOT_FOUND",
+                        f"Category '{category_code}' not found",
+                        hint="Use list_categories to confirm the shelf code before querying.",
+                        retryable=False,
+                    )
                 meta_code = category.code
                 meta_name = category.name
 
@@ -66,7 +86,12 @@ def make_read_entries_handler(db, config, search_service):
                     exp_repo = ExperienceRepository(session)
                     if query:
                         if search_service is None:
-                            return create_error_response("SERVER_ERROR", "Search service not initialized")
+                            return create_error_response(
+                                "SERVER_ERROR",
+                                "Search service not initialized",
+                                hint="Restart the CHL server to register search providers.",
+                                retryable=True,
+                            )
                         results = search_service.search(
                             query=query,
                             entity_type='experience',
@@ -78,10 +103,13 @@ def make_read_entries_handler(db, config, search_service):
                             exp = exp_repo.get_by_id(r.entity_id)
                             if not exp:
                                 continue
+                            preview, truncated = _make_preview(exp.playbook)
                             entries.append({
                                 "id": exp.id,
                                 "title": exp.title,
-                                "playbook": exp.playbook,
+                                "playbook": preview,
+                                "playbook_preview": preview,
+                                "playbook_truncated": truncated,
                                 "context": normalize_context(exp.context),
                                 "section": exp.section,
                                 "updated_at": exp.updated_at,
@@ -92,6 +120,8 @@ def make_read_entries_handler(db, config, search_service):
                                 "reason": getattr(r.reason, 'value', str(r.reason)),
                                 "provider": r.provider,
                                 "rank": r.rank,
+                                "degraded": getattr(r, "degraded", False),
+                                "provider_hint": getattr(r, "hint", None),
                             })
                     else:
                         if ids:
@@ -119,7 +149,12 @@ def make_read_entries_handler(db, config, search_service):
                     man_repo = CategoryManualRepository(session)
                     if query:
                         if search_service is None:
-                            return create_error_response("SERVER_ERROR", "Search service not initialized")
+                            return create_error_response(
+                                "SERVER_ERROR",
+                                "Search service not initialized",
+                                hint="Restart the CHL server to register search providers.",
+                                retryable=True,
+                            )
                         results = search_service.search(
                             query=query,
                             entity_type='manual',
@@ -131,10 +166,13 @@ def make_read_entries_handler(db, config, search_service):
                             m = man_repo.get_by_id(r.entity_id)
                             if not m:
                                 continue
+                            preview, truncated = _make_preview(m.content, limit=480)
                             entries.append({
                                 "id": m.id,
                                 "title": m.title,
-                                "content": m.content,
+                                "content": preview,
+                                "content_preview": preview,
+                                "content_truncated": truncated,
                                 "summary": m.summary,
                                 "updated_at": m.updated_at,
                                 "author": m.author,
@@ -142,6 +180,8 @@ def make_read_entries_handler(db, config, search_service):
                                 "reason": getattr(r.reason, 'value', str(r.reason)),
                                 "provider": r.provider,
                                 "rank": r.rank,
+                                "degraded": getattr(r, "degraded", False),
+                                "provider_hint": getattr(r, "hint", None),
                             })
                     else:
                         if ids:
@@ -165,7 +205,7 @@ def make_read_entries_handler(db, config, search_service):
 
             return {"meta": {"code": meta_code, "name": meta_name}, "entries": entries}
         except Exception as e:
-            return create_error_response("SERVER_ERROR", str(e))
+            return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
     read_entries.__doc__ = (
         "Retrieve experiences or manuals from a category by ids or semantic query.\n\n"
@@ -187,13 +227,23 @@ def make_write_entry_handler(db, config, search_service):
             if err:
                 return create_error_response("INVALID_REQUEST", err)
             if db is None:
-                return create_error_response("SERVER_ERROR", "Server not initialized")
+                return create_error_response(
+                    "SERVER_ERROR",
+                    "Server not initialized",
+                    hint="Call init_server() before invoking MCP tools.",
+                    retryable=True,
+                )
 
             with db.session_scope() as session:
                 cat_repo = CategoryRepository(session)
                 category = cat_repo.get_by_code(category_code)
                 if not category:
-                    return create_error_response("CATEGORY_NOT_FOUND", f"Category '{category_code}' not found")
+                    return create_error_response(
+                        "CATEGORY_NOT_FOUND",
+                        f"Category '{category_code}' not found",
+                        hint="Use list_categories to confirm the shelf code before writing.",
+                        retryable=False,
+                    )
                 meta_code = category.code
                 meta_name = category.name
 
@@ -271,9 +321,19 @@ def make_write_entry_handler(db, config, search_service):
                     content = (data or {}).get("content")
                     summary = (data or {}).get("summary")
                     if not title or len(title) > 120:
-                        return create_error_response("INVALID_REQUEST", "Title must be 1-120 characters")
+                        return create_error_response(
+                            "INVALID_REQUEST",
+                            "Title must be 1-120 characters",
+                            hint="Shorten the title so it stays within 120 characters.",
+                            retryable=True,
+                        )
                     if not content:
-                        return create_error_response("INVALID_REQUEST", "Content cannot be empty")
+                        return create_error_response(
+                            "INVALID_REQUEST",
+                            "Content cannot be empty",
+                            hint="Provide Markdown content before creating the manual.",
+                            retryable=True,
+                        )
 
                     man_repo = CategoryManualRepository(session)
                     new_manual = man_repo.create({
@@ -298,7 +358,7 @@ def make_write_entry_handler(db, config, search_service):
                     return {"meta": {"code": meta_code, "name": meta_name}, "entry_id": manual_id}
 
         except Exception as e:
-            return create_error_response("SERVER_ERROR", str(e))
+            return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
     write_entry.__doc__ = (
         "Create a new experience or manual entry in the requested category.\n\n"
@@ -327,13 +387,23 @@ def make_update_entry_handler(db, config, search_service):
             if err:
                 return create_error_response("INVALID_REQUEST", err)
             if db is None:
-                return create_error_response("SERVER_ERROR", "Server not initialized")
+                return create_error_response(
+                    "SERVER_ERROR",
+                    "Server not initialized",
+                    hint="Call init_server() before invoking MCP tools.",
+                    retryable=True,
+                )
 
             with db.session_scope() as session:
                 cat_repo = CategoryRepository(session)
                 category = cat_repo.get_by_code(category_code)
                 if not category:
-                    return create_error_response("CATEGORY_NOT_FOUND", f"Category '{category_code}' not found")
+                    return create_error_response(
+                        "CATEGORY_NOT_FOUND",
+                        f"Category '{category_code}' not found",
+                        hint="Use list_categories to confirm the shelf code before updating.",
+                        retryable=False,
+                    )
                 meta_code = category.code
                 meta_name = category.name
 
@@ -342,30 +412,46 @@ def make_update_entry_handler(db, config, search_service):
                     invalid_fields = set(updates.keys()) - allowed_fields
                     if not updates or invalid_fields:
                         if not updates:
-                            return create_error_response("INVALID_REQUEST", "No updates provided")
+                            return create_error_response(
+                                "INVALID_REQUEST",
+                                "No updates provided",
+                                hint="Supply at least one supported field to update.",
+                                retryable=True,
+                            )
                         return create_error_response(
                             "INVALID_REQUEST",
-                            f"Unsupported update fields: {', '.join(sorted(invalid_fields))}"
+                            f"Unsupported update fields: {', '.join(sorted(invalid_fields))}",
+                            hint="Allowed experience fields are title, playbook, context, and section.",
+                            retryable=True,
                         )
                     exp_repo = ExperienceRepository(session)
                     existing = exp_repo.get_by_id(entry_id)
                     if not existing:
-                        return create_error_response("INVALID_REQUEST", f"Entry '{entry_id}' not found")
+                        return create_error_response(
+                            "INVALID_REQUEST",
+                            f"Entry '{entry_id}' not found",
+                            hint="Verify the entry_id or list recent experiences before updating.",
+                            retryable=False,
+                        )
                     effective_section = updates.get("section") or existing.section
                     if updates.get("section") == "contextual" and not force_contextual:
                         return create_error_response(
                             "INVALID_REQUEST",
                             "Changing section to 'contextual' requires force_contextual=true",
+                            hint="Pass force_contextual=true when promoting an entry into the contextual section.",
+                            retryable=True,
                         )
                     if effective_section in {"useful", "harmful"} and updates.get("context"):
                         return create_error_response(
                             "INVALID_REQUEST",
                             f"Context must be empty for '{effective_section}' entries",
+                            hint="Move detailed context into a contextual entry or change the section type.",
+                            retryable=True,
                         )
                     try:
                         updated = exp_repo.update(entry_id, dict(updates))
                     except ValueError as e:
-                        return create_error_response("INVALID_REQUEST", str(e))
+                        return create_error_response("INVALID_REQUEST", str(e), retryable=True)
 
                     entry_dict = {
                         "id": updated.id,
@@ -394,18 +480,25 @@ def make_update_entry_handler(db, config, search_service):
                 else:  # manual
                     allowed_fields = {"title", "content", "summary"}
                     if not updates:
-                        return create_error_response("INVALID_REQUEST", "No updates provided")
+                        return create_error_response(
+                            "INVALID_REQUEST",
+                            "No updates provided",
+                            hint="Supply at least one supported field to update.",
+                            retryable=True,
+                        )
                     invalid = set(updates.keys()) - allowed_fields
                     if invalid:
                         return create_error_response(
                             "INVALID_REQUEST",
-                            f"Unsupported update fields: {', '.join(sorted(invalid))}"
+                            f"Unsupported update fields: {', '.join(sorted(invalid))}",
+                            hint="Allowed manual fields are title, content, and summary.",
+                            retryable=True,
                         )
                     man_repo = CategoryManualRepository(session)
                     try:
                         updated = man_repo.update(entry_id, dict(updates))
                     except ValueError as e:
-                        return create_error_response("INVALID_REQUEST", str(e))
+                        return create_error_response("INVALID_REQUEST", str(e), retryable=True)
 
                     manual_dict = {
                         "id": updated.id,
@@ -428,7 +521,7 @@ def make_update_entry_handler(db, config, search_service):
                     return {"meta": {"code": meta_code, "name": meta_name}, "entry": manual_dict}
 
         except Exception as e:
-            return create_error_response("SERVER_ERROR", str(e))
+            return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
     update_entry.__doc__ = (
         "Update an existing experience or manual entry by id.\n\n"
@@ -448,32 +541,54 @@ def make_delete_entry_handler(db, _config, _search_service):
             if err:
                 return create_error_response("INVALID_REQUEST", err)
             if db is None:
-                return create_error_response("SERVER_ERROR", "Server not initialized")
+                return create_error_response(
+                    "SERVER_ERROR",
+                    "Server not initialized",
+                    hint="Call init_server() before invoking MCP tools.",
+                    retryable=True,
+                )
 
             with db.session_scope() as session:
                 cat_repo = CategoryRepository(session)
                 category = cat_repo.get_by_code(category_code)
                 if not category:
-                    return create_error_response("CATEGORY_NOT_FOUND", f"Category '{category_code}' not found")
+                    return create_error_response(
+                        "CATEGORY_NOT_FOUND",
+                        f"Category '{category_code}' not found",
+                        hint="Use list_categories to confirm the shelf code before deleting.",
+                        retryable=False,
+                    )
 
                 if entity_type == "experience":
-                    return create_error_response("INVALID_REQUEST", "Delete is not supported for experiences")
+                    return create_error_response(
+                        "INVALID_REQUEST",
+                        "Delete is not supported for experiences",
+                        hint="Experiences are immutable; update the entry instead of deleting.",
+                        retryable=False,
+                    )
 
                 # Manual delete
                 man_repo = CategoryManualRepository(session)
                 manual = man_repo.get_by_id(entry_id)
                 if not manual:
-                    return create_error_response("INVALID_REQUEST", f"Manual '{entry_id}' not found")
+                    return create_error_response(
+                        "INVALID_REQUEST",
+                        f"Manual '{entry_id}' not found",
+                        hint="Verify the entry_id or list recent manuals before deleting.",
+                        retryable=False,
+                    )
                 if manual.category_code != category_code:
                     return create_error_response(
                         "INVALID_REQUEST",
                         f"Manual '{entry_id}' belongs to category '{manual.category_code}', not '{category_code}'",
+                        hint="Pass the matching category_code when deleting a manual.",
+                        retryable=False,
                     )
                 man_repo.delete(entry_id)
                 return {"status": "deleted", "entry_id": entry_id}
 
         except Exception as e:
-            return create_error_response("SERVER_ERROR", str(e))
+            return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
     delete_entry.__doc__ = (
         "Delete a manual entry from a category (experiences cannot be deleted).\n\n"

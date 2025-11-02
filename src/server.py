@@ -94,6 +94,7 @@ TOOL_INDEX = [
 config = None
 db = None
 search_service: Optional[SearchService] = None
+_initialized = False
 
 
 def _build_categories_payload() -> Dict[str, Any]:
@@ -176,10 +177,10 @@ def list_categories() -> Dict[str, Any]:
         return payload
     
     except (RuntimeError, ValueError) as e:
-        return create_error_response("INVALID_REQUEST", str(e))
+        return create_error_response("INVALID_REQUEST", str(e), retryable=False)
     
     except Exception as e:
-        return create_error_response("SERVER_ERROR", str(e))
+        return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
 
 def _init_search_service(session, config) -> SearchService:
@@ -227,6 +228,7 @@ def _init_search_service(session, config) -> SearchService:
             except Exception:
                 pass
 
+    embedding_client = None
     try:
         with _redirect_native_stderr():
             embedding_client = EmbeddingClient(
@@ -235,88 +237,109 @@ def _init_search_service(session, config) -> SearchService:
                 n_gpu_layers=0  # CPU-only by default, set >0 for GPU offloading
             )
         logger.info(f"Embedding loaded: {config.embedding_repo} [{config.embedding_quant}]")
-    except FileNotFoundError as e:
-        message = (
-            "Embedding model not found. "
-            "Run `python scripts/setup.py --download-models` to download it."
-        )
-        logger.error(message)
-        raise RuntimeError(message) from e
-    except Exception as e:
-        message = f"Failed to initialize embedding model: {e}"
-        logger.error(message)
-        raise RuntimeError(message) from e
-
-    try:
-        faiss_manager = FAISSIndexManager(
-            index_dir=config.faiss_index_path,
-            model_name=config.embedding_model,
-            dimension=embedding_client.embedding_dimension,
-            session=session
+    except FileNotFoundError:
+        logger.warning(
+            "Embedding model not found. Run `python scripts/setup.py --download-models` "
+            "to enable vector search."
         )
     except Exception as e:
-        message = f"Failed to initialize FAISS index manager: {e}"
-        logger.error(message)
-        raise RuntimeError(message) from e
+        logger.warning(f"Failed to initialize embedding model; continuing without vector search: {e}")
 
-    try:
-        with _redirect_native_stderr():
-            reranker_client = RerankerClient(
-                model_repo=config.reranker_repo,
-                quantization=config.reranker_quant,
-                n_gpu_layers=0  # CPU-only by default
+    faiss_manager = None
+    if embedding_client is not None:
+        try:
+            faiss_manager = FAISSIndexManager(
+                index_dir=config.faiss_index_path,
+                model_name=config.embedding_model,
+                dimension=embedding_client.embedding_dimension,
+                session=session
             )
-        logger.info(f"Reranker loaded: {config.reranker_repo} [{config.reranker_quant}]")
-    except FileNotFoundError as e:
-        message = (
-            "Reranker model not found. "
-            "Run `python scripts/setup.py --download-models` to download it."
-        )
-        logger.error(message)
-        raise RuntimeError(message) from e
-    except Exception as e:
-        message = f"Failed to initialize reranker model: {e}"
-        logger.error(message)
-        raise RuntimeError(message) from e
+        except Exception as e:
+            logger.warning(f"Failed to initialize FAISS index; continuing without vector search: {e}")
 
-    try:
-        vector_provider = VectorFAISSProvider(
-            session=session,
-            index_manager=faiss_manager,
-            embedding_client=embedding_client,
-            reranker_client=reranker_client,
-            topk_retrieve=100,
-            topk_rerank=40
-        )
-    except Exception as e:
-        message = f"Failed to initialize vector provider: {e}"
-        logger.error(message)
-        raise RuntimeError(message) from e
+    reranker_client = None
+    if embedding_client is not None and faiss_manager is not None:
+        try:
+            with _redirect_native_stderr():
+                reranker_client = RerankerClient(
+                    model_repo=config.reranker_repo,
+                    quantization=config.reranker_quant,
+                    n_gpu_layers=0  # CPU-only by default
+                )
+            logger.info(f"Reranker loaded: {config.reranker_repo} [{config.reranker_quant}]")
+        except FileNotFoundError:
+            logger.warning(
+                "Reranker model not found. Run `python scripts/setup.py --download-models` "
+                "to enable reranking."
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize reranker; continuing without reranking: {e}")
 
-    if not vector_provider.is_available:
-        message = (
-            "Vector provider is not available. Ensure embeddings are synced and "
-            "the FAISS index has been built."
-        )
-        logger.error(message)
-        raise RuntimeError(message)
+    vector_provider = None
+    if embedding_client is not None and faiss_manager is not None:
+        try:
+            vector_provider = VectorFAISSProvider(
+                session=session,
+                index_manager=faiss_manager,
+                embedding_client=embedding_client,
+                reranker_client=reranker_client,
+                topk_retrieve=getattr(config, "topk_retrieve", 100),
+                topk_rerank=getattr(config, "topk_rerank", 40),
+            )
+        except Exception as e:
+            logger.warning(f"Vector provider initialization failed, falling back to sqlite_text: {e}")
 
-    logger.info("✓ Vector search enabled (vector_faiss)")
-    logger.info(f"  - Embedding model: {config.embedding_model}")
-    logger.info(f"  - FAISS index: {faiss_manager.index.ntotal} vectors")
-    logger.info(f"  - Reranker: {config.reranker_model}")
+    primary_provider = "sqlite_text"
+    fallback_enabled = True
+
+    if vector_provider and vector_provider.is_available:
+        primary_provider = "vector_faiss"
+        logger.info("✓ Vector search enabled (vector_faiss)")
+        logger.info(f"  - Embedding model: {config.embedding_model}")
+        logger.info(f"  - FAISS index: {faiss_manager.index.ntotal} vectors")
+        logger.info(f"  - Reranker: {config.reranker_model}")
+    else:
+        logger.warning(
+            "Vector search unavailable. Running in text-only mode; install ML extras or rebuild the FAISS index."
+        )
 
     return SearchService(
         session,
-        primary_provider="vector_faiss",
-        fallback_enabled=False,
-        vector_provider=vector_provider
+        primary_provider=primary_provider,
+        fallback_enabled=fallback_enabled,
+        max_retries=getattr(config, "search_fallback_retries", 1),
+        vector_provider=vector_provider,
     )
 
 
 def _build_handshake_payload() -> Dict[str, Any]:
     """Return startup instructions shared with MCP clients."""
     category_payload = _build_categories_payload()
+    search_payload: Dict[str, Any] = {
+        "primary_provider": getattr(search_service, "primary_provider_name", "sqlite_text"),
+        "vector_available": False,
+        "fallback_enabled": getattr(search_service, "fallback_enabled", True),
+        "topk": {
+            "retrieve": getattr(config, "topk_retrieve", None),
+            "rerank": getattr(config, "topk_rerank", None),
+        },
+    }
+
+    try:
+        vector_provider = getattr(search_service, "get_vector_provider", lambda: None)()
+        search_payload["vector_available"] = bool(vector_provider and vector_provider.is_available)
+    except Exception:
+        search_payload["vector_available"] = False
+
+    if not search_payload["vector_available"]:
+        search_payload["status"] = "degraded"
+        search_payload["hint"] = (
+            "Vector search disabled; responses use sqlite_text fallback. "
+            "Install ML extras and rebuild embeddings to restore semantic search."
+        )
+    else:
+        search_payload["status"] = "ok"
+
     return {
         "version": SERVER_VERSION,
         "workflow_mode": {
@@ -331,13 +354,24 @@ def _build_handshake_payload() -> Dict[str, Any]:
             },
         },
         "tool_index": TOOL_INDEX,
+        "search": search_payload,
         **category_payload,
     }
 
 
 def init_server():
     """Initialize server with configuration"""
-    global config, db, search_service
+    global config, db, search_service, _initialized
+
+    if _initialized:
+        logger.info("init_server() called after initialization; reusing existing services.")
+        try:
+            mcp.instructions = json.dumps(_build_handshake_payload())
+        except (RuntimeError, ValueError) as e:
+            mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
+        except Exception as e:
+            mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
+        return
 
     # Load configuration
     config = get_config()
@@ -395,9 +429,11 @@ def init_server():
     try:
         mcp.instructions = json.dumps(_build_handshake_payload())
     except (RuntimeError, ValueError) as e:
-        mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e)))
+        mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
     except Exception as e:
-        mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e)))
+        mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
+    else:
+        _initialized = True
 
 
 # Initialize on module load

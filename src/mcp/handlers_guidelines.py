@@ -18,12 +18,20 @@ def make_get_guidelines_handler(db: Database):
     def get_guidelines(guide_type: Literal["generator", "evaluator"], version: str | None = None) -> dict:
         """Return generator/evaluator workflow guidelines seeded in the CHL database."""
         if db is None:
-            return create_error_response("SERVER_ERROR", "Server not initialized")
+            return create_error_response(
+                "SERVER_ERROR",
+                "Server not initialized",
+                hint="Call init_server() before requesting guidelines.",
+                retryable=True,
+            )
 
         title = GUIDE_TITLE_MAP.get(guide_type)
         if title is None:
             return create_error_response(
-                "INVALID_REQUEST", f"Unknown guide type '{guide_type}'. Use 'generator' or 'evaluator'."
+                "INVALID_REQUEST",
+                f"Unknown guide type '{guide_type}'. Use 'generator' or 'evaluator'.",
+                hint="Valid options are 'generator' and 'evaluator'.",
+                retryable=True,
             )
 
         with db.session_scope() as session:
@@ -35,6 +43,8 @@ def make_get_guidelines_handler(db: Database):
                 return create_error_response(
                     "NOT_FOUND",
                     "Guidelines category not found. Run 'uv run python scripts/seed_default_content.py' to seed it.",
+                    hint="Seed default content with `uv run python scripts/seed_default_content.py`.",
+                    retryable=True,
                 )
 
             manuals = manual_repo.get_by_category(GUIDELINES_CATEGORY)
@@ -46,6 +56,8 @@ def make_get_guidelines_handler(db: Database):
                         "Guideline manual not found. Update generator.md/evaluator.md and run "
                         "'uv run python scripts/seed_default_content.py'."
                     ),
+                    hint="Refresh guidelines with `uv run python scripts/seed_default_content.py` after updating the source docs.",
+                    retryable=True,
                 )
 
             return {

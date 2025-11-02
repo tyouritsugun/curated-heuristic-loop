@@ -145,6 +145,8 @@ class RerankerClient:
             query_text = f"{query}<|endoftext|>"
             query_result = self.model.create_embedding(query_text)
             query_emb = np.array(query_result['data'][0]['embedding'], dtype=np.float32)
+            if query_emb.ndim == 2:
+                query_emb = query_emb.mean(axis=0)
 
             # Normalize query embedding
             query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-8)
@@ -155,6 +157,8 @@ class RerankerClient:
                 doc_text = f"{doc}<|endoftext|>"
                 doc_result = self.model.create_embedding(doc_text)
                 doc_emb = np.array(doc_result['data'][0]['embedding'], dtype=np.float32)
+                if doc_emb.ndim == 2:
+                    doc_emb = doc_emb.mean(axis=0)
 
                 # Normalize document embedding
                 doc_emb = doc_emb / (np.linalg.norm(doc_emb) + 1e-8)
