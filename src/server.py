@@ -94,6 +94,7 @@ TOOL_INDEX = [
 config = None
 db = None
 search_service: Optional[SearchService] = None
+_initialized = False
 
 
 def _build_categories_payload() -> Dict[str, Any]:
@@ -360,7 +361,17 @@ def _build_handshake_payload() -> Dict[str, Any]:
 
 def init_server():
     """Initialize server with configuration"""
-    global config, db, search_service
+    global config, db, search_service, _initialized
+
+    if _initialized:
+        logger.info("init_server() called after initialization; reusing existing services.")
+        try:
+            mcp.instructions = json.dumps(_build_handshake_payload())
+        except (RuntimeError, ValueError) as e:
+            mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
+        except Exception as e:
+            mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
+        return
 
     # Load configuration
     config = get_config()
@@ -421,6 +432,8 @@ def init_server():
         mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
     except Exception as e:
         mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
+    else:
+        _initialized = True
 
 
 # Initialize on module load

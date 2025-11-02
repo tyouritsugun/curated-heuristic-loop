@@ -27,7 +27,7 @@ class EmbeddingClient:
         quantization: str,
         normalize: bool = True,
         batch_size: int = 64,
-        n_ctx: int = 512,
+        n_ctx: int = 2048,
         n_gpu_layers: int = 0,
     ):
         """Initialize embedding client with GGUF model
@@ -37,7 +37,7 @@ class EmbeddingClient:
             quantization: Quantization type (e.g., 'Q4_K_M', 'Q8_0', 'f16')
             normalize: Apply L2 normalization to embeddings (recommended for cosine similarity)
             batch_size: Default batch size for encoding
-            n_ctx: Context size (default 512 tokens)
+            n_ctx: Context size (default 2048 tokens)
             n_gpu_layers: Number of layers to offload to GPU (0 = CPU only)
 
         Raises:
