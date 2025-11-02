@@ -109,11 +109,35 @@ class FAISSIndexManager:
             logger.info("No existing index found. Creating new index.")
             self._create_new_index()
 
-    def _create_new_index(self) -> None:
-        """Create new FAISS index"""
+    def _create_new_index(self, reset_metadata: bool = True) -> None:
+        """Create new FAISS index
+
+        Args:
+            reset_metadata: When True, clear faiss_metadata to keep it in sync
+                with the freshly created in-memory index.
+        """
         logger.info(
             f"Creating new FAISS IndexFlatIP with dimension={self.dimension}"
         )
+
+        if reset_metadata and self.session:
+            try:
+                from src.storage.schema import FAISSMetadata
+
+                deleted_rows = self.session.query(FAISSMetadata).delete()
+                if deleted_rows:
+                    logger.info(
+                        f"Cleared {deleted_rows} stale faiss_metadata rows "
+                        "before creating fresh index"
+                    )
+                self.session.flush()
+            except Exception as e:
+                logger.warning(
+                    f"Failed to reset FAISS metadata before rebuilding index: {e}"
+                )
+                self.session.rollback()
+                raise
+
         # IndexFlatIP for cosine similarity (requires normalized embeddings)
         self._index = self.faiss.IndexFlatIP(self.dimension)
 
@@ -169,6 +193,13 @@ class FAISSIndexManager:
             return internal_ids
 
         except Exception as e:
+            if self.session:
+                try:
+                    self.session.rollback()
+                except Exception as rollback_error:
+                    logger.warning(
+                        f"Failed to rollback session after FAISS add error: {rollback_error}"
+                    )
             raise FAISSIndexError(f"Failed to add vectors to index: {e}") from e
 
     def search(
@@ -448,6 +479,13 @@ class FAISSIndexManager:
             self.session.flush()
 
         except Exception as e:
+            try:
+                if self.session:
+                    self.session.rollback()
+            except Exception as rollback_error:
+                logger.warning(
+                    f"Failed to rollback session after metadata save error: {rollback_error}"
+                )
             logger.error(f"Failed to save metadata mappings: {e}")
             raise
 
@@ -494,6 +532,13 @@ class FAISSIndexManager:
                 self.session.flush()
 
         except Exception as e:
+            try:
+                if self.session:
+                    self.session.rollback()
+            except Exception as rollback_error:
+                logger.warning(
+                    f"Failed to rollback session after delete mark error: {rollback_error}"
+                )
             logger.error(f"Failed to mark as deleted: {e}")
             raise
 
