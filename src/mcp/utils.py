@@ -1,16 +1,27 @@
 """MCP server utility helpers."""
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import json
 
 
-def create_error_response(code: str, message: str) -> Dict[str, Any]:
+def create_error_response(
+    code: str,
+    message: str,
+    *,
+    hint: Optional[str] = None,
+    retryable: Optional[bool] = None,
+) -> Dict[str, Any]:
     """Create standardized error response payload for MCP tools."""
-    return {
+    error_payload: Dict[str, Any] = {
         "error": {
             "code": code,
             "message": message,
         }
     }
+    if hint is not None:
+        error_payload["error"]["hint"] = hint
+    if retryable is not None:
+        error_payload["error"]["retryable"] = retryable
+    return error_payload
 
 
 def normalize_context(raw_context: Any) -> Any:

@@ -80,10 +80,12 @@ class SQLiteTextProvider(SearchProvider):
                 search_results.append(SearchResult(
                     entity_id=entity_id,
                     entity_type=entity_type_str,
-                    score=None,  # No relevance scoring for text search
+                    score=0.0,
                     reason=SearchReason.TEXT_MATCH,
                     provider="sqlite_text",
                     rank=rank,
+                    degraded=True,
+                    hint="Vector search unavailable; result generated via LIKE fallback.",
                 ))
 
             return search_results

@@ -24,6 +24,8 @@ class SearchResult:
         reason: How this result was found
         provider: Which provider returned this result ('vector_faiss', 'sqlite_text', 'direct')
         rank: Position in results (0-indexed)
+        degraded: Whether the provider is in a degraded (fallback) mode
+        hint: Optional guidance for handling degraded results
     """
     entity_id: str
     entity_type: str  # 'experience' or 'manual'
@@ -31,6 +33,8 @@ class SearchResult:
     reason: SearchReason = SearchReason.ID_LOOKUP
     provider: str = "direct"
     rank: int = 0
+    degraded: bool = False
+    hint: Optional[str] = None
 
     def __post_init__(self):
         """Validate fields"""
