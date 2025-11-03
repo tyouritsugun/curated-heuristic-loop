@@ -162,6 +162,7 @@ class FAISSMetadata(Base):
 
     __table_args__ = (
         CheckConstraint("entity_type IN ('experience', 'manual')", name="ck_faiss_entity_type"),
+        UniqueConstraint("entity_id", "entity_type", name="uq_faiss_entity"),
     )
 
     def __repr__(self):

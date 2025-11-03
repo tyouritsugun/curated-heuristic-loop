@@ -1,6 +1,7 @@
 """Repository pattern for data access operations."""
 import os
 import getpass
+import logging
 from datetime import datetime, timezone
 import json
 import numpy as np
@@ -8,6 +9,8 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 from .schema import Category, Experience, CategoryManual, Embedding, FAISSMetadata, utc_now
+
+logger = logging.getLogger(__name__)
 
 
 def generate_experience_id(category_code: str) -> str:
@@ -243,9 +246,23 @@ class CategoryManualRepository:
         return manual
 
     def delete(self, manual_id: str) -> None:
-        """Delete a manual."""
+        """Delete a manual and cascade delete associated embeddings and FAISS metadata."""
         manual = self.get_by_id(manual_id)
         if manual:
+            # Delete associated embeddings (all models)
+            emb_repo = EmbeddingRepository(self.session)
+            deleted_emb_count = emb_repo.delete_all_for_entity(manual_id, 'manual')
+            logger.debug(f"Deleted {deleted_emb_count} embeddings for manual {manual_id}")
+
+            # Delete FAISS metadata entries
+            from .schema import FAISSMetadata
+            deleted_faiss_count = self.session.query(FAISSMetadata).filter(
+                FAISSMetadata.entity_id == manual_id,
+                FAISSMetadata.entity_type == 'manual'
+            ).delete(synchronize_session=False)
+            logger.debug(f"Deleted {deleted_faiss_count} FAISS metadata entries for manual {manual_id}")
+
+            # Delete the manual entity
             self.session.delete(manual)
             self.session.flush()
 
@@ -361,11 +378,28 @@ class EmbeddingRepository:
         return q.all()
 
     def delete_by_entity(self, entity_id: str, entity_type: str, model_name: str) -> None:
-        """Delete embedding for an entity"""
+        """Delete embedding for an entity with specific model"""
         embedding = self.get_by_entity(entity_id, entity_type, model_name)
         if embedding:
             self.session.delete(embedding)
             self.session.flush()
+
+    def delete_all_for_entity(self, entity_id: str, entity_type: str) -> int:
+        """Delete all embeddings for an entity (across all models)
+
+        Args:
+            entity_id: Experience or manual ID
+            entity_type: 'experience' or 'manual'
+
+        Returns:
+            Number of embeddings deleted
+        """
+        deleted_count = self.session.query(Embedding).filter(
+            Embedding.entity_id == entity_id,
+            Embedding.entity_type == entity_type
+        ).delete(synchronize_session=False)
+        self.session.flush()
+        return deleted_count
 
     def to_numpy(self, embedding: Embedding) -> np.ndarray:
         """Convert embedding data back to numpy array

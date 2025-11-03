@@ -24,7 +24,12 @@ _FAISS_OPS_KEY = "_chl_faiss_ops"
 
 
 def _faiss_after_commit(session):
-    """Execute deferred FAISS operations once the surrounding transaction commits."""
+    """Execute deferred FAISS operations once the surrounding transaction commits.
+
+    Implements retry logic with exponential backoff for failed operations.
+    """
+    import time
+
     info = session.info.get(_FAISS_OPS_KEY)
     if not info:
         return
@@ -34,18 +39,53 @@ def _faiss_after_commit(session):
         return
 
     managers_to_save = set()
-    for manager, description, operation in ops:
-        try:
-            operation()
-            managers_to_save.add(manager)
-        except Exception as exc:
-            logger.warning("Deferred FAISS operation failed (%s): %s", description, exc)
+    failed_ops = []
 
+    # Process each operation with retries
+    for manager, description, operation in ops:
+        max_retries = 3
+        retry_delay = 0.1  # Start with 100ms
+        success = False
+
+        for attempt in range(max_retries):
+            try:
+                operation()
+                managers_to_save.add(manager)
+                success = True
+                break
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        "Deferred FAISS operation failed (%s), attempt %d/%d: %s. Retrying in %.2fs...",
+                        description, attempt + 1, max_retries, exc, retry_delay
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(
+                        "Deferred FAISS operation failed permanently (%s) after %d attempts: %s",
+                        description, max_retries, exc, exc_info=True
+                    )
+                    failed_ops.append((manager, description, operation, exc))
+
+    # Persist indices that had successful operations
     for manager in managers_to_save:
         try:
             manager.save()
+            logger.info("Successfully persisted FAISS index '%s'", manager.model_name)
         except Exception as exc:
-            logger.warning("Failed to persist FAISS index '%s': %s", manager.model_name, exc)
+            logger.error("Failed to persist FAISS index '%s': %s", manager.model_name, exc, exc_info=True)
+
+    # Store failed operations for potential manual retry
+    if failed_ops:
+        if "failed_ops" not in info:
+            info["failed_ops"] = []
+        info["failed_ops"].extend([(desc, str(exc)) for _, desc, _, exc in failed_ops])
+        logger.error(
+            "WARNING: %d FAISS operation(s) failed permanently. "
+            "These entities may not be searchable. Consider running a full index rebuild.",
+            len(failed_ops)
+        )
 
     ops.clear()
 
