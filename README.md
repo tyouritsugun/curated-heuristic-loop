@@ -24,6 +24,11 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
 - Google Service Account credentials (for export/sync to Google Sheets)
 - Google Sheet for logging
 
+**ONLY RUN THIS FOR ONE MCP CLIENT**
+- Do not run this in multiple MCP clients at the same time
+- If needed, you can make a copy of this repository and ensure each copy serves only one MCP. You can then export the data, merge it, and import it back.
+- I am currently updating this repository to support multiple MCP clients. Please stay tuned.
+  
 ### Installation
 
 1. **Install uv (if not already installed):**
