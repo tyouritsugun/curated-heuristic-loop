@@ -54,7 +54,7 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
    # Automatic setup - uses smallest models (0.6B)
    uv run python scripts/setup.py
 
-   # Interactive model selection - choose larger models (4B, 8B)
+   # Interactive model selection - choose larger models (4B Q4_K_M recommended)
    uv run python scripts/setup.py --download-models
 
    ```
@@ -138,44 +138,9 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
 
 **IMPORTANT:** You should only run CHL in **ONE MCP client at a time** (e.g., Cursor OR Claude Code, not both simultaneously).
 
-### Why This Limitation Exists
-
-When using STDIO transport (the standard MCP configuration), each client spawns a separate server process. Running multiple CHL server instances simultaneously can cause:
-
-- **FAISS index corruption**: The vector search index cannot be safely modified by multiple processes
-- **Lost search results**: Concurrent writes may overwrite each other
-- **Database inconsistencies**: Index state diverges from database state
-
-### What Happens If You Try
-
-If you accidentally configure CHL in multiple clients:
-- The first client starts successfully and acquires a lock
-- The second client detects the running instance and exits with a clear error message
-- You'll see details about the running server (PID, hostname, start time)
-
-### How to Switch Between Clients
-
-**To use CHL in a different client:**
-
-1. **Stop the current client** that's using CHL (close Cursor/Claude Code completely)
-2. **Verify the server stopped:**
-   ```bash
-   # Check if lock file is gone or stale
-   ls -la data/.chl.lock
-   ```
-3. **Start the new client** (e.g., open Claude Code)
-4. **The new client** will acquire the lock and start successfully
-
-**Alternative:** Configure CHL in only one client's MCP settings and use that client exclusively for CHL operations.
-
-### Multi-Client Support (Future)
-
-For users who require true multi-client support, SSE (Server-Sent Events) transport can be used:
-- Run one persistent CHL server process
-- Multiple clients connect via HTTP
-- Requires additional setup (see `doc/architecture.md` section on Concurrency Control for details)
-
-This is an advanced configuration not covered in basic setup.
+### Multi-Client Support (Ongoing)
+- SSE instead of STDIO transport
+- Asynchronous FAISS embeding & indexing 
 
 ## Import & Export
 
