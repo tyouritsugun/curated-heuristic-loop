@@ -52,17 +52,24 @@ When using `--download-models`, you'll see a menu to choose:
 - **Embedding models**: 0.6B (~524 MB), 4B (~4 GB), 8B (~8 GB)
 - **Reranker models**: 0.6B (~612 MB), 4B (~4 GB), 8B (~8 GB)
 
-Larger models provide better quality but require more RAM/VRAM.
+Larger models provide better quality but require more RAM/VRAM. For recommended model selection based on tested hardware, see the main [README](../README.md#prerequisites).
 
 ### Seed starter content (recommended)
 
-Run this after setup to load the default CHL categories and sample entries and sync the guidelines **inside uv’s environment**:
+Run this after setup to load the default CHL categories and sample entries and sync the guidelines **inside uv's environment**:
 
 ```bash
+# Full seed: categories, sample entries, and guidelines (default)
 uv run python scripts/seed_default_content.py
+
+# Sync guidelines only (skip starter content)
+uv run python scripts/seed_default_content.py --skip-seed
+
+# Seed content only (skip guideline sync)
+uv run python scripts/seed_default_content.py --skip-guidelines
 ```
 
-This single command is idempotent; rerun it to restore starter data or refresh guidelines.
+This command is idempotent; rerun it to restore starter data or refresh guidelines.
 
 The guideline sync keeps the `GLN` category aligned with the Markdown sources. It re-imports `generator.md` and `evaluator.md`, deletes stale manuals, and removes a guide if its source file is missing. After syncing, you can retrieve the manuals via MCP:
 
