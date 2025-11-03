@@ -11,6 +11,7 @@ import logging
 from typing import List, Dict, Optional
 import numpy as np
 
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from ..storage.schema import Experience, CategoryManual
@@ -18,6 +19,42 @@ from ..storage.repository import EmbeddingRepository, ExperienceRepository, Cate
 from .client import EmbeddingClient, EmbeddingClientError
 
 logger = logging.getLogger(__name__)
+
+_FAISS_OPS_KEY = "_chl_faiss_ops"
+
+
+def _faiss_after_commit(session):
+    """Execute deferred FAISS operations once the surrounding transaction commits."""
+    info = session.info.get(_FAISS_OPS_KEY)
+    if not info:
+        return
+
+    ops = info.get("ops", [])
+    if not ops:
+        return
+
+    managers_to_save = set()
+    for manager, description, operation in ops:
+        try:
+            operation()
+            managers_to_save.add(manager)
+        except Exception as exc:
+            logger.warning("Deferred FAISS operation failed (%s): %s", description, exc)
+
+    for manager in managers_to_save:
+        try:
+            manager.save()
+        except Exception as exc:
+            logger.warning("Failed to persist FAISS index '%s': %s", manager.model_name, exc)
+
+    ops.clear()
+
+
+def _faiss_after_rollback(session):
+    """Discard deferred FAISS operations when the transaction rolls back."""
+    info = session.info.get(_FAISS_OPS_KEY)
+    if info:
+        info.get("ops", []).clear()
 
 
 class EmbeddingService:
@@ -56,6 +93,9 @@ class EmbeddingService:
         self.emb_repo = EmbeddingRepository(session)
         self.exp_repo = ExperienceRepository(session)
         self.manual_repo = CategoryManualRepository(session)
+
+        if self.faiss_index_manager:
+            self._ensure_faiss_hooks()
 
     def generate_for_experience(self, experience_id: str) -> bool:
         """Generate embedding for an experience
@@ -98,16 +138,14 @@ class EmbeddingService:
             exp.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Update FAISS index if available (after commit)
             if self.faiss_index_manager:
-                try:
-                    self.faiss_index_manager.add(
-                        entity_ids=[experience_id],
-                        entity_types=['experience'],
-                        embeddings=embedding.reshape(1, -1)
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                self._queue_faiss_add(
+                    entity_id=experience_id,
+                    entity_type='experience',
+                    embedding_vector=embedding,
+                    description=f"add experience {experience_id}",
+                )
 
             logger.info(f"Generated embedding for experience: {experience_id}")
             return True
@@ -175,16 +213,14 @@ class EmbeddingService:
             manual.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Update FAISS index if available (after commit)
             if self.faiss_index_manager:
-                try:
-                    self.faiss_index_manager.add(
-                        entity_ids=[manual_id],
-                        entity_types=['manual'],
-                        embeddings=embedding.reshape(1, -1)
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                self._queue_faiss_add(
+                    entity_id=manual_id,
+                    entity_type='manual',
+                    embedding_vector=embedding,
+                    description=f"add manual {manual_id}",
+                )
 
             logger.info(f"Generated embedding for manual: {manual_id}")
             return True
@@ -242,23 +278,22 @@ class EmbeddingService:
             exp.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Update FAISS index if available (after commit)
             if self.faiss_index_manager:
-                try:
-                    if existing is not None:
-                        self.faiss_index_manager.update(
-                            entity_id=experience_id,
-                            entity_type='experience',
-                            new_embedding=embedding,
-                        )
-                    else:
-                        self.faiss_index_manager.add(
-                            entity_ids=[experience_id],
-                            entity_types=['experience'],
-                            embeddings=embedding.reshape(1, -1),
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                if existing is not None:
+                    self._queue_faiss_update(
+                        entity_id=experience_id,
+                        entity_type='experience',
+                        embedding_vector=embedding,
+                        description=f"update experience {experience_id}",
+                    )
+                else:
+                    self._queue_faiss_add(
+                        entity_id=experience_id,
+                        entity_type='experience',
+                        embedding_vector=embedding,
+                        description=f"add experience {experience_id}",
+                    )
 
             logger.info(f"Upserted embedding for experience: {experience_id}")
             return True
@@ -313,21 +348,20 @@ class EmbeddingService:
             self.session.flush()
 
             if self.faiss_index_manager:
-                try:
-                    if existing is not None:
-                        self.faiss_index_manager.update(
-                            entity_id=manual_id,
-                            entity_type='manual',
-                            new_embedding=embedding,
-                        )
-                    else:
-                        self.faiss_index_manager.add(
-                            entity_ids=[manual_id],
-                            entity_types=['manual'],
-                            embeddings=embedding.reshape(1, -1),
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                if existing is not None:
+                    self._queue_faiss_update(
+                        entity_id=manual_id,
+                        entity_type='manual',
+                        embedding_vector=embedding,
+                        description=f"update manual {manual_id}",
+                    )
+                else:
+                    self._queue_faiss_add(
+                        entity_id=manual_id,
+                        entity_type='manual',
+                        embedding_vector=embedding,
+                        description=f"add manual {manual_id}",
+                    )
 
             logger.info(f"Generated embedding for manual: {manual_id}")
             return True
@@ -495,3 +529,42 @@ class EmbeddingService:
         )
 
         return stats
+
+    def _ensure_faiss_hooks(self) -> None:
+        """Ensure deferred FAISS operations are tied to the session lifecycle."""
+        info = self.session.info.setdefault(_FAISS_OPS_KEY, {"ops": [], "listeners": False})
+        if not info.get("listeners"):
+            event.listen(self.session, "after_commit", _faiss_after_commit)
+            event.listen(self.session, "after_rollback", _faiss_after_rollback)
+            info["listeners"] = True
+
+    def _queue_faiss_add(self, *, entity_id: str, entity_type: str, embedding_vector: np.ndarray, description: str) -> None:
+        """Queue an add operation for execution after a successful commit."""
+        self._queue_faiss_op(
+            description,
+            lambda: self.faiss_index_manager.add(
+                entity_ids=[entity_id],
+                entity_types=[entity_type],
+                embeddings=embedding_vector.astype(np.float32, copy=True).reshape(1, -1),
+            ),
+        )
+
+    def _queue_faiss_update(self, *, entity_id: str, entity_type: str, embedding_vector: np.ndarray, description: str) -> None:
+        """Queue an update operation for execution after a successful commit."""
+        self._queue_faiss_op(
+            description,
+            lambda: self.faiss_index_manager.update(
+                entity_id=entity_id,
+                entity_type=entity_type,
+                new_embedding=embedding_vector.astype(np.float32, copy=True),
+            ),
+        )
+
+    def _queue_faiss_op(self, description: str, operation) -> None:
+        """Register a deferred FAISS operation that runs only if the transaction commits."""
+        if not self.faiss_index_manager:
+            return
+        info = self.session.info.setdefault(_FAISS_OPS_KEY, {"ops": [], "listeners": False})
+        if not info.get("listeners"):
+            self._ensure_faiss_hooks()
+        info["ops"].append((self.faiss_index_manager, description, operation))

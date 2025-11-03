@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from typing import Dict
+from typing import Dict, List, Tuple
 
 from _config_loader import (
     DEFAULT_CONFIG_PATH,
@@ -103,6 +103,32 @@ def _require_value(row: Dict[str, str], key: str, entity: str) -> str:
     if value is None or str(value).strip() == "":
         raise ValueError(f"{entity} row is missing required value '{key}'")
     return str(value).strip()
+
+
+def _dedupe_rows(rows: List[Dict[str, str]], key: str) -> Tuple[List[Dict[str, str]], List[str]]:
+    """Return rows deduplicated by the provided key and list of duplicate identifiers."""
+    if not rows:
+        return rows, []
+
+    seen: Dict[str, Dict[str, str]] = {}
+    duplicates: List[str] = []
+
+    for row in rows:
+        raw_value = row.get(key)
+        identifier = str(raw_value).strip() if raw_value is not None else ""
+
+        # Leave actual missing identifiers to downstream validators
+        if not identifier:
+            continue
+
+        if identifier in seen:
+            duplicates.append(identifier)
+            continue
+
+        seen[identifier] = row
+
+    deduped = list(seen.values())
+    return deduped, duplicates
 
 
 def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
@@ -298,6 +324,26 @@ def main() -> None:
         len(experiences_rows),
         len(manuals_rows),
     )
+
+    categories_rows, duplicate_categories = _dedupe_rows(categories_rows, "code")
+    experiences_rows, duplicate_experiences = _dedupe_rows(experiences_rows, "id")
+    manuals_rows, duplicate_manuals = _dedupe_rows(manuals_rows, "id")
+
+    if duplicate_categories:
+        logger.warning(
+            "Detected duplicate category codes in the spreadsheet (keeping first occurrence): %s",
+            ", ".join(sorted(set(duplicate_categories))),
+        )
+    if duplicate_experiences:
+        logger.warning(
+            "Detected duplicate experience IDs in the spreadsheet (keeping first occurrence): %s",
+            ", ".join(sorted(set(duplicate_experiences))),
+        )
+    if duplicate_manuals:
+        logger.warning(
+            "Detected duplicate manual IDs in the spreadsheet (keeping first occurrence): %s",
+            ", ".join(sorted(set(duplicate_manuals))),
+        )
 
     # Validate required columns
     if not categories_rows:

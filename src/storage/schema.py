@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     Text,
     LargeBinary,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -140,6 +141,7 @@ class Embedding(Base):
         # Unique constraint: one embedding per entity+model combination
         # This allows re-embedding with different models
         # Column-level unique constraints are defined via Index
+        UniqueConstraint("entity_id", "entity_type", "model_name", name="uq_embedding_entity_model"),
     )
 
     def __repr__(self):
