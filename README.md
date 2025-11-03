@@ -32,24 +32,24 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
    ```
 
 2. **Clone and setup the project:**
+   After clone this project, 
    ```bash
-   git clone <repository-url>
    cd curated_heuristic_loop
    ```
 
-3. **Install the supported Python runtime (once):**
+4. **Install the supported Python runtime (once):**
    ```bash
    uv python install 3.11
    ```
    > Torch/Faiss wheels are only published for Python 3.10–3.11. Using 3.12 triggers build failures.
 
-4. **Install dependencies with the 3.11 interpreter:**
+5. **Install dependencies with the 3.11 interpreter:**
    ```bash
    uv sync --python 3.11 --extra ml
    ```
    This creates/updates uv’s managed environment and installs the full ML stack (`sentence-transformers`, PyTorch, FAISS, llama-cpp`). You do not need to create or activate a separate `.venv`—uv will reuse this environment automatically.
 
-5. **Run first-time setup:**
+6. **Run first-time setup:**
    ```bash
    # Automatic setup - uses smallest models (0.6B)
    uv run python scripts/setup.py
@@ -66,7 +66,7 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
    - Validate setup completeness
    - For details about the setup, see [manual](./doc/chl_manual.md#2-search--embeddings)
 
-6. **Seed starter content + sync guidelines:**
+7. **Seed starter content + sync guidelines:**
    ```bash
    uv run python scripts/seed_default_content.py
    ```
@@ -75,7 +75,7 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
    - Syncs the `GLN` guidelines category from `generator.md` and `evaluator.md`
    Rerun any time to restore starter content or refresh guidelines.
 
-7. **Configure MCP settings:**
+8. **Configure MCP settings:**
    
    Add to your `~/.cursor/mcp.json`, or to an MCP client that accepts JSON. `CHL_EXPERIENCE_ROOT` is optional; if omitted, CHL uses `<project_root>/data` and auto-creates it on first run. `CHL_DATABASE_PATH` and `CHL_FAISS_INDEX_PATH` default to `<experience_root>/chl.db` and `<experience_root>/faiss_index` (relative values are resolved under `<experience_root>`). `CHL_GOOGLE_CREDENTIALS_PATH` is optional—export/import scripts already read the path from `scripts/scripts_config.yaml`, so set the env var only if you prefer managing it outside the YAML. `CHL_READ_DETAILS_LIMIT` defaults to `10`, so include it only if you need a different value.
    
