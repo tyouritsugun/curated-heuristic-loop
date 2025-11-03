@@ -4,7 +4,7 @@
 
 # Global defaults shared by export/import scripts (optional)
 data_path: ../data
-google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+google_credentials_path: ../credentials/your_google_service_account.json
 
 export:
   # Optional override for the SQLite database filename (relative to data_path)
@@ -12,23 +12,23 @@ export:
 
   # Absolute or relative path to the Google credentials JSON (falls back to
   # top-level google_credentials_path if omitted).
-  google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+  google_credentials_path: ../credentials/your_google_service_account.json
 
   # Base sheet ID used when categories/experiences/manuals do not specify their
   # own IDs.
   # sheet_id: your-review-sheet-id
 
   category_sheet:
-    id: 1VQgEp82MBOa6dhCttkGgKDJDR8fJcjwsRgHmGxZBZVg
+    id: your-export-category-sheet-id
     worksheet: Categories
 
   experiences_sheet:
     # Optional dedicated sheet ID (defaults to export.sheet_id when omitted)
-    id: 1SmbNLdE98FUjHuGjm8pF-waC0reT8eqXhv18pLkvHfI
+    id: your-export-experience-sheet-id
     worksheet: Experiences
 
   manuals_sheet:
-    id: 1QyB5kSRtWH4eHd_8gV4XRS8GUKBxUh0AuXpeLHhiF_M
+    id: your-export-manual-sheet-id
     worksheet: Manuals
 
   # Set to true to preview counts without writing to Google Sheets.
@@ -39,22 +39,22 @@ import:
   # Optional override for the SQLite database filename (relative to data_path)
   # database_filename: chl.db
 
-  google_credentials_path: ../credentials/curated-heuristic-loop-2c8a35dde6e9.json
+  google_credentials_path: ../credentials/your_google_service_account.json
 
   # Base sheet ID used when categories/experiences/manuals do not specify their
   # own IDs.
   # sheet_id: your-published-sheet-id
 
   category_sheet:
-    id: 1VQgEp82MBOa6dhCttkGgKDJDR8fJcjwsRgHmGxZBZVg
+    id: your-import-category-sheet-id
     worksheet: Categories
 
   experiences_sheet:
-    id: 1SmbNLdE98FUjHuGjm8pF-waC0reT8eqXhv18pLkvHfI
+    id: your-import-experience-sheet-id
     worksheet: Experiences
 
   manuals_sheet:
-    id: 1QyB5kSRtWH4eHd_8gV4XRS8GUKBxUh0AuXpeLHhiF_M
+    id: your-import-manual-sheet-id
     worksheet: Manuals
 
   verbose: false

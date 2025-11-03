@@ -13,6 +13,14 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
   - Intel Mac (x86_64) is **not supported** due to PyTorch compatibility
   - Linux: x86_64 or ARM64
   - Windows: x86_64
+
+**Tested Hardware & Recommended Models:**
+- Tested on: Ubuntu 22.04 (32GB RAM, RTX 3060 6GB VRAM) and MacBook M2 (32GB unified memory)
+- Recommended models for best quality/performance balance:
+  - **Embedding**: `Qwen/Qwen3-Embedding-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
+  - **Reranker**: `Mungert/Qwen3-Reranker-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
+- Notes: 8B models yield minimal quality improvement; 0.6B models reduce accuracy but remain usable for dev/testing
+
 - Google Service Account credentials (for export/sync to Google Sheets)
 - Google Sheet for logging
 

@@ -1,7 +1,7 @@
 # Curated Heuristic Loop (CHL) Guide
 
 ## Overview
-Most code assistants forget. Useful context and hard‑won insights vanish between sessions or stay siloed with individuals. The **Curated Heuristic Loop (CHL)** adds a shared memory loop so assistants can reuse what worked—and teams can steadily refine it together. It’s inspired by work on agentic context engineering, graph‑structured memory, and modern embedding/reranking ([references](https://arxiv.org/html/2510.04618v1), [1](https://arxiv.org/html/2501.13956v1), [2](https://arxiv.org/html/2506.05176v3)).
+Most code assistants forget. Useful context and hard‑won insights vanish between sessions or stay siloed with individuals. The **Curated Heuristic Loop (CHL)** adds a shared memory loop so assistants can reuse what worked—and teams can steadily refine it together. It’s inspired by work on agentic context engineering [1](https://arxiv.org/html/2510.04618v1, graph‑structured memory  [2](https://arxiv.org/html/2501.13956v1), and modern embedding/reranking [3](https://arxiv.org/html/2506.05176v3)).
 
 CHL runs as a simple loop:
 - **Generator** – executes tasks using the shared experience library.
@@ -62,10 +62,7 @@ See [User Stories](#user-stories) for a walkthrough of how Generator, Evaluator,
 - Sheets exist only for human review/export. The export script enforces column order, locks headers, and carries provenance (`author`, `source`) so curators know origin.
 - The merge pipeline can ingest the last published sheet, fresh exports, and reviewer edits to produce the next published tab. Vector similarity assists clustering, but the final decision sits with humans.
 - Each FAISS vector stores the `last_synced_at` timestamp; during sync, outdated vectors are replaced, and stale local edits trigger merge prompts.
-- `sync_status` states in SQLite:
-  - `synced` (0) – entry is in sync with the published sheet.
-  - `pending` (1) – entry needs human review (new local insight or an update to a global entry).
-  - `local_only` (2) – entry is a personal preference or rejected item that should stay local; it is excluded from future exports until the developer resets it to `pending` for re-review.
+- The `sync_status` flag tracks whether entries are already published, pending curator review, or kept local for personal use.
 
 ## Review & Governance
 - Provision database schema via the setup script (tables are created idempotently using SQLAlchemy metadata).
