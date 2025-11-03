@@ -8,6 +8,7 @@ import json
 import logging
 import hashlib
 from pathlib import Path
+from contextlib import contextmanager
 from typing import List, Dict, Optional, Tuple
 import numpy as np
 
@@ -62,6 +63,34 @@ class FAISSIndexManager:
         self._index = None
         self._faiss = None  # faiss module (lazy import)
 
+    @contextmanager
+    def _get_session(self):
+        """Get a database session for metadata operations.
+
+        Tries to use a fresh session from get_session() if the global database
+        is initialized. Falls back to using self.session if not.
+
+        This handles two scenarios:
+        1. MCP server context: Global database is initialized, use fresh sessions
+           to avoid "session in committed state" errors from deferred operations
+        2. Script context: Global database may not be initialized, use the
+           provided session instance
+        """
+        from src.storage.database import get_session, _db_instance
+
+        # Try to use fresh session if global database is available
+        if _db_instance is not None:
+            with get_session() as session:
+                yield session
+        else:
+            # Fall back to instance session (for scripts that pass session directly)
+            if self.session is None:
+                raise RuntimeError(
+                    "No database session available. Either initialize global database "
+                    "via init_database() or provide a session to FAISSIndexManager."
+                )
+            yield self.session
+
     @property
     def index(self):
         """Get FAISS index (lazy load)"""
@@ -112,9 +141,6 @@ class FAISSIndexManager:
     def _create_new_index(self, reset_metadata: bool = True) -> None:
         """Create new FAISS index
 
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-
         Args:
             reset_metadata: When True, clear faiss_metadata to keep it in sync
                 with the freshly created in-memory index.
@@ -126,18 +152,16 @@ class FAISSIndexManager:
         if reset_metadata and self.session:
             try:
                 from src.storage.schema import FAISSMetadata
-                from src.storage.database import get_session
 
-                # Use fresh session to avoid "session in committed state" errors
-                with get_session() as fresh_session:
-                    deleted_rows = fresh_session.query(FAISSMetadata).delete()
+                with self._get_session() as session:
+                    deleted_rows = session.query(FAISSMetadata).delete()
                     if deleted_rows:
                         logger.info(
                             f"Cleared {deleted_rows} stale faiss_metadata rows "
                             "before creating fresh index"
                         )
-                    fresh_session.flush()
-                    # Context manager will commit automatically
+                    session.flush()
+                    # Context manager will commit automatically if using fresh session
             except Exception as e:
                 logger.warning(
                     f"Failed to reset FAISS metadata before rebuilding index: {e}"
@@ -389,9 +413,6 @@ class FAISSIndexManager:
     def get_tombstone_ratio(self) -> float:
         """Get ratio of deleted entries to total entries
 
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-
         Returns:
             Ratio between 0.0 and 1.0
         """
@@ -400,15 +421,13 @@ class FAISSIndexManager:
 
         try:
             from src.storage.schema import FAISSMetadata
-            from src.storage.database import get_session
 
-            # Use fresh session to avoid "session in committed state" errors
-            with get_session() as fresh_session:
-                total = fresh_session.query(FAISSMetadata).count()
+            with self._get_session() as session:
+                total = session.query(FAISSMetadata).count()
                 if total == 0:
                     return 0.0
 
-                deleted = fresh_session.query(FAISSMetadata).filter(
+                deleted = session.query(FAISSMetadata).filter(
                     FAISSMetadata.deleted == True
                 ).count()
 
@@ -457,26 +476,19 @@ class FAISSIndexManager:
         entity_types: List[str],
         internal_ids: List[int]
     ) -> None:
-        """Save metadata mappings to database
-
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-        """
+        """Save metadata mappings to database"""
         if not self.session:
             return
 
         try:
             from src.storage.schema import FAISSMetadata, utc_now
-            from src.storage.database import get_session
 
-            # Use fresh session to avoid "session in committed state" errors
-            # when called from deferred FAISS operations
-            with get_session() as fresh_session:
+            with self._get_session() as session:
                 for entity_id, entity_type, internal_id in zip(
                     entity_ids, entity_types, internal_ids
                 ):
                     # Check if mapping already exists
-                    existing = fresh_session.query(FAISSMetadata).filter(
+                    existing = session.query(FAISSMetadata).filter(
                         FAISSMetadata.entity_id == entity_id,
                         FAISSMetadata.entity_type == entity_type
                     ).first()
@@ -494,31 +506,25 @@ class FAISSIndexManager:
                             created_at=utc_now(),
                             deleted=False
                         )
-                        fresh_session.add(mapping)
+                        session.add(mapping)
 
-                fresh_session.flush()
-                # Context manager will commit automatically
+                session.flush()
+                # Context manager will commit automatically if using fresh session
 
         except Exception as e:
             logger.error(f"Failed to save metadata mappings: {e}")
             raise
 
     def _get_metadata_by_internal_id(self, internal_id: int) -> Optional[Dict[str, str]]:
-        """Get entity metadata by FAISS internal ID
-
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-        """
+        """Get entity metadata by FAISS internal ID"""
         if not self.session:
             return None
 
         try:
             from src.storage.schema import FAISSMetadata
-            from src.storage.database import get_session
 
-            # Use fresh session to avoid "session in committed state" errors
-            with get_session() as fresh_session:
-                mapping = fresh_session.query(FAISSMetadata).filter(
+            with self._get_session() as session:
+                mapping = session.query(FAISSMetadata).filter(
                     FAISSMetadata.faiss_internal_id == internal_id,
                     FAISSMetadata.deleted == False
                 ).first()
@@ -536,51 +542,39 @@ class FAISSIndexManager:
             return None
 
     def _mark_deleted(self, entity_id: str, entity_type: str) -> None:
-        """Mark entry as deleted in metadata
-
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-        """
+        """Mark entry as deleted in metadata"""
         if not self.session:
             return
 
         try:
             from src.storage.schema import FAISSMetadata
-            from src.storage.database import get_session
 
-            # Use fresh session to avoid "session in committed state" errors
-            with get_session() as fresh_session:
-                mapping = fresh_session.query(FAISSMetadata).filter(
+            with self._get_session() as session:
+                mapping = session.query(FAISSMetadata).filter(
                     FAISSMetadata.entity_id == entity_id,
                     FAISSMetadata.entity_type == entity_type
                 ).first()
 
                 if mapping:
                     mapping.deleted = True
-                    fresh_session.flush()
-                    # Context manager will commit automatically
+                    session.flush()
+                    # Context manager will commit automatically if using fresh session
 
         except Exception as e:
             logger.error(f"Failed to mark as deleted: {e}")
             raise
 
     def _compute_checksum(self) -> str:
-        """Compute checksum of embeddings table for validation
-
-        Uses a fresh session to handle cases where this is called from deferred
-        operations after the original session has been committed.
-        """
+        """Compute checksum of embeddings table for validation"""
         if not self.session:
             return ""
 
         try:
             from src.storage.schema import Embedding
-            from src.storage.database import get_session
 
-            # Use fresh session to avoid "session in committed state" errors
-            with get_session() as fresh_session:
+            with self._get_session() as session:
                 # Count embeddings for this model
-                count = fresh_session.query(Embedding).filter(
+                count = session.query(Embedding).filter(
                     Embedding.model_name == self.model_name
                 ).count()
 
