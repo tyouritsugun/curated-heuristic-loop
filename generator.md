@@ -11,6 +11,7 @@ Load these notes whenever you are in Generator mode. The goal is to surface the 
 2. Choose the one category that best matches the work. If you truly need two, finish one pass end-to-end before switching.
 
 ### 3. Craft high-signal queries
+
 - Remember the library holds **process guidance**, not domain knowledge about the specific artifact you are creating. Query for the *pattern* (e.g., “database schema authoring playbook”), not the exact schema you need to build.
 - Brainstorm persona / task / need for yourself, but send **only** the final noun-heavy string to `read_entries`.
 - Issue 2–3 variants that cover:  
