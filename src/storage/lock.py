@@ -44,7 +44,10 @@ class LockFile:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     def acquire(self) -> bool:
-        """Acquire lock for current process.
+        """Acquire lock for current process using atomic file creation.
+
+        Uses O_CREAT | O_EXCL for atomic lock acquisition to prevent race conditions
+        where two processes starting simultaneously might both think they acquired the lock.
 
         Returns:
             True if lock acquired successfully, False if already locked
@@ -60,9 +63,14 @@ class LockFile:
         # Remove stale lock if present
         if self.lock_path.exists():
             logger.info("Removing stale lock file")
-            self.lock_path.unlink()
+            try:
+                self.lock_path.unlink()
+            except FileNotFoundError:
+                # Another process removed it, that's fine
+                pass
 
-        # Create new lock
+        # Create new lock atomically using O_CREAT | O_EXCL
+        # This ensures only one process succeeds if multiple try simultaneously
         lock_data = {
             "pid": os.getpid(),
             "started_at": datetime.now(timezone.utc).isoformat(),
@@ -70,10 +78,27 @@ class LockFile:
         }
 
         try:
-            with open(self.lock_path, 'w') as f:
-                json.dump(lock_data, f, indent=2)
+            # Open with O_CREAT | O_EXCL - fails atomically if file exists
+            fd = os.open(
+                str(self.lock_path),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                0o644
+            )
+            try:
+                # Write JSON data to the file descriptor
+                lock_json = json.dumps(lock_data, indent=2)
+                os.write(fd, lock_json.encode('utf-8'))
+            finally:
+                os.close(fd)
+
             logger.info(f"Acquired lock (PID {os.getpid()})")
             return True
+
+        except FileExistsError:
+            # Another process created the lock between our check and creation (race condition)
+            logger.error("Lock file was created by another process during acquisition attempt")
+            return False
+
         except Exception as e:
             logger.error(f"Failed to create lock file: {e}")
             return False
