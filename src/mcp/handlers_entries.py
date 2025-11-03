@@ -20,6 +20,7 @@ from src.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
     CategoryManualRepository,
+    EmbeddingRepository,
 )
 from src.embedding.service import EmbeddingService
 
@@ -584,7 +585,29 @@ def make_delete_entry_handler(db, _config, _search_service):
                         hint="Pass the matching category_code when deleting a manual.",
                         retryable=False,
                     )
-                man_repo.delete(entry_id)
+                # Coordinate deletion of embeddings + FAISS entries if vector search is active
+                vector_provider = None
+                if _search_service is not None:
+                    vector_provider = getattr(_search_service, "get_vector_provider", lambda: None)()
+
+                if vector_provider and getattr(vector_provider, "embedding_client", None) and getattr(vector_provider, "index_manager", None):
+                    emb_service = EmbeddingService(
+                        session=session,
+                        embedding_client=vector_provider.embedding_client,
+                        faiss_index_manager=vector_provider.index_manager,
+                    )
+                    emb_service.delete_manual(entry_id)
+                else:
+                    emb_repo = EmbeddingRepository(session)
+                    emb_repo.delete_all_for_entity(entry_id, 'manual')
+                    man_repo.delete(entry_id)
+                    from src.storage.schema import FAISSMetadata
+
+                    session.query(FAISSMetadata).filter(
+                        FAISSMetadata.entity_id == entry_id,
+                        FAISSMetadata.entity_type == 'manual'
+                    ).update({FAISSMetadata.deleted: True}, synchronize_session=False)
+
                 return {"status": "deleted", "entry_id": entry_id}
 
         except Exception as e:

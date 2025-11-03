@@ -154,6 +154,7 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
 
 ### Run the sync scripts
 
+- Stop any running CHL MCP server instances before exporting or importing to avoid concurrent writes while the scripts rewrite the database.
 - `uv run python scripts/export.py` – writes the local SQLite content to the configured worksheets. Add `--dry-run` to preview counts without making changes.
 - `uv run python scripts/import.py --yes` – replaces local tables with the sheet contents and automatically regenerates embeddings/FAISS metadata (skip with `--skip-embeddings`). If you skip or the sync is skipped due to missing ML dependencies, run `python scripts/sync_embeddings.py --retry-failed` afterwards and restart the MCP server so it reloads the updated index.
 

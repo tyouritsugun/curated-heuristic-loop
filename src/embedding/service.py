@@ -418,6 +418,29 @@ class EmbeddingService:
                 pass
             return False
 
+    def delete_manual(self, manual_id: str) -> bool:
+        """Delete manual and associated embedding artifacts."""
+        manual = self.manual_repo.get_by_id(manual_id)
+        if not manual:
+            logger.error(f"Manual not found for deletion: {manual_id}")
+            return False
+
+        # Remove embeddings across all models
+        self.emb_repo.delete_all_for_entity(manual_id, 'manual')
+
+        # Schedule FAISS deletion after commit
+        if self.faiss_index_manager:
+            self._queue_faiss_delete(
+                entity_id=manual_id,
+                entity_type='manual',
+                description=f"delete manual {manual_id}",
+            )
+
+        # Delete the manual entity itself
+        self.manual_repo.delete(manual_id)
+        logger.info(f"Deleted manual {manual_id} and queued FAISS cleanup")
+        return True
+
     def generate_for_entities(
         self,
         entity_ids: List[str],
@@ -597,6 +620,16 @@ class EmbeddingService:
                 entity_id=entity_id,
                 entity_type=entity_type,
                 new_embedding=embedding_vector.astype(np.float32, copy=True),
+            ),
+        )
+
+    def _queue_faiss_delete(self, *, entity_id: str, entity_type: str, description: str) -> None:
+        """Queue a delete operation for execution after a successful commit."""
+        self._queue_faiss_op(
+            description,
+            lambda: self.faiss_index_manager.delete(
+                entity_id=entity_id,
+                entity_type=entity_type,
             ),
         )
 
