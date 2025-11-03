@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
 # Add parent directory to path for absolute imports
 src_dir = Path(__file__).parent
@@ -16,6 +18,7 @@ from fastmcp import FastMCP
 from src.config import get_config
 from src.storage.database import init_database
 from src.storage.repository import CategoryRepository, ExperienceRepository, CategoryManualRepository
+from src.storage.lock import LockFile
 from src.search.service import SearchService
 import logging
 
@@ -31,8 +34,30 @@ from src.mcp.handlers_entries import (
 )
 from src.mcp.handlers_guidelines import make_get_guidelines_handler
 
-# Initialize MCP server
-mcp = FastMCP("CHL MCP Server")
+# Lifespan management for server startup/shutdown
+@asynccontextmanager
+async def server_lifespan(server: FastMCP) -> AsyncIterator[None]:
+    """Manage server lifecycle with proper lock acquisition and release.
+
+    This ensures the lock file is properly released on shutdown, even if
+    the server is terminated unexpectedly.
+    """
+    global _lock_file
+
+    # Startup: lock is already acquired in init_server()
+    # Just log that we're starting
+    logger.info("Server lifespan started")
+
+    try:
+        yield
+    finally:
+        # Shutdown: release the lock
+        if _lock_file:
+            _lock_file.release()
+            logger.info("Server lifespan ended, lock released")
+
+# Initialize MCP server with lifespan management
+mcp = FastMCP("CHL MCP Server", lifespan=server_lifespan)
 
 SERVER_VERSION = "1.1.0"
 
@@ -94,6 +119,7 @@ TOOL_INDEX = [
 config = None
 db = None
 search_service: Optional[SearchService] = None
+_lock_file: Optional[LockFile] = None
 _initialized = False
 
 
@@ -361,7 +387,7 @@ def _build_handshake_payload() -> Dict[str, Any]:
 
 def init_server():
     """Initialize server with configuration"""
-    global config, db, search_service, _initialized
+    global config, db, search_service, _lock_file, _initialized
 
     if _initialized:
         logger.info("init_server() called after initialization; reusing existing services.")
@@ -375,6 +401,47 @@ def init_server():
 
     # Load configuration
     config = get_config()
+
+    # Acquire lock file to prevent concurrent export/import
+    lock_path = Path(config.experience_root) / ".chl.lock"
+    _lock_file = LockFile(lock_path)
+
+    if not _lock_file.acquire():
+        # Another instance is already running
+        is_locked, lock_info = _lock_file.is_locked()
+
+        print("\n" + "=" * 70)
+        print("⚠️  CHL MCP Server Already Running")
+        print("=" * 70)
+        print()
+        print("IMPORTANT: Only ONE MCP client should run CHL at a time.")
+        print()
+        print("Why: STDIO transport spawns separate server processes, and the")
+        print("FAISS vector index cannot be safely modified by multiple processes")
+        print("simultaneously (risk of index corruption and lost search results).")
+        print()
+
+        if lock_info:
+            print("Currently running server:")
+            print(f"  • PID: {lock_info.get('pid')}")
+            print(f"  • Host: {lock_info.get('hostname', 'unknown')}")
+            print(f"  • Started: {lock_info.get('started_at', 'unknown')}")
+            print()
+
+        print("To switch to this client:")
+        print("  1. Close the other client completely (Cursor/Claude Code)")
+        print("  2. Wait a few seconds for cleanup")
+        print("  3. Restart this client")
+        print()
+        print("See README.md section: '⚠️ Important: Multiple MCP Clients'")
+        print("=" * 70 + "\n")
+
+        # Exit cleanly instead of raising exception
+        import sys
+        sys.exit(1)
+
+    # Lock will be released by lifespan context manager on shutdown
+    logger.info(f"Acquired server lock file: {lock_path}")
 
     # Setup logging
     try:

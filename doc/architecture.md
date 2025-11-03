@@ -302,7 +302,39 @@ Configuration is loaded by `src/config.Config`, which reads environment variable
 
 
 
-### 7. Layer Responsibilities
+### 7. Concurrency Control & Lock Mechanism
+
+**Design Constraint: Single MCP Server Instance Per Database**
+
+CHL enforces **one active MCP server instance per database** using a PID-based lock file mechanism. This design is necessary because:
+
+**Why Single Instance:**
+- FAISS vector indices lack built-in concurrency control
+- Multiple processes writing to FAISS simultaneously causes index corruption and lost search results
+- In-memory FAISS state diverges across processes, leading to data inconsistencies
+- Database writes are fast and protected by SQLite WAL, but FAISS indexing operations are slow and unprotected
+
+**Lock File Implementation:**
+- Lock file located at `<experience_root>/.chl.lock`
+- Contains process PID, hostname, and startup timestamp
+- Automatic stale lock detection via PID validation
+- Uses FastMCP's lifespan context manager for guaranteed cleanup on shutdown
+
+**Protections Provided:**
+1. **Server startup**: Second instance detects running server and exits with clear error message
+2. **Export/import scripts**: Check for running server before modifying database
+3. **Stale lock recovery**: Auto-removes lock if process no longer running (handles crashes)
+
+**STDIO Transport Behavior:**
+With standard STDIO transport, each MCP client (Cursor, Claude Code) spawns a separate server process. Running CHL in multiple clients simultaneously is not supported—the second instance will be blocked. To switch clients, close the current client completely, wait for cleanup, then start the new client.
+
+**Multi-Project Support:**
+Different data directories have separate lock files, allowing multiple independent CHL instances for different projects to run simultaneously.
+
+**Future: SSE Transport**
+For true multi-client support, SSE (Server-Sent Events) transport can run one persistent server with multiple clients connecting via HTTP. This requires additional setup beyond basic configuration.
+
+### 8. Layer Responsibilities
 
 **MCP Tooling (src/mcp):**
 - Tool handlers validate payloads, invoke repositories, kick off best-effort embeddings, and surface duplicate suggestions.

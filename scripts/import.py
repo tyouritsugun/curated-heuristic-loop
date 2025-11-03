@@ -29,6 +29,7 @@ from src.storage.schema import (
     utc_now,
 )
 from src.storage.sheets_client import SheetsClient
+from src.storage.lock import LockFile
 
 EXPERIENCE_COLUMNS = [
     "id",
@@ -367,6 +368,30 @@ def main() -> None:
             raise RuntimeError(
                 f"Manuals worksheet is missing required columns: {', '.join(sorted(missing))}"
             )
+
+    # Check if MCP server is running
+    lock_file = LockFile(data_path / ".chl.lock")
+    is_locked, lock_info = lock_file.is_locked()
+
+    if is_locked:
+        logger.error("=" * 70)
+        logger.error("ERROR: CHL MCP server is currently running!")
+        logger.error("=" * 70)
+        logger.error("")
+        logger.error("The server must be stopped before running import to prevent")
+        logger.error("concurrent database access and data corruption.")
+        logger.error("")
+        if lock_info:
+            logger.error("Server details:")
+            logger.error("  PID: %s", lock_info.get('pid'))
+            logger.error("  Started: %s", lock_info.get('started_at'))
+            logger.error("  Hostname: %s", lock_info.get('hostname', 'unknown'))
+        logger.error("")
+        logger.error("Please stop the MCP server and try again.")
+        logger.error("=" * 70)
+        sys.exit(1)
+
+    logger.info("No running MCP server detected, proceeding with import")
 
     # Initialise database and overwrite
     db = Database(str(database_path), echo=False)
