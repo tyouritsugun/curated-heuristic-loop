@@ -1,35 +1,36 @@
 #!/usr/bin/env python3
-"""CHL MCP Server implementation using fastmcp"""
+"""CHL MCP Server - HTTP API Client Shim (Phase 2)
+
+This server acts as a thin HTTP client that forwards MCP tool calls to the
+HTTP API server. It provides backward compatibility with existing MCP client
+integrations while enabling centralized API-based architecture.
+
+Features:
+- Circuit breaker pattern to prevent cascading failures
+- Automatic retry with exponential backoff
+- Health gating on startup
+- Fallback to direct database mode via CHL_USE_API=0
+
+For direct database mode (Phase 1), set CHL_USE_API=0 to use mcp_server_direct.py
+"""
 import json
 import sys
+import logging
 from pathlib import Path
-from logging.handlers import RotatingFileHandler
+from typing import Dict, Any, Optional
 
 # Add parent directory to path for absolute imports
 src_dir = Path(__file__).parent
 if str(src_dir.parent) not in sys.path:
     sys.path.insert(0, str(src_dir.parent))
 
-from typing import Dict, Any, List, Optional
 from fastmcp import FastMCP
-
 from src.config import get_config
-from src.storage.database import init_database
-from src.storage.repository import CategoryRepository, ExperienceRepository, CategoryManualRepository
-from src.search.service import SearchService
-import logging
+from src.mcp.api_client import APIClient, startup_health_check
+from src.mcp.errors import MCPError
+from src.mcp.utils import create_error_response
 
 logger = logging.getLogger(__name__)
-
-
-from src.mcp.utils import create_error_response
-from src.mcp.handlers_entries import (
-    make_read_entries_handler,
-    make_write_entry_handler,
-    make_update_entry_handler,
-    make_delete_entry_handler,
-)
-from src.mcp.handlers_guidelines import make_get_guidelines_handler
 
 # Initialize MCP server
 mcp = FastMCP("CHL MCP Server")
@@ -90,40 +91,17 @@ TOOL_INDEX = [
     },
 ]
 
-# Global state (initialized on startup)
+# Global state
 config = None
-db = None
-search_service: Optional[SearchService] = None
+api_client: Optional[APIClient] = None
 _initialized = False
 
 
-def _build_categories_payload() -> Dict[str, Any]:
-    """Collect categories payload shared between startup broadcast and tool"""
-    if db is None:
-        raise RuntimeError("Server not initialized. Check configuration.")
-
-    with db.session_scope() as session:
-        category_repo = CategoryRepository(session)
-        categories_db = category_repo.get_all()
-
-        # Allow empty set (fresh installs before seeding)
-        categories = [
-            {"code": cat.code, "name": cat.name}
-            for cat in categories_db
-        ]
-
-    return {"categories": categories}
-
-
 def _setup_logging(config) -> None:
-    """Configure root logger with console and rotating file handler
+    """Configure root logger with console and rotating file handler."""
+    from logging.handlers import RotatingFileHandler
 
-    - Logs to stdout and to a file under <CHL_EXPERIENCE_ROOT>/log/chl_server.log
-    - Rotates at ~5MB, keeping 3 backups
-    - Level controlled by CHL_LOG_LEVEL (default INFO)
-    """
     root = logging.getLogger()
-    # Map string level to numeric
     level = getattr(logging, str(getattr(config, 'log_level', 'INFO')).upper(), logging.INFO)
     root.setLevel(level)
 
@@ -140,235 +118,86 @@ def _setup_logging(config) -> None:
         existing_targets.add(target)
 
     # Console handler
-    import sys as _sys
-    if getattr(_sys, 'stdout', None) not in existing_targets:
+    if sys.stdout not in existing_targets:
         ch = logging.StreamHandler()
         ch.setLevel(level)
         ch.setFormatter(fmt)
         root.addHandler(ch)
 
-    # File handler under <experience_root>/log/
-    log_dir = Path(getattr(config, 'experience_root', 'data')) / 'log'
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / 'chl_server.log'
-
-    if str(log_path) not in existing_targets:
-        fh = RotatingFileHandler(str(log_path), maxBytes=5 * 1024 * 1024, backupCount=3)
-        fh.setLevel(level)
-        fh.setFormatter(fmt)
-        root.addHandler(fh)
-
-    logging.getLogger(__name__).info(f"Logging initialized. Level={logging.getLevelName(level)}, file={log_path}")
-
-
-@mcp.tool()
-def list_categories() -> Dict[str, Any]:
-    """
-    Return the current set of available category shelves.
-
-    Example:
-        {}
-    
-    Returns:
-        Dictionary with 'categories' list containing code and name for each category
-    """
+    # File handler
     try:
-        payload = _build_categories_payload()
-        return payload
-    
-    except (RuntimeError, ValueError) as e:
-        return create_error_response("INVALID_REQUEST", str(e), retryable=False)
-    
-    except Exception as e:
-        return create_error_response("SERVER_ERROR", str(e), retryable=False)
-
-
-def _init_search_service(session, config) -> SearchService:
-    """Initialize search service ensuring vector search is available.
-
-    Raises:
-        RuntimeError: If required ML dependencies or GGUF models are missing.
-    """
-    try:
-        from src.embedding.client import EmbeddingClient
-        from src.embedding.reranker import RerankerClient
-        from src.search.faiss_index import FAISSIndexManager
-        from src.search.vector_provider import VectorFAISSProvider
-    except ImportError as e:
-        message = (
-            "Vector search requires the ML dependencies. "
-            "Install them with `uv sync --python 3.11 --extra ml` and rerun the server."
-        )
-        logger.error(message)
-        raise RuntimeError(message) from e
-
-    # Helper to redirect native stderr (llama.cpp) to server log
-    from contextlib import contextmanager
-    import os as _os, sys as _sys
-    @contextmanager
-    def _redirect_native_stderr():
         log_dir = Path(getattr(config, 'experience_root', 'data')) / 'log'
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / 'chl_server.log'
-        f = log_path.open('a')
-        try:
-            fd = _sys.stderr.fileno()
-            saved = _os.dup(fd)
-            _os.dup2(f.fileno(), fd)
-            try:
-                yield
-            finally:
-                try:
-                    _os.dup2(saved, fd)
-                finally:
-                    _os.close(saved)
-        finally:
-            try:
-                f.close()
-            except Exception:
-                pass
 
-    embedding_client = None
-    try:
-        with _redirect_native_stderr():
-            embedding_client = EmbeddingClient(
-                model_repo=config.embedding_repo,
-                quantization=config.embedding_quant,
-                n_gpu_layers=0  # CPU-only by default, set >0 for GPU offloading
-            )
-        logger.info(f"Embedding loaded: {config.embedding_repo} [{config.embedding_quant}]")
-    except FileNotFoundError:
-        logger.warning(
-            "Embedding model not found. Run `python scripts/setup.py --download-models` "
-            "to enable vector search."
-        )
+        if log_path not in existing_targets:
+            fh = RotatingFileHandler(str(log_path), maxBytes=5_242_880, backupCount=3)
+            fh.setLevel(level)
+            fh.setFormatter(fmt)
+            root.addHandler(fh)
+
+        logging.getLogger(__name__).info(f"Logging initialized. Level={logging.getLevelName(level)}, file={log_path}")
     except Exception as e:
-        logger.warning(f"Failed to initialize embedding model; continuing without vector search: {e}")
-
-    faiss_manager = None
-    if embedding_client is not None:
-        try:
-            faiss_manager = FAISSIndexManager(
-                index_dir=config.faiss_index_path,
-                model_name=config.embedding_model,
-                dimension=embedding_client.embedding_dimension,
-                session=session
-            )
-        except Exception as e:
-            logger.warning(f"Failed to initialize FAISS index; continuing without vector search: {e}")
-
-    reranker_client = None
-    if embedding_client is not None and faiss_manager is not None:
-        try:
-            with _redirect_native_stderr():
-                reranker_client = RerankerClient(
-                    model_repo=config.reranker_repo,
-                    quantization=config.reranker_quant,
-                    n_gpu_layers=0  # CPU-only by default
-                )
-            logger.info(f"Reranker loaded: {config.reranker_repo} [{config.reranker_quant}]")
-        except FileNotFoundError:
-            logger.warning(
-                "Reranker model not found. Run `python scripts/setup.py --download-models` "
-                "to enable reranking."
-            )
-        except Exception as e:
-            logger.warning(f"Failed to initialize reranker; continuing without reranking: {e}")
-
-    vector_provider = None
-    if embedding_client is not None and faiss_manager is not None:
-        try:
-            vector_provider = VectorFAISSProvider(
-                session=session,
-                index_manager=faiss_manager,
-                embedding_client=embedding_client,
-                reranker_client=reranker_client,
-                topk_retrieve=getattr(config, "topk_retrieve", 100),
-                topk_rerank=getattr(config, "topk_rerank", 40),
-            )
-        except Exception as e:
-            logger.warning(f"Vector provider initialization failed, falling back to sqlite_text: {e}")
-
-    primary_provider = "sqlite_text"
-    fallback_enabled = True
-
-    if vector_provider and vector_provider.is_available:
-        primary_provider = "vector_faiss"
-        logger.info("✓ Vector search enabled (vector_faiss)")
-        logger.info(f"  - Embedding model: {config.embedding_model}")
-        logger.info(f"  - FAISS index: {faiss_manager.index.ntotal} vectors")
-        logger.info(f"  - Reranker: {config.reranker_model}")
-    else:
-        logger.warning(
-            "Vector search unavailable. Running in text-only mode; install ML extras or rebuild the FAISS index."
-        )
-
-    return SearchService(
-        session,
-        primary_provider=primary_provider,
-        fallback_enabled=fallback_enabled,
-        max_retries=getattr(config, "search_fallback_retries", 1),
-        vector_provider=vector_provider,
-    )
+        logger.warning(f"Failed to initialize file logging: {e}")
 
 
 def _build_handshake_payload() -> Dict[str, Any]:
-    """Return startup instructions shared with MCP clients."""
-    category_payload = _build_categories_payload()
-    search_payload: Dict[str, Any] = {
-        "primary_provider": getattr(search_service, "primary_provider_name", "sqlite_text"),
-        "vector_available": False,
-        "fallback_enabled": getattr(search_service, "fallback_enabled", True),
-        "topk": {
-            "retrieve": getattr(config, "topk_retrieve", None),
-            "rerank": getattr(config, "topk_rerank", None),
-        },
-    }
-
+    """Build startup instructions payload from API server."""
     try:
-        vector_provider = getattr(search_service, "get_vector_provider", lambda: None)()
-        search_payload["vector_available"] = bool(vector_provider and vector_provider.is_available)
-    except Exception:
-        search_payload["vector_available"] = False
+        # Fetch categories from API
+        categories_data = api_client.request("GET", "/api/v1/categories/")
 
-    if not search_payload["vector_available"]:
-        search_payload["status"] = "degraded"
-        search_payload["hint"] = (
-            "Vector search disabled; responses use sqlite_text fallback. "
-            "Install ML extras and rebuild embeddings to restore semantic search."
-        )
-    else:
-        search_payload["status"] = "ok"
+        # Fetch health/search status from API
+        health_data = api_client.check_health()
 
-    return {
-        "version": SERVER_VERSION,
-        "workflow_mode": {
-            "default": "generator",
-            "notes": (
-                "Sessions start in Generator mode. Load generator guidelines first and "
-                "switch to evaluator deliberately when reflecting on completed work."
-            ),
-            "guidelines": {
-                "generator": "Use guide_type='generator' to fetch the authoring manual.",
-                "evaluator": "Use guide_type='evaluator' only after generator work is done."
+        # Build search payload from health data
+        search_payload: Dict[str, Any] = {
+            "primary_provider": "vector_faiss" if health_data.get("components", {}).get("faiss_index", {}).get("status") == "healthy" else "sqlite_text",
+            "vector_available": health_data.get("components", {}).get("faiss_index", {}).get("status") == "healthy",
+            "fallback_enabled": True,
+            "status": health_data.get("status", "unknown")
+        }
+
+        if health_data.get("status") == "degraded":
+            search_payload["hint"] = (
+                "Vector search disabled; responses use sqlite_text fallback. "
+                "Install ML extras and rebuild embeddings to restore semantic search."
+            )
+
+        return {
+            "version": SERVER_VERSION,
+            "workflow_mode": {
+                "default": "generator",
+                "notes": (
+                    "Sessions start in Generator mode. Load generator guidelines first and "
+                    "switch to evaluator deliberately when reflecting on completed work."
+                ),
+                "guidelines": {
+                    "generator": "Use guide_type='generator' to fetch the authoring manual.",
+                    "evaluator": "Use guide_type='evaluator' only after generator work is done."
+                },
             },
-        },
-        "tool_index": TOOL_INDEX,
-        "search": search_payload,
-        **category_payload,
-    }
+            "tool_index": TOOL_INDEX,
+            "search": search_payload,
+            "categories": categories_data.get("categories", []),
+        }
+    except Exception as e:
+        logger.error(f"Failed to build handshake payload: {e}")
+        return {
+            "version": SERVER_VERSION,
+            "error": str(e),
+            "tool_index": TOOL_INDEX
+        }
 
 
 def init_server():
-    """Initialize server with configuration"""
-    global config, db, search_service, _initialized
+    """Initialize server with configuration and API client."""
+    global config, api_client, _initialized
 
     if _initialized:
         logger.info("init_server() called after initialization; reusing existing services.")
         try:
             mcp.instructions = json.dumps(_build_handshake_payload())
-        except (RuntimeError, ValueError) as e:
-            mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
         except Exception as e:
             mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
         return
@@ -380,60 +209,218 @@ def init_server():
     try:
         _setup_logging(config)
     except Exception as e:
-        # Fall back silently; logging to stdout will still work
         print(f"Warning: failed to initialize file logging: {e}")
 
-    # Initialize database
-    db = init_database(config.database_path, config.database_echo)
-    try:
-        db.create_tables()
-    except Exception:
-        # If tables already exist or creation fails harmlessly, proceed
-        pass
+    # Check if we should use API mode or direct database mode
+    if not config.use_api:
+        logger.warning("API mode disabled (CHL_USE_API=0). Delegating to direct database mode.")
+        # Import and use direct MCP server instead
+        from src.mcp_server_direct import mcp as direct_mcp, init_server as direct_init_server
+        direct_init_server()
+        # Replace our mcp instance with the direct one
+        globals()['mcp'] = direct_mcp
+        _initialized = True
+        return
 
-    # Validate database initialization (non-fatal if empty; seeding can run later)
-    try:
-        with db.session_scope() as session:
-            from src.storage.repository import CategoryRepository
-            cat_repo = CategoryRepository(session)
-            _ = cat_repo.get_all()
-    except Exception as e:
-        raise RuntimeError(
-            "Failed to validate CHL database initialization. "
-            "Ensure `scripts/setup.py` has completed successfully."
-        ) from e
+    # Initialize API client
+    logger.info(f"Initializing HTTP API client: {config.api_base_url}")
+    api_client = APIClient(
+        base_url=config.api_base_url,
+        timeout=config.api_timeout,
+        circuit_breaker_threshold=config.api_circuit_breaker_threshold,
+        circuit_breaker_timeout=config.api_circuit_breaker_timeout
+    )
 
-    # Initialize search service with mandatory vector search components
-    # Note: Using long-lived session for server lifetime
-    session = db.get_session()
-    try:
-        search_service = _init_search_service(session, config)
-    except Exception:
-        session.close()
-        raise
-    try:
-        logger.info(
-            f"Embed on write: {'enabled' if getattr(config, 'embed_on_write', False) else 'disabled'}"
+    # Perform startup health check
+    if not startup_health_check(api_client, max_wait=config.api_health_check_max_wait):
+        logger.error(
+            "Cannot start MCP server: API is unavailable. "
+            "Ensure API server is running or set CHL_USE_API=0 for direct database mode."
         )
-    except Exception:
-        pass
+        sys.exit(1)
 
-    # Register moved tools (search-related) after services are ready
-    mcp.tool()(make_read_entries_handler(db, config, search_service))
-    mcp.tool()(make_write_entry_handler(db, config, search_service))
-    mcp.tool()(make_update_entry_handler(db, config, search_service))
-    mcp.tool()(make_delete_entry_handler(db, config, search_service))
-    mcp.tool()(make_get_guidelines_handler(db))
+    logger.info("API health check passed. MCP server ready.")
 
-    # Broadcast categories in initial handshake
+    # Register tools
+    mcp.tool()(list_categories)
+    mcp.tool()(read_entries)
+    mcp.tool()(write_entry)
+    mcp.tool()(update_entry)
+    mcp.tool()(delete_entry)
+    mcp.tool()(get_guidelines)
+
+    # Build and set handshake payload
     try:
         mcp.instructions = json.dumps(_build_handshake_payload())
-    except (RuntimeError, ValueError) as e:
-        mcp.instructions = json.dumps(create_error_response("INVALID_REQUEST", str(e), retryable=False))
     except Exception as e:
         mcp.instructions = json.dumps(create_error_response("SERVER_ERROR", str(e), retryable=False))
     else:
         _initialized = True
+
+
+# Tool implementations - HTTP API shim
+
+def list_categories() -> Dict[str, Any]:
+    """
+    Return the current set of available category shelves.
+
+    Example:
+        {}
+
+    Returns:
+        Dictionary with 'categories' list containing code and name for each category
+    """
+    try:
+        return api_client.request("GET", "/api/v1/categories/")
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in list_categories: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def read_entries(
+    entity_type: str,
+    category_code: str,
+    query: str = None,
+    ids: list = None,
+    limit: int = None
+) -> Dict[str, Any]:
+    """
+    Retrieve experiences or manuals from a category by ids or semantic query.
+
+    Example:
+        read_entries(entity_type='experience', category_code='PGS', query='handoff checklist')
+    """
+    try:
+        payload = {
+            "entity_type": entity_type,
+            "category_code": category_code
+        }
+        if query is not None:
+            payload["query"] = query
+        if ids is not None:
+            payload["ids"] = ids
+        if limit is not None:
+            payload["limit"] = limit
+
+        return api_client.request("POST", "/api/v1/entries/read", json=payload)
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in read_entries: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def write_entry(
+    entity_type: str,
+    category_code: str,
+    data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Create a new experience or manual entry in the requested category.
+
+    Example:
+        write_entry('experience', 'PGS', {
+            'section': 'useful',
+            'title': 'Checklist the spec handoff',
+            'playbook': 'Review the Figma comments before handoff.',
+            'context': {'note': 'Only used when section is contextual.'}
+        })
+    """
+    try:
+        payload = {
+            "entity_type": entity_type,
+            "category_code": category_code,
+            "data": data
+        }
+        return api_client.request("POST", "/api/v1/entries/write", json=payload)
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in write_entry: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def update_entry(
+    entity_type: str,
+    category_code: str,
+    entry_id: str,
+    updates: Dict[str, Any],
+    force_contextual: bool = False
+) -> Dict[str, Any]:
+    """
+    Update an existing experience or manual entry by id.
+
+    Example:
+        update_entry('manual', 'PGS', 'MNL-PGS-20250115-104200123456', {
+            'summary': 'Adds audit checklist step.'
+        })
+    """
+    try:
+        payload = {
+            "entity_type": entity_type,
+            "category_code": category_code,
+            "entry_id": entry_id,
+            "updates": updates,
+            "force_contextual": force_contextual
+        }
+        return api_client.request("POST", "/api/v1/entries/update", json=payload)
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in update_entry: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def delete_entry(
+    entity_type: str,
+    category_code: str,
+    entry_id: str
+) -> Dict[str, Any]:
+    """
+    Delete a manual entry from a category (experiences cannot be deleted).
+
+    Example:
+        delete_entry('manual', 'PGS', 'MNL-PGS-20250115-104200123456')
+    """
+    try:
+        payload = {
+            "entity_type": entity_type,
+            "category_code": category_code,
+            "entry_id": entry_id
+        }
+        return api_client.request("DELETE", "/api/v1/entries/delete", json=payload)
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in delete_entry: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def get_guidelines(guide_type: str, version: str = None) -> Dict[str, Any]:
+    """
+    Return the generator or evaluator workflow manual from the GLN category.
+
+    Example:
+        get_guidelines(guide_type='generator')
+    """
+    try:
+        params = {}
+        if version is not None:
+            params["version"] = version
+
+        path = f"/api/v1/guidelines/{guide_type}"
+        if params:
+            from urllib.parse import urlencode
+            path = f"{path}?{urlencode(params)}"
+
+        return api_client.request("GET", path)
+    except MCPError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error in get_guidelines: {e}")
+        raise MCPError(f"Unexpected error: {e}")
 
 
 # Initialize on module load

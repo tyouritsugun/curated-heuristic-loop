@@ -37,6 +37,14 @@ Thresholds:
 - CHL_TOPK_RETRIEVE: FAISS candidates (default: 100)
 - CHL_TOPK_RERANK: Reranker candidates (default: 40)
 
+API Client (Phase 2):
+- CHL_USE_API: Use HTTP API instead of direct database (default: 1; set to 0 for fallback mode)
+- CHL_API_BASE_URL: API server base URL (default: http://localhost:8000)
+- CHL_API_TIMEOUT: HTTP request timeout in seconds (default: 30.0)
+- CHL_API_HEALTH_CHECK_MAX_WAIT: Max seconds to wait for API health on startup (default: 30)
+- CHL_API_CIRCUIT_BREAKER_THRESHOLD: Failures before circuit breaker opens (default: 5)
+- CHL_API_CIRCUIT_BREAKER_TIMEOUT: Seconds before circuit breaker retries (default: 60)
+
 Note: Author is automatically populated from the OS username during core setup.
 """
 import os
@@ -136,6 +144,14 @@ class Config:
         # Inline embedding on writes/updates (enabled by default)
         # Set CHL_EMBED_ON_WRITE=0 to disable
         self.embed_on_write = os.getenv("CHL_EMBED_ON_WRITE", "1") == "1"
+
+        # API client configuration (Phase 2)
+        self.use_api = os.getenv("CHL_USE_API", "1") == "1"  # If False, use direct database (emergency fallback)
+        self.api_base_url = os.getenv("CHL_API_BASE_URL", "http://localhost:8000")
+        self.api_timeout = float(os.getenv("CHL_API_TIMEOUT", "30.0"))
+        self.api_health_check_max_wait = int(os.getenv("CHL_API_HEALTH_CHECK_MAX_WAIT", "30"))
+        self.api_circuit_breaker_threshold = int(os.getenv("CHL_API_CIRCUIT_BREAKER_THRESHOLD", "5"))
+        self.api_circuit_breaker_timeout = int(os.getenv("CHL_API_CIRCUIT_BREAKER_TIMEOUT", "60"))
 
         # Logging
         # CHL_LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)

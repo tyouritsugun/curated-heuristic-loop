@@ -42,61 +42,50 @@ def health_check(
         components["database"] = {"status": "unhealthy", "detail": str(e)}
         overall_status = "unhealthy"
 
-    # Check FAISS index
+    # Check FAISS index and embedding model via vector provider
     try:
-        if hasattr(search_service, 'faiss_index_manager') and search_service.faiss_index_manager:
-            if search_service.faiss_index_manager.is_available:
-                index_size = search_service.faiss_index_manager.index.ntotal
+        if search_service and hasattr(search_service, 'get_vector_provider'):
+            vector_provider = search_service.get_vector_provider()
+
+            if vector_provider and vector_provider.is_available:
+                # FAISS is available
+                index_size = vector_provider.index_manager.index.ntotal
                 components["faiss_index"] = {
                     "status": "healthy",
                     "detail": f"{index_size} vectors"
                 }
+
+                # Embedding model is available
+                components["embedding_model"] = {
+                    "status": "healthy",
+                    "detail": "Model loaded and operational"
+                }
             else:
+                # Vector provider not available, using text search fallback
                 components["faiss_index"] = {
                     "status": "degraded",
                     "detail": "FAISS not available, using text search fallback"
+                }
+                components["embedding_model"] = {
+                    "status": "degraded",
+                    "detail": "Embedding model not available"
                 }
                 if overall_status == "healthy":
                     overall_status = "degraded"
         else:
             components["faiss_index"] = {
                 "status": "degraded",
-                "detail": "FAISS index manager not initialized"
+                "detail": "Search service not initialized"
             }
-            if overall_status == "healthy":
-                overall_status = "degraded"
-    except Exception as e:
-        logger.warning(f"FAISS health check failed: {e}")
-        components["faiss_index"] = {"status": "degraded", "detail": str(e)}
-        if overall_status == "healthy":
-            overall_status = "degraded"
-
-    # Check embedding model
-    try:
-        if hasattr(search_service, 'embedding_client') and search_service.embedding_client:
-            # Check if model is loaded
-            if hasattr(search_service.embedding_client, 'model') and search_service.embedding_client.model:
-                model_info = "Model loaded"
-                components["embedding_model"] = {
-                    "status": "healthy",
-                    "detail": model_info
-                }
-            else:
-                components["embedding_model"] = {
-                    "status": "degraded",
-                    "detail": "Embedding client exists but model not loaded"
-                }
-                if overall_status == "healthy":
-                    overall_status = "degraded"
-        else:
             components["embedding_model"] = {
                 "status": "degraded",
-                "detail": "Embedding model not available"
+                "detail": "Search service not initialized"
             }
             if overall_status == "healthy":
                 overall_status = "degraded"
     except Exception as e:
-        logger.warning(f"Embedding model health check failed: {e}")
+        logger.warning(f"Vector provider health check failed: {e}")
+        components["faiss_index"] = {"status": "degraded", "detail": str(e)}
         components["embedding_model"] = {"status": "degraded", "detail": str(e)}
         if overall_status == "healthy":
             overall_status = "degraded"
