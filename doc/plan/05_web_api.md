@@ -65,6 +65,7 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 - Use explicit `embedding_status` flags (`pending`, `embedded`, `failed`) so writes can commit quickly while background workers complete the embedding and FAISS update; only flip the status to `embedded` once both operations succeed, otherwise mark `failed` and expose requeue tooling. The API bootstrap sequence (in `src/background/`) should automatically requeue any entries still marked `pending`.
 - Embed queue workers must be idempotent: dedupe outstanding jobs, allow safe retries, and verify before overwriting vectors so double-processing does not corrupt the index; codify this inside the queue utilities introduced in `src/background/`.
 - During bulk imports (for example, loading data from Google Sheets), drain the queue and stop (or require the operator to stop) the API server so the database and FAISS index can be rebuilt cleanly before traffic resumes.
+- Spreadsheet imports should treat `embedding_status` as write-only metadata: ignore incoming values from Google Sheets and reset all imported rows to `pending` so the post-import job queue can regenerate embeddings deterministically.
 - Keep developer tooling ergonomic: the `scripts/tweak/` utilities should gain an API-backed mode while temporarily preserving direct-database access for local debugging until the HTTP paths are stable.
 
 ## Delivery Plan
