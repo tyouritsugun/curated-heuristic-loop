@@ -74,6 +74,13 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 - **Phase 3 - Shared search & indexing**: Migrate FAISS management into the API, expose a simple search endpoint, and confirm that data written by one client surfaces immediately for all others.
 - **Phase 4 - Async embedding queue**: Introduce the in-process queue, enqueue embeddings on write/update, and expose lightweight status/metrics endpoints. Focus on resilience rather than retry automation for v1.
 
+### Detailed Phase Specifications
+For implementation details, see the phase-specific specifications:
+- [Phase 1: HTTP API Foundation](./05_web_api/phase1_http_api_foundation.md) - FastAPI service, dependencies, routers, health checks, observability
+- [Phase 2: MCP Integration](./05_web_api/phase2_mcp_integration.md) - HTTP client shim, error translation, circuit breaker, backward compatibility
+- [Phase 3: Shared Search & Indexing](./05_web_api/phase3_shared_search_indexing.md) - FAISS locking, persistence strategy, concurrency control, recovery procedures
+- [Phase 4: Async Embedding Queue](./05_web_api/phase4_async_embedding_queue.md) - Background workers, queue management, admin endpoints, bulk import coordination
+
 ## Risks & Mitigations
 - **API downtime blocks all clients** → Keep MCP-side circuit breakers and clear error messaging; document manual restart steps.
 - **Queue overload or stuck jobs** → Cap queue size, surface queue depth in metrics, and allow manual draining.
