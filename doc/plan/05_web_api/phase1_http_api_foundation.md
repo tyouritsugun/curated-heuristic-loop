@@ -354,20 +354,20 @@ dependencies = [
     "tqdm>=4.65.0",
     "pyyaml>=6.0",
     # NEW - Phase 1 additions
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "httpx>=0.25.0",
+    "fastapi>=0.114.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
     "python-multipart>=0.0.6",
-    "pydantic>=2.0.0",
+    "pydantic>=2.6.0",
 ]
 ```
 
 **Justifications**:
-- `fastapi>=0.104.0` - Core API framework with async support
-- `uvicorn[standard]>=0.24.0` - ASGI server with performance optimizations (uvloop, httptools)
-- `httpx>=0.25.0` - Async HTTP client (needed in Phase 2 for MCP shim)
+- `fastapi>=0.114.0` - Core API framework with async support, improved performance and type hints
+- `uvicorn[standard]>=0.30.0` - ASGI server with performance optimizations (uvloop, httptools), latest stability fixes
+- `httpx>=0.27.0` - Async HTTP client (needed in Phase 2 for MCP shim), improved connection pooling
 - `python-multipart>=0.0.6` - Form data parsing (FastAPI dependency)
-- `pydantic>=2.0.0` - Data validation (FastAPI dependency)
+- `pydantic>=2.6.0` - Data validation (FastAPI dependency), improved validation performance
 
 ### Database Session Management Strategy
 

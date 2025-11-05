@@ -219,6 +219,106 @@ class APIClient:
         self.client.close()
 ```
 
+#### 3a. Shared API Client for Scripts
+
+**File**: `src/api_client.py` (new)
+
+Lightweight HTTP client wrapper for operational scripts (import, export, rebuild, etc.) to call the API without duplicating request code:
+
+```python
+"""Shared API client for operational scripts.
+
+Usage:
+    from src.api_client import get_api_client
+
+    client = get_api_client()  # Uses CHL_API_BASE_URL env var
+
+    # Pause queue before bulk import
+    client.pause_queue()
+
+    # Wait for queue to drain
+    client.drain_queue(timeout=300)
+
+    # Resume queue
+    client.resume_queue()
+"""
+import os
+import httpx
+import logging
+from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class ScriptAPIClient:
+    """Simple API client for operational scripts."""
+
+    def __init__(self, base_url: Optional[str] = None, timeout: float = 30.0):
+        self.base_url = (base_url or os.getenv("CHL_API_BASE_URL", "http://localhost:8000")).rstrip('/')
+        self.timeout = timeout
+
+    def is_available(self) -> bool:
+        """Check if API server is available."""
+        try:
+            response = httpx.get(f"{self.base_url}/health", timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def pause_queue(self) -> Dict[str, Any]:
+        """Pause background workers."""
+        response = httpx.post(f"{self.base_url}/admin/queue/pause", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def resume_queue(self) -> Dict[str, Any]:
+        """Resume background workers."""
+        response = httpx.post(f"{self.base_url}/admin/queue/resume", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def drain_queue(self, timeout: int = 300) -> Dict[str, Any]:
+        """Wait for queue to empty."""
+        response = httpx.post(
+            f"{self.base_url}/admin/queue/drain",
+            params={"timeout": timeout},
+            timeout=timeout + 10  # Add buffer for HTTP timeout
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_queue_status(self) -> Dict[str, Any]:
+        """Get queue and worker status."""
+        response = httpx.get(f"{self.base_url}/admin/queue/status", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+def get_api_client(base_url: Optional[str] = None) -> ScriptAPIClient:
+    """Factory function to get API client with default settings."""
+    return ScriptAPIClient(base_url=base_url)
+```
+
+**Usage in scripts/import.py**:
+```python
+from src.api_client import get_api_client
+
+client = get_api_client()
+
+if client.is_available():
+    logger.info("API server detected, coordinating import")
+    client.pause_queue()
+    result = client.drain_queue(timeout=600)
+
+    if result["status"] != "drained":
+        logger.warning("Queue did not fully drain: %s remaining", result.get("remaining"))
+
+    # ... perform import
+
+    client.resume_queue()
+else:
+    logger.warning("API server not available, proceeding with direct database import")
+    # ... perform import
+```
+
 #### 4. Error Translation Layer
 **File**: `src/mcp/errors.py` (new)
 
@@ -456,10 +556,11 @@ else:
 ## Implementation Plan
 
 ### Step 1: Create HTTP Client Infrastructure
-1. Create `src/mcp/api_client.py` with APIClient class
-2. Create `src/mcp/errors.py` with error translation
-3. Add retry logic with tenacity
-4. Add unit tests
+1. Create `src/mcp/api_client.py` with APIClient class (for MCP server)
+2. Create `src/api_client.py` with ScriptAPIClient class (for operational scripts)
+3. Create `src/mcp/errors.py` with error translation
+4. Add retry logic with tenacity
+5. Add unit tests
 
 ### Step 2: Implement Circuit Breaker
 1. Create circuit breaker class
@@ -468,10 +569,16 @@ else:
 
 ### Step 3: Refactor MCP Server
 1. Rename `src/server.py` → `src/mcp_server_direct.py`
-2. Create new `src/server.py` with HTTP shim
-3. Implement all tool handlers with API calls
-4. Add startup health check
-5. Add feature flag for fallback mode
+2. Update references to `src/server.py` in:
+   - `src/config.py:8` (MCP command args)
+   - `README.md:92` and `README.md:115` (Claude Desktop config examples)
+   - `doc/chl_manual.md:123` (usage instructions)
+   - `scripts/setup.py:721` (post-setup instructions)
+   - `doc/architecture.md:15` (architecture diagram)
+3. Create new `src/server.py` with HTTP shim
+4. Implement all tool handlers with API calls
+5. Add startup health check
+6. Add feature flag for fallback mode
 
 ### Step 4: Error Handling
 1. Implement error translation for all HTTP status codes

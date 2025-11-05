@@ -47,6 +47,7 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 - `src/api_server.py` (new) - FastAPI entrypoint that serves the shared HTTP surface.
 - `src/mcp/` - protocol handlers, request/response models, and the API client adapter used by the stdio process.
 - `src/api/` (new) - FastAPI app, routers, and dependency wiring that expose CRUD/search/queue endpoints.
+- `src/api_client.py` (new) - Shared HTTP client module for operational scripts to call the API without duplicating request code.
 - `src/storage/` - SQLite schema, repositories, and import/export helpers consumed by both layers.
 - `src/search/` - FAISS index management and vector search providers moved behind API-friendly interfaces.
 - `src/embedding/` - Embedding client, service, and reranker code reused by background workers.

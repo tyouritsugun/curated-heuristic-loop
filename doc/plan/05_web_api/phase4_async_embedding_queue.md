@@ -663,6 +663,11 @@ def requeue_stale(threshold_minutes: int = 30):
 3. Import data with `embedding_status='pending'`
 4. Resume queue to process embeddings
 
+**Critical Requirements**:
+- **Downtime Required**: Import must run during maintenance window when API can be paused/drained
+- **Embedding Status Reset**: Import script **MUST** explicitly set `embedding_status='pending'` for ALL imported rows, ignoring any incoming values from Google Sheets (already implemented in scripts/import.py:363 and :386)
+- **API Coordination**: If API is running, import must call pause → drain → import → resume sequence
+
 **Solution**: Update `scripts/import.py`:
 
 ```python
@@ -694,6 +699,9 @@ def main():
             logger.warning("Queue did not drain completely")
 
     # ... existing import logic
+    # Note: Existing code already sets embedding_status='pending' explicitly
+    # on all imported rows (lines 363, 386), ignoring any incoming values.
+    # This ensures all imported data will be processed by the queue.
 
     if api_running:
         # Resume queue
