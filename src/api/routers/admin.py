@@ -177,3 +177,127 @@ def trigger_save(
             status_code=500,
             detail=f"Save failed: {str(e)}"
         )
+
+
+# Queue management endpoints (Phase 4)
+
+@router.get("/queue/status")
+def get_queue_status() -> Dict[str, Any]:
+    """
+    Get queue status: pending jobs, failed jobs, worker health.
+
+    Returns:
+    - queue: Counts of pending and failed jobs
+    - workers: Status of each worker (jobs processed, running state, etc.)
+    """
+    from src.api_server import worker_pool
+
+    if not worker_pool:
+        raise HTTPException(status_code=503, detail="Worker pool not initialized")
+
+    worker_status = worker_pool.get_status()
+    queue_depth = worker_pool.get_queue_depth()
+
+    return {
+        "queue": queue_depth,
+        "workers": worker_status,
+    }
+
+
+@router.post("/queue/pause")
+def pause_queue() -> Dict[str, str]:
+    """
+    Pause all workers.
+
+    Use this before bulk imports or maintenance operations.
+    """
+    from src.api_server import worker_pool
+
+    if not worker_pool:
+        raise HTTPException(status_code=503, detail="Worker pool not initialized")
+
+    worker_pool.pause_all()
+    return {"status": "paused"}
+
+
+@router.post("/queue/resume")
+def resume_queue() -> Dict[str, str]:
+    """Resume all workers."""
+    from src.api_server import worker_pool
+
+    if not worker_pool:
+        raise HTTPException(status_code=503, detail="Worker pool not initialized")
+
+    worker_pool.resume_all()
+    return {"status": "resumed"}
+
+
+@router.post("/queue/retry-failed")
+def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
+    """
+    Retry all failed embeddings by resetting status to 'pending'.
+
+    Returns:
+    - retried: Counts of entries reset to pending
+    """
+    from src.storage.schema import Experience, CategoryManual
+
+    # Reset experiences
+    exp_count = session.query(Experience).filter(
+        Experience.embedding_status == 'failed'
+    ).update({"embedding_status": "pending"})
+
+    # Reset manuals
+    man_count = session.query(CategoryManual).filter(
+        CategoryManual.embedding_status == 'failed'
+    ).update({"embedding_status": "pending"})
+
+    session.commit()
+
+    return {
+        "retried": {
+            "experiences": exp_count,
+            "manuals": man_count,
+            "total": exp_count + man_count,
+        }
+    }
+
+
+@router.post("/queue/drain")
+def drain_queue(timeout: int = 300) -> Dict[str, Any]:
+    """
+    Wait for queue to be empty (all pending jobs processed).
+
+    Args:
+        timeout: Maximum seconds to wait (default 300 = 5 minutes)
+
+    Returns:
+        Status after drain attempt with elapsed time and remaining jobs
+    """
+    import time
+    from src.api_server import worker_pool
+
+    if not worker_pool:
+        raise HTTPException(status_code=503, detail="Worker pool not initialized")
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        depth = worker_pool.get_queue_depth()
+        pending = depth["pending"]["total"]
+
+        if pending == 0:
+            return {
+                "status": "drained",
+                "elapsed": time.time() - start_time,
+            }
+
+        # Wait a bit before checking again
+        time.sleep(5)
+
+    # Timeout reached
+    depth = worker_pool.get_queue_depth()
+    return {
+        "status": "timeout",
+        "elapsed": timeout,
+        "remaining": depth["pending"]["total"],
+    }
