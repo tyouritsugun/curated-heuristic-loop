@@ -100,7 +100,9 @@ async def lifespan(app: FastAPI):
                 try:
                     # Use recovery logic to load FAISS index with automatic fallback
                     with db.session_scope() as temp_session:
-                        faiss_manager = initialize_faiss_with_recovery(config, temp_session)
+                        faiss_manager = initialize_faiss_with_recovery(
+                            config, temp_session, embedding_client
+                        )
 
                     if faiss_manager:
                         # Wrap in ThreadSafeFAISSManager for concurrency control

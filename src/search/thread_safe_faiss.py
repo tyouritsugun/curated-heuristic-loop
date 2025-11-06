@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 def initialize_faiss_with_recovery(
     config,
-    session: Session
+    session: Session,
+    embedding_client=None
 ) -> Optional[FAISSIndexManager]:
     """Initialize FAISS index with automatic recovery.
 
@@ -28,18 +29,22 @@ def initialize_faiss_with_recovery(
     Args:
         config: Configuration object with FAISS settings
         session: SQLAlchemy session for database access
+        embedding_client: Optional EmbeddingClient for dimension detection (default: None, uses 768)
 
     Returns:
         FAISSIndexManager instance on success, None if FAISS should be disabled
     """
     from src.storage.schema import Embedding
 
+    # Get dimension from embedding client if available, otherwise default to 768
+    dimension = getattr(embedding_client, 'dimension', 768) if embedding_client else 768
+
     # Try to create FAISS manager
     try:
         faiss_manager = FAISSIndexManager(
             index_dir=str(config.faiss_index_path),
             model_name=config.embedding_repo,
-            dimension=768,  # TODO: Get this from embedding client
+            dimension=dimension,
             session=session
         )
     except Exception as e:
