@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 # Global singletons (initialized on startup)
 config = None
 db = None
-app_session = None  # Long-lived session for singleton components
 search_service = None
 faiss_lock = None  # Thread-safe FAISS lock
 
@@ -59,7 +58,7 @@ def configure_logging():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global config, db, app_session, search_service, faiss_lock
+    global config, db, search_service, faiss_lock
 
     logger.info("Starting CHL API server...")
 
@@ -77,16 +76,12 @@ async def lifespan(app: FastAPI):
         faiss_lock = threading.RLock()
         logger.info("FAISS lock initialized")
 
-        # Initialize search service with long-lived session
+        # Initialize search service (sessionless for thread-safety)
         try:
             from src.embedding.client import EmbeddingClient
             from src.search.faiss_index import FAISSIndexManager
             from src.search.vector_provider import VectorFAISSProvider
             from src.embedding.reranker import RerankerClient
-
-            # Create long-lived session for singleton components
-            app_session = db.get_session()
-            logger.info("Created long-lived session for singleton components")
 
             # Try to initialize embedding components
             embedding_client = None
@@ -106,13 +101,15 @@ async def lifespan(app: FastAPI):
 
             if embedding_client:
                 try:
-                    faiss_manager = FAISSIndexManager(
-                        index_dir=config.faiss_index_path,
-                        model_name=config.embedding_model,
-                        dimension=embedding_client.embedding_dimension,
-                        session=app_session
-                    )
-                    logger.info(f"FAISS index loaded: {faiss_manager.index.ntotal} vectors")
+                    # Create temporary session for FAISS index loading
+                    with db.session_scope() as temp_session:
+                        faiss_manager = FAISSIndexManager(
+                            index_dir=config.faiss_index_path,
+                            model_name=config.embedding_model,
+                            dimension=embedding_client.embedding_dimension,
+                            session=temp_session
+                        )
+                        logger.info(f"FAISS index loaded: {faiss_manager.index.ntotal} vectors")
                 except Exception as e:
                     logger.warning(f"FAISS index not available: {e}")
 
@@ -130,7 +127,6 @@ async def lifespan(app: FastAPI):
             if embedding_client and faiss_manager:
                 try:
                     vector_provider = VectorFAISSProvider(
-                        session=app_session,
                         index_manager=faiss_manager,
                         embedding_client=embedding_client,
                         reranker_client=reranker_client,
@@ -144,7 +140,6 @@ async def lifespan(app: FastAPI):
             primary_provider = "vector_faiss" if (vector_provider and vector_provider.is_available) else "sqlite_text"
 
             search_service = SearchService(
-                app_session,
                 primary_provider=primary_provider,
                 fallback_enabled=True,
                 max_retries=getattr(config, "search_fallback_retries", 1),
@@ -167,9 +162,6 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown cleanup
         logger.info("Shutting down CHL API server...")
-        if app_session:
-            app_session.close()
-            logger.info("Long-lived session closed")
         if db:
             db.close()
             logger.info("Database connection closed")

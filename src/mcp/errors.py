@@ -1,5 +1,4 @@
 """Error translation between HTTP and MCP."""
-from typing import Dict, Any
 import httpx
 
 

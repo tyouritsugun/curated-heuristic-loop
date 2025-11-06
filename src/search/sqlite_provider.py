@@ -18,18 +18,18 @@ class SQLiteTextProvider(SearchProvider):
     - No dependencies beyond SQLite
     - Limited semantic understanding (exact/substring match only)
     - Case-insensitive via SQLite LIKE
+
+    Note: This provider is sessionless for thread-safety. All methods
+    accept a session parameter rather than storing it as instance state.
     """
 
-    def __init__(self, session: Session):
-        """Initialize SQLite text provider
-
-        Args:
-            session: SQLAlchemy session for database access
-        """
-        self.session = session
+    def __init__(self):
+        """Initialize SQLite text provider (sessionless)"""
+        pass
 
     def search(
         self,
+        session: Session,
         query: str,
         entity_type: Optional[str] = None,
         category_code: Optional[str] = None,
@@ -55,12 +55,12 @@ class SQLiteTextProvider(SearchProvider):
         try:
             # Search experiences if requested
             if entity_type in (None, 'experience'):
-                exp_results = self._search_experiences(query, category_code, top_k)
+                exp_results = self._search_experiences(session, query, category_code, top_k)
                 results.extend(exp_results)
 
             # Search manuals if requested
             if entity_type in (None, 'manual'):
-                manual_results = self._search_manuals(query, category_code, top_k)
+                manual_results = self._search_manuals(session, query, category_code, top_k)
                 results.extend(manual_results)
 
             # Sort by updated_at DESC (most recent first)
@@ -94,7 +94,7 @@ class SQLiteTextProvider(SearchProvider):
             raise SearchProviderError(f"SQLite text search failed: {e}") from e
 
     def _search_experiences(
-        self, query: str, category_code: Optional[str], limit: int
+        self, session: Session, query: str, category_code: Optional[str], limit: int
     ) -> List[tuple]:
         """Search experiences using LIKE matching
 
@@ -103,7 +103,7 @@ class SQLiteTextProvider(SearchProvider):
         """
         pattern = f"%{query}%"
 
-        q = self.session.query(Experience, Experience.updated_at).filter(
+        q = session.query(Experience, Experience.updated_at).filter(
             (Experience.title.like(pattern)) | (Experience.playbook.like(pattern))
         )
 
@@ -113,7 +113,7 @@ class SQLiteTextProvider(SearchProvider):
         return q.limit(limit).all()
 
     def _search_manuals(
-        self, query: str, category_code: Optional[str], limit: int
+        self, session: Session, query: str, category_code: Optional[str], limit: int
     ) -> List[tuple]:
         """Search manuals using LIKE matching
 
@@ -122,7 +122,7 @@ class SQLiteTextProvider(SearchProvider):
         """
         pattern = f"%{query}%"
 
-        q = self.session.query(CategoryManual, CategoryManual.updated_at).filter(
+        q = session.query(CategoryManual, CategoryManual.updated_at).filter(
             (CategoryManual.title.like(pattern))
             | (CategoryManual.content.like(pattern))
             | (CategoryManual.summary.like(pattern))
@@ -135,6 +135,7 @@ class SQLiteTextProvider(SearchProvider):
 
     def find_duplicates(
         self,
+        session: Session,
         title: str,
         content: str,
         entity_type: str,
@@ -163,11 +164,11 @@ class SQLiteTextProvider(SearchProvider):
         try:
             if entity_type == 'experience':
                 return self._find_experience_duplicates(
-                    title, content, category_code, exclude_id
+                    session, title, content, category_code, exclude_id
                 )
             elif entity_type == 'manual':
                 return self._find_manual_duplicates(
-                    title, content, category_code, exclude_id
+                    session, title, content, category_code, exclude_id
                 )
             else:
                 raise ValueError(f"Invalid entity_type: {entity_type}")
@@ -177,6 +178,7 @@ class SQLiteTextProvider(SearchProvider):
 
     def _find_experience_duplicates(
         self,
+        session: Session,
         title: str,
         playbook: str,
         category_code: Optional[str],
@@ -186,7 +188,7 @@ class SQLiteTextProvider(SearchProvider):
         candidates = []
 
         # 1. Exact title match (highest priority)
-        q = self.session.query(Experience).filter(Experience.title.ilike(title))
+        q = session.query(Experience).filter(Experience.title.ilike(title))
 
         if category_code:
             q = q.filter(Experience.category_code == category_code)
@@ -208,7 +210,7 @@ class SQLiteTextProvider(SearchProvider):
         # 2. Title substring match (if no exact matches)
         if not candidates:
             pattern = f"%{title}%"
-            q = self.session.query(Experience).filter(Experience.title.like(pattern))
+            q = session.query(Experience).filter(Experience.title.like(pattern))
 
             if category_code:
                 q = q.filter(Experience.category_code == category_code)
@@ -231,6 +233,7 @@ class SQLiteTextProvider(SearchProvider):
 
     def _find_manual_duplicates(
         self,
+        session: Session,
         title: str,
         content: str,
         category_code: Optional[str],
@@ -240,7 +243,7 @@ class SQLiteTextProvider(SearchProvider):
         candidates = []
 
         # 1. Exact title match (highest priority)
-        q = self.session.query(CategoryManual).filter(CategoryManual.title.ilike(title))
+        q = session.query(CategoryManual).filter(CategoryManual.title.ilike(title))
 
         if category_code:
             q = q.filter(CategoryManual.category_code == category_code)
@@ -262,7 +265,7 @@ class SQLiteTextProvider(SearchProvider):
         # 2. Title substring match (if no exact matches)
         if not candidates:
             pattern = f"%{title}%"
-            q = self.session.query(CategoryManual).filter(CategoryManual.title.like(pattern))
+            q = session.query(CategoryManual).filter(CategoryManual.title.like(pattern))
 
             if category_code:
                 q = q.filter(CategoryManual.category_code == category_code)
@@ -283,7 +286,7 @@ class SQLiteTextProvider(SearchProvider):
 
         return candidates
 
-    def rebuild_index(self) -> None:
+    def rebuild_index(self, session: Session) -> None:
         """No-op for text provider (no index to rebuild)"""
         pass
 

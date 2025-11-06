@@ -25,28 +25,28 @@ class VectorFAISSProvider(SearchProvider):
     5. Return scored results
 
     Always available: False (depends on FAISS + embedding model)
+
+    Note: This provider is sessionless for thread-safety. All methods
+    accept a session parameter rather than storing it as instance state.
     """
 
     def __init__(
         self,
-        session: Session,
         index_manager: FAISSIndexManager,
         embedding_client: EmbeddingClient,
         reranker_client: Optional['RerankerClient'] = None,
         topk_retrieve: int = 100,
         topk_rerank: int = 40,
     ):
-        """Initialize vector provider
+        """Initialize vector provider (sessionless)
 
         Args:
-            session: SQLAlchemy session for database access
             index_manager: FAISS index manager
             embedding_client: Client for generating embeddings
             reranker_client: Optional reranker for precision (None to disable)
             topk_retrieve: Number of FAISS candidates to retrieve
             topk_rerank: Number of candidates to rerank (must be <= topk_retrieve)
         """
-        self.session = session
         self.index_manager = index_manager
         self.embedding_client = embedding_client
         self.reranker_client = reranker_client
@@ -55,6 +55,7 @@ class VectorFAISSProvider(SearchProvider):
 
     def search(
         self,
+        session: Session,
         query: str,
         entity_type: Optional[str] = None,
         category_code: Optional[str] = None,
@@ -108,13 +109,14 @@ class VectorFAISSProvider(SearchProvider):
             # Apply reranking if enabled
             if self.reranker_client and len(entity_mappings) > 1:
                 entity_mappings = self._rerank_candidates(
+                    session,
                     query,
                     entity_mappings[:self.topk_rerank]
                 )
 
             # Filter by category if specified
             if category_code:
-                entity_mappings = self._filter_by_category(entity_mappings, category_code)
+                entity_mappings = self._filter_by_category(session, entity_mappings, category_code)
 
             # Take top_k results
             entity_mappings = entity_mappings[:top_k]
@@ -146,6 +148,7 @@ class VectorFAISSProvider(SearchProvider):
 
     def find_duplicates(
         self,
+        session: Session,
         title: str,
         content: str,
         entity_type: str,
@@ -156,6 +159,7 @@ class VectorFAISSProvider(SearchProvider):
         """Find potential duplicates using vector similarity
 
         Args:
+            session: Request-scoped SQLAlchemy session
             title: Title to check
             content: Content to check (playbook or manual content)
             entity_type: 'experience' or 'manual'
@@ -209,11 +213,11 @@ class VectorFAISSProvider(SearchProvider):
 
                 # Filter by category if specified
                 if category_code:
-                    entity = self._fetch_entity(mapping['entity_id'], mapping['entity_type'])
+                    entity = self._fetch_entity(session, mapping['entity_id'], mapping['entity_type'])
                     if not entity or entity.category_code != category_code:
                         continue
                 else:
-                    entity = self._fetch_entity(mapping['entity_id'], mapping['entity_type'])
+                    entity = self._fetch_entity(session, mapping['entity_id'], mapping['entity_type'])
 
                 if not entity:
                     continue
@@ -234,7 +238,7 @@ class VectorFAISSProvider(SearchProvider):
 
             # Apply reranking if enabled
             if self.reranker_client and len(candidates) > 1:
-                candidates = self._rerank_duplicates(query_text, candidates[:self.topk_rerank])
+                candidates = self._rerank_duplicates(session, query_text, candidates[:self.topk_rerank])
 
             # Convert to DuplicateCandidate objects
             results = []
@@ -262,7 +266,7 @@ class VectorFAISSProvider(SearchProvider):
         except Exception as e:
             raise SearchProviderError(f"Duplicate detection failed: {e}") from e
 
-    def rebuild_index(self) -> None:
+    def rebuild_index(self, session: Session) -> None:
         """Rebuild FAISS index from embeddings table
 
         This will:
@@ -270,6 +274,9 @@ class VectorFAISSProvider(SearchProvider):
         2. Clear faiss_metadata table
         3. Load all embeddings from database
         4. Rebuild index and metadata
+
+        Args:
+            session: Request-scoped SQLAlchemy session
 
         Raises:
             SearchProviderError: If rebuild fails
@@ -281,11 +288,11 @@ class VectorFAISSProvider(SearchProvider):
             logger.info("Starting FAISS index rebuild")
 
             # Get embedding repository
-            emb_repo = EmbeddingRepository(self.session)
+            emb_repo = EmbeddingRepository(session)
 
             # Clear existing metadata
-            self.session.query(FAISSMetadata).delete()
-            self.session.flush()
+            session.query(FAISSMetadata).delete()
+            session.flush()
 
             # Create new empty index
             self.index_manager._create_new_index()
@@ -329,12 +336,14 @@ class VectorFAISSProvider(SearchProvider):
 
     def _rerank_candidates(
         self,
+        session: Session,
         query: str,
         candidates: List[Dict]
     ) -> List[Dict]:
         """Rerank candidates using cross-encoder
 
         Args:
+            session: Request-scoped SQLAlchemy session
             query: Original query text
             candidates: List of candidate dicts with entity_id, entity_type, score
 
@@ -348,7 +357,7 @@ class VectorFAISSProvider(SearchProvider):
             # Fetch entity content for reranking
             texts = []
             for candidate in candidates:
-                entity = self._fetch_entity(candidate['entity_id'], candidate['entity_type'])
+                entity = self._fetch_entity(session, candidate['entity_id'], candidate['entity_type'])
                 if entity:
                     if candidate['entity_type'] == 'experience':
                         text = f"{entity.title}\n\n{entity.playbook}"
@@ -378,6 +387,7 @@ class VectorFAISSProvider(SearchProvider):
 
     def _rerank_duplicates(
         self,
+        session: Session,
         query_text: str,
         candidates: List[Dict]
     ) -> List[Dict]:
@@ -389,7 +399,7 @@ class VectorFAISSProvider(SearchProvider):
             # Use existing content from candidates
             texts = []
             for candidate in candidates:
-                entity = self._fetch_entity(candidate['entity_id'], candidate['entity_type'])
+                entity = self._fetch_entity(session, candidate['entity_id'], candidate['entity_type'])
                 if entity:
                     if candidate['entity_type'] == 'experience':
                         text = f"{entity.title}\n\n{entity.playbook}"
@@ -415,15 +425,15 @@ class VectorFAISSProvider(SearchProvider):
             logger.warning(f"Reranking failed, using FAISS scores: {e}")
             return candidates
 
-    def _fetch_entity(self, entity_id: str, entity_type: str):
+    def _fetch_entity(self, session: Session, entity_id: str, entity_type: str):
         """Fetch entity from database"""
         try:
             if entity_type == 'experience':
-                return self.session.query(Experience).filter(
+                return session.query(Experience).filter(
                     Experience.id == entity_id
                 ).first()
             else:  # manual
-                return self.session.query(CategoryManual).filter(
+                return session.query(CategoryManual).filter(
                     CategoryManual.id == entity_id
                 ).first()
         except Exception as e:
@@ -432,13 +442,14 @@ class VectorFAISSProvider(SearchProvider):
 
     def _filter_by_category(
         self,
+        session: Session,
         mappings: List[Dict],
         category_code: str
     ) -> List[Dict]:
         """Filter entity mappings by category"""
         filtered = []
         for mapping in mappings:
-            entity = self._fetch_entity(mapping['entity_id'], mapping['entity_type'])
+            entity = self._fetch_entity(session, mapping['entity_id'], mapping['entity_type'])
             if entity and entity.category_code == category_code:
                 filtered.append(mapping)
         return filtered

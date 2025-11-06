@@ -1,7 +1,8 @@
 """Search endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from src.api.dependencies import get_search_service
+from sqlalchemy.orm import Session
+from src.api.dependencies import get_search_service, get_db_session
 from src.api.models import SearchRequest, SearchResponse
 import logging
 
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/api/v1/search", tags=["search"])
 @router.post("/", response_model=SearchResponse)
 def search(
     request: SearchRequest,
+    session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service)
 ):
     """
@@ -26,6 +28,7 @@ def search(
             raise HTTPException(status_code=503, detail="Search service not initialized")
 
         results = search_service.search(
+            session=session,
             query=request.query,
             entity_type=request.entity_type,
             category_code=request.category_code,

@@ -20,27 +20,27 @@ class SearchService:
     - Response normalization
 
     Vector search is optional; when unavailable the service falls back to SQLite text search.
+
+    Note: This service is sessionless for thread-safety. All methods accept
+    a session parameter rather than storing it as instance state.
     """
 
     def __init__(
         self,
-        session: Session,
         primary_provider: Optional[str] = None,
         fallback_enabled: bool = True,
         max_retries: int = 1,
         vector_provider: Optional[SearchProvider] = None,
     ):
-        """Initialize search service
+        """Initialize search service (sessionless)
 
         Args:
-            session: SQLAlchemy session for database access
             primary_provider: Provider name ('sqlite_text' or 'vector_faiss')
                              None defaults to 'vector_faiss' if available, else 'sqlite_text'
             fallback_enabled: Enable automatic fallback to text search
             max_retries: Number of retries before falling back (default: 1)
             vector_provider: Optional VectorFAISSProvider instance (None to disable)
         """
-        self.session = session
         self.fallback_enabled = fallback_enabled
         self.max_retries = max_retries
 
@@ -77,7 +77,7 @@ class SearchService:
             vector_provider: Optional VectorFAISSProvider instance
         """
         # Always register SQLite text provider (always available)
-        self._providers["sqlite_text"] = SQLiteTextProvider(self.session)
+        self._providers["sqlite_text"] = SQLiteTextProvider()
 
         # Register vector provider if provided and available
         if vector_provider and vector_provider.is_available:
@@ -93,6 +93,7 @@ class SearchService:
 
     def search(
         self,
+        session: Session,
         query: str,
         entity_type: Optional[str] = None,
         category_code: Optional[str] = None,
@@ -101,6 +102,7 @@ class SearchService:
         """Search for entities matching query
 
         Args:
+            session: Request-scoped SQLAlchemy session
             query: Search query text
             entity_type: Filter by 'experience' or 'manual' (None for both)
             category_code: Filter by category code (None for all)
@@ -129,6 +131,7 @@ class SearchService:
                 )
 
                 results = provider.search(
+                    session=session,
                     query=query,
                     entity_type=entity_type,
                     category_code=category_code,
@@ -158,6 +161,7 @@ class SearchService:
             try:
                 fallback_provider = self._providers["sqlite_text"]
                 results = fallback_provider.search(
+                    session=session,
                     query=query,
                     entity_type=entity_type,
                     category_code=category_code,
@@ -181,6 +185,7 @@ class SearchService:
 
     def find_duplicates(
         self,
+        session: Session,
         title: str,
         content: str,
         entity_type: str,
@@ -191,6 +196,7 @@ class SearchService:
         """Find potential duplicates of given content
 
         Args:
+            session: Request-scoped SQLAlchemy session
             title: Title of the entity to check
             content: Content of the entity (playbook for experiences, full content for manuals)
             entity_type: 'experience' or 'manual'
@@ -226,6 +232,7 @@ class SearchService:
                 )
 
                 candidates = provider.find_duplicates(
+                    session=session,
                     title=title,
                     content=content,
                     entity_type=entity_type,
@@ -254,6 +261,7 @@ class SearchService:
             try:
                 fallback_provider = self._providers["sqlite_text"]
                 candidates = fallback_provider.find_duplicates(
+                    session=session,
                     title=title,
                     content=content,
                     entity_type=entity_type,
@@ -274,10 +282,11 @@ class SearchService:
             f"Duplicate detection failed after {self.max_retries + 1} attempts"
         )
 
-    def rebuild_index(self, provider_name: Optional[str] = None) -> None:
+    def rebuild_index(self, session: Session, provider_name: Optional[str] = None) -> None:
         """Rebuild search index for specified provider
 
         Args:
+            session: Request-scoped SQLAlchemy session
             provider_name: Provider to rebuild (None for primary provider)
 
         Raises:
@@ -289,7 +298,7 @@ class SearchService:
             provider = self._get_provider(target_provider)
             logger.info(f"Rebuilding index for provider: {provider.name}")
 
-            provider.rebuild_index()
+            provider.rebuild_index(session)
 
             logger.info(f"Index rebuild completed for provider: {provider.name}")
 

@@ -70,6 +70,7 @@ def read_entries(
                     raise HTTPException(status_code=503, detail="Search service not initialized")
 
                 results = search_service.search(
+                    session=session,
                     query=request.query,
                     entity_type='experience',
                     category_code=request.category_code,
@@ -135,6 +136,7 @@ def read_entries(
                     raise HTTPException(status_code=503, detail="Search service not initialized")
 
                 results = search_service.search(
+                    session=session,
                     query=request.query,
                     entity_type='manual',
                     category_code=request.category_code,

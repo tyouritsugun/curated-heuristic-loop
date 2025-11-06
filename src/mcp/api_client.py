@@ -3,7 +3,7 @@ import httpx
 import logging
 import time
 from typing import Dict, Any, Optional, Callable
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, retry_if_exception
 
 from src.mcp.errors import MCPServerError, translate_http_error
 
@@ -59,15 +59,35 @@ class CircuitBreaker:
             return result
 
         except Exception as e:
-            self.failures += 1
+            # Only count server-side failures and transport errors
+            # Do NOT count client errors (400, 404, 409)
+            from .errors import MCPServerError, MCPValidationError, MCPNotFoundError, MCPConflictError
+            import httpx
 
-            if self.failures >= self.failure_threshold:
-                logger.error(
-                    "Circuit breaker opening after %d failures",
-                    self.failures
-                )
-                self.state = "OPEN"
-                self.opened_at = time.time()
+            is_server_failure = isinstance(e, (MCPServerError, httpx.RequestError))
+            is_client_error = isinstance(e, (MCPValidationError, MCPNotFoundError, MCPConflictError))
+
+            if is_server_failure:
+                self.failures += 1
+
+                if self.failures >= self.failure_threshold:
+                    logger.error(
+                        "Circuit breaker opening after %d failures",
+                        self.failures
+                    )
+                    self.state = "OPEN"
+                    self.opened_at = time.time()
+            elif not is_client_error:
+                # Unknown error type - count it to be safe
+                self.failures += 1
+
+                if self.failures >= self.failure_threshold:
+                    logger.error(
+                        "Circuit breaker opening after %d failures (unknown error type)",
+                        self.failures
+                    )
+                    self.state = "OPEN"
+                    self.opened_at = time.time()
 
             raise
 
@@ -93,20 +113,13 @@ class APIClient:
             timeout=circuit_breaker_timeout
         )
 
-    def _should_retry(self, exception: Exception) -> bool:
-        """Determine if exception should trigger retry."""
-        if isinstance(exception, httpx.HTTPStatusError):
-            # Retry on 503 Service Unavailable and 429 Too Many Requests
-            return exception.response.status_code in (503, 429)
-        if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError)):
-            # Retry on network errors
-            return True
-        return False
-
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+        retry=retry_if_exception(
+            lambda exc: isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (503, 429)
+                       or isinstance(exc, (httpx.TimeoutException, httpx.ConnectError))
+        ),
         reraise=True
     )
     def _make_request(

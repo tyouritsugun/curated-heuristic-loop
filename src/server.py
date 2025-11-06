@@ -130,7 +130,8 @@ def _setup_logging(config) -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / 'chl_server.log'
 
-        if log_path not in existing_targets:
+        # Convert to string for comparison with existing targets
+        if str(log_path) not in existing_targets:
             fh = RotatingFileHandler(str(log_path), maxBytes=5_242_880, backupCount=3)
             fh.setLevel(level)
             fh.setFormatter(fmt)
