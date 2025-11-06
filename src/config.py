@@ -45,6 +45,11 @@ API Client (Phase 2):
 - CHL_API_CIRCUIT_BREAKER_THRESHOLD: Failures before circuit breaker opens (default: 5)
 - CHL_API_CIRCUIT_BREAKER_TIMEOUT: Seconds before circuit breaker retries (default: 60)
 
+FAISS Persistence (Phase 3):
+- CHL_FAISS_SAVE_POLICY: Save policy (default: immediate; options: immediate, periodic, manual)
+- CHL_FAISS_SAVE_INTERVAL: Save interval in seconds for periodic mode (default: 300)
+- CHL_FAISS_REBUILD_THRESHOLD: Tombstone ratio threshold for automatic rebuild (default: 0.10)
+
 Note: Author is automatically populated from the OS username during core setup.
 """
 import os
@@ -157,9 +162,15 @@ class Config:
         # CHL_LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
         self.log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
 
+        # FAISS persistence configuration (Phase 3)
+        self.faiss_save_policy = os.getenv("CHL_FAISS_SAVE_POLICY", "immediate")
+        self.faiss_save_interval = int(os.getenv("CHL_FAISS_SAVE_INTERVAL", "300"))
+        self.faiss_rebuild_threshold = float(os.getenv("CHL_FAISS_REBUILD_THRESHOLD", "0.10"))
+
         # Validate configuration
         self._validate_paths()
         self._validate_search_config()
+        self._validate_faiss_config()
     
     def _validate_paths(self):
         """Validate that configured paths exist"""
@@ -256,6 +267,31 @@ class Config:
                 raise ValueError(
                     f"Cannot create FAISS index directory '{self.faiss_index_path}': {e}"
                 ) from e
+
+    def _validate_faiss_config(self):
+        """Validate FAISS persistence configuration"""
+        # Validate save policy
+        valid_policies = ("immediate", "periodic", "manual")
+        if self.faiss_save_policy not in valid_policies:
+            raise ValueError(
+                f"Invalid CHL_FAISS_SAVE_POLICY='{self.faiss_save_policy}'. "
+                f"Must be one of: {', '.join(valid_policies)}"
+            )
+
+        # Validate save interval (must be positive)
+        if self.faiss_save_interval <= 0:
+            raise ValueError(
+                f"Invalid CHL_FAISS_SAVE_INTERVAL={self.faiss_save_interval}. "
+                f"Must be > 0 seconds."
+            )
+
+        # Validate rebuild threshold (must be between 0.0 and 1.0)
+        if not (0.0 <= self.faiss_rebuild_threshold <= 1.0):
+            raise ValueError(
+                f"Invalid CHL_FAISS_REBUILD_THRESHOLD={self.faiss_rebuild_threshold}. "
+                f"Must be in range [0.0, 1.0]."
+            )
+
 
 def get_config() -> Config:
     """Get configuration instance"""

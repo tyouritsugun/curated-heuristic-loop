@@ -20,6 +20,7 @@ from src.api.routers.categories import router as categories_router
 from src.api.routers.entries import router as entries_router
 from src.api.routers.search import router as search_router
 from src.api.routers.guidelines import router as guidelines_router
+from src.api.routers.admin import router as admin_router
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 config = None
 db = None
 search_service = None
-faiss_lock = None  # Thread-safe FAISS lock
+thread_safe_faiss = None  # ThreadSafeFAISSManager instance
 
 
 class JSONFormatter(logging.Formatter):
@@ -58,7 +59,7 @@ def configure_logging():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global config, db, search_service, faiss_lock
+    global config, db, search_service, thread_safe_faiss
 
     logger.info("Starting CHL API server...")
 
@@ -72,14 +73,10 @@ async def lifespan(app: FastAPI):
         db.init_database()
         logger.info(f"Database initialized: {config.database_path}")
 
-        # Initialize FAISS lock
-        faiss_lock = threading.RLock()
-        logger.info("FAISS lock initialized")
-
         # Initialize search service (sessionless for thread-safety)
         try:
             from src.embedding.client import EmbeddingClient
-            from src.search.faiss_index import FAISSIndexManager
+            from src.search.thread_safe_faiss import initialize_faiss_with_recovery, ThreadSafeFAISSManager
             from src.search.vector_provider import VectorFAISSProvider
             from src.embedding.reranker import RerankerClient
 
@@ -91,43 +88,52 @@ async def lifespan(app: FastAPI):
 
             try:
                 embedding_client = EmbeddingClient(
-                    model_repo=config.embedding_model,
+                    model_repo=config.embedding_repo,
                     quantization=config.embedding_quant,
                     n_gpu_layers=0  # CPU-only
                 )
-                logger.info(f"Embedding client loaded: {config.embedding_model}")
+                logger.info(f"Embedding client loaded: {config.embedding_repo}:{config.embedding_quant}")
             except Exception as e:
                 logger.warning(f"Embedding client not available: {e}")
 
             if embedding_client:
                 try:
-                    # Create temporary session for FAISS index loading
+                    # Use recovery logic to load FAISS index with automatic fallback
                     with db.session_scope() as temp_session:
-                        faiss_manager = FAISSIndexManager(
-                            index_dir=config.faiss_index_path,
-                            model_name=config.embedding_model,
-                            dimension=embedding_client.embedding_dimension,
-                            session=temp_session
-                        )
-                        logger.info(f"FAISS index loaded: {faiss_manager.index.ntotal} vectors")
-                except Exception as e:
-                    logger.warning(f"FAISS index not available: {e}")
+                        faiss_manager = initialize_faiss_with_recovery(config, temp_session)
 
-            if embedding_client and faiss_manager:
+                    if faiss_manager:
+                        # Wrap in ThreadSafeFAISSManager for concurrency control
+                        thread_safe_faiss = ThreadSafeFAISSManager(
+                            faiss_manager=faiss_manager,
+                            save_policy=config.faiss_save_policy,
+                            save_interval=config.faiss_save_interval,
+                            rebuild_threshold=config.faiss_rebuild_threshold,
+                        )
+                        logger.info(
+                            f"ThreadSafeFAISSManager initialized: policy={config.faiss_save_policy}, "
+                            f"threshold={config.faiss_rebuild_threshold}"
+                        )
+                    else:
+                        logger.warning("FAISS index recovery failed, will use text search fallback")
+                except Exception as e:
+                    logger.warning(f"FAISS initialization failed: {e}")
+
+            if embedding_client and thread_safe_faiss:
                 try:
                     reranker_client = RerankerClient(
                         model_repo=config.reranker_repo,
                         quantization=config.reranker_quant,
                         n_gpu_layers=0
                     )
-                    logger.info(f"Reranker loaded: {config.reranker_repo}")
+                    logger.info(f"Reranker loaded: {config.reranker_repo}:{config.reranker_quant}")
                 except Exception as e:
                     logger.warning(f"Reranker not available: {e}")
 
-            if embedding_client and faiss_manager:
+            if embedding_client and thread_safe_faiss:
                 try:
                     vector_provider = VectorFAISSProvider(
-                        index_manager=faiss_manager,
+                        index_manager=thread_safe_faiss,
                         embedding_client=embedding_client,
                         reranker_client=reranker_client,
                         topk_retrieve=getattr(config, "topk_retrieve", 100),
@@ -162,6 +168,15 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown cleanup
         logger.info("Shutting down CHL API server...")
+
+        # Shutdown ThreadSafeFAISSManager (stops periodic saver if running)
+        if thread_safe_faiss:
+            try:
+                thread_safe_faiss.shutdown()
+                logger.info("ThreadSafeFAISSManager shut down")
+            except Exception as e:
+                logger.warning(f"Error shutting down ThreadSafeFAISSManager: {e}")
+
         if db:
             db.close()
             logger.info("Database connection closed")
@@ -212,6 +227,7 @@ app.include_router(categories_router)
 app.include_router(entries_router)
 app.include_router(search_router)
 app.include_router(guidelines_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
