@@ -21,7 +21,6 @@ from src.storage.repository import (
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.embedding.service import EmbeddingService
 from src.mcp.models import ExperienceWritePayload, format_validation_error
 from src.mcp.utils import normalize_context
 from pydantic import ValidationError as PydanticValidationError
@@ -229,20 +228,6 @@ def write_entry(
             })
             entry_id = new_obj.id
 
-            # Best-effort embedding after commit
-            try:
-                if getattr(config, "embed_on_write", False) and search_service is not None:
-                    vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                    if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                        emb = EmbeddingService(
-                            session=session,
-                            embedding_client=vp.embedding_client,
-                            faiss_index_manager=vp.index_manager
-                        )
-                        emb.upsert_for_experience(entry_id)
-            except Exception:
-                logger.exception(f"Inline embedding failed for experience {entry_id}")
-
             return WriteEntryResponse(
                 success=True,
                 entry_id=entry_id,
@@ -274,20 +259,6 @@ def write_entry(
                 "summary": summary,
             })
             manual_id = new_manual.id
-
-            # Inline embedding optional
-            try:
-                if getattr(config, "embed_on_write", False) and search_service is not None:
-                    vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                    if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                        emb = EmbeddingService(
-                            session=session,
-                            embedding_client=vp.embedding_client,
-                            faiss_index_manager=vp.index_manager
-                        )
-                        emb.upsert_for_manual(manual_id)
-            except Exception:
-                logger.exception(f"Inline embedding failed for manual {manual_id}")
 
             return WriteEntryResponse(
                 success=True,
@@ -356,20 +327,6 @@ def update_entry(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-            # Inline embedding update
-            try:
-                if getattr(config, "embed_on_write", False) and search_service is not None:
-                    vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                    if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                        emb = EmbeddingService(
-                            session=session,
-                            embedding_client=vp.embedding_client,
-                            faiss_index_manager=vp.index_manager
-                        )
-                        emb.upsert_for_experience(request.entry_id)
-            except Exception:
-                logger.exception(f"Inline embedding update failed for experience {request.entry_id}")
-
             return UpdateEntryResponse(
                 success=True,
                 entry_id=updated.id,
@@ -392,19 +349,6 @@ def update_entry(
                 updated = man_repo.update(request.entry_id, dict(request.updates))
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-
-            try:
-                if getattr(config, "embed_on_write", False) and search_service is not None:
-                    vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                    if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                        emb = EmbeddingService(
-                            session=session,
-                            embedding_client=vp.embedding_client,
-                            faiss_index_manager=vp.index_manager
-                        )
-                        emb.upsert_for_manual(request.entry_id)
-            except Exception:
-                logger.exception(f"Inline embedding update failed for manual {request.entry_id}")
 
             return UpdateEntryResponse(
                 success=True,

@@ -20,6 +20,7 @@ from _config_loader import (
 )
 from _embedding_sync import auto_sync_embeddings
 from src.storage.database import Database
+import requests
 from src.storage.schema import (
     Category,
     CategoryManual,
@@ -134,6 +135,115 @@ def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
     return logger
 
 
+def _check_api_server(base_url: str, timeout: int = 2) -> bool:
+    """Check if API server is running.
+
+    Args:
+        base_url: Base URL for API server (e.g., http://localhost:8000)
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if server is reachable, False otherwise
+    """
+    try:
+        response = requests.get(f"{base_url}/health", timeout=timeout)
+        return response.status_code in (200, 307)  # 307 is redirect to /health/
+    except Exception:
+        return False
+
+
+def _pause_workers(base_url: str, logger: logging.Logger, timeout: int = 5) -> bool:
+    """Pause background workers via API.
+
+    Args:
+        base_url: Base URL for API server
+        logger: Logger instance
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        response = requests.post(f"{base_url}/admin/queue/pause", timeout=timeout)
+        if response.status_code == 200:
+            logger.info("Background workers paused successfully")
+            return True
+        elif response.status_code == 503:
+            logger.info("Worker pool not initialized (ML dependencies not available)")
+            return True  # Not an error, just not available
+        else:
+            logger.warning(f"Failed to pause workers: HTTP {response.status_code}")
+            return False
+    except Exception as e:
+        logger.warning(f"Failed to pause workers: {e}")
+        return False
+
+
+def _drain_queue(base_url: str, logger: logging.Logger, timeout: int = 300) -> bool:
+    """Wait for embedding queue to drain via API.
+
+    Args:
+        base_url: Base URL for API server
+        logger: Logger instance
+        timeout: Maximum wait time in seconds
+
+    Returns:
+        True if drained successfully, False otherwise
+    """
+    try:
+        logger.info(f"Waiting for embedding queue to drain (max {timeout}s)...")
+        response = requests.post(
+            f"{base_url}/admin/queue/drain",
+            params={"timeout": timeout},
+            timeout=timeout + 10  # Add buffer to request timeout
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("status") == "drained":
+                logger.info(f"Queue drained in {result.get('elapsed', 0):.1f}s")
+                return True
+            else:
+                remaining = result.get("remaining", "unknown")
+                logger.warning(f"Queue drain timeout after {timeout}s ({remaining} jobs remaining)")
+                return False
+        elif response.status_code == 503:
+            logger.info("Worker pool not initialized (nothing to drain)")
+            return True
+        else:
+            logger.warning(f"Failed to drain queue: HTTP {response.status_code}")
+            return False
+    except Exception as e:
+        logger.warning(f"Failed to drain queue: {e}")
+        return False
+
+
+def _resume_workers(base_url: str, logger: logging.Logger, timeout: int = 5) -> bool:
+    """Resume background workers via API.
+
+    Args:
+        base_url: Base URL for API server
+        logger: Logger instance
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        response = requests.post(f"{base_url}/admin/queue/resume", timeout=timeout)
+        if response.status_code == 200:
+            logger.info("Background workers resumed successfully")
+            return True
+        elif response.status_code == 503:
+            logger.info("Worker pool not initialized (nothing to resume)")
+            return True
+        else:
+            logger.warning(f"Failed to resume workers: HTTP {response.status_code}")
+            return False
+    except Exception as e:
+        logger.warning(f"Failed to resume workers: {e}")
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Overwrite local SQLite database with rows from Google Sheets.",
@@ -156,6 +266,16 @@ def main() -> None:
         "--skip-embeddings",
         action="store_true",
         help="Skip automatic embedding regeneration after import completes.",
+    )
+    parser.add_argument(
+        "--api-url",
+        default="http://localhost:8000",
+        help="API server URL for worker coordination (default: http://localhost:8000)",
+    )
+    parser.add_argument(
+        "--skip-api-coordination",
+        action="store_true",
+        help="Skip API worker coordination (pause/drain/resume).",
     )
 
     args = parser.parse_args()
@@ -286,6 +406,25 @@ def main() -> None:
             print("Import aborted.")
             return
 
+    # Coordinate with API server workers (Phase 4)
+    # This ensures pending embeddings are processed before clearing the database
+    api_coordinated = False
+    if not args.skip_api_coordination:
+        logger.info("Checking for running API server at %s", args.api_url)
+        if _check_api_server(args.api_url):
+            logger.info("API server detected, coordinating with background workers...")
+            # Pause workers
+            if _pause_workers(args.api_url, logger):
+                # Wait for pending jobs to complete
+                if _drain_queue(args.api_url, logger, timeout=300):
+                    api_coordinated = True
+                else:
+                    logger.warning("Queue drain incomplete, proceeding anyway")
+            else:
+                logger.warning("Failed to pause workers, proceeding anyway")
+        else:
+            logger.info("API server not running, skipping worker coordination")
+
     sheets = SheetsClient(str(credentials_path))
 
     categories_rows = sheets.read_worksheet(category_sheet_id, category_worksheet)
@@ -326,96 +465,103 @@ def main() -> None:
     db = Database(str(database_path), echo=False)
     db.init_database()
 
-    with db.session_scope() as session:
-        logger.info("Clearing existing categories, experiences, manuals, and embeddings")
-        session.query(Embedding).delete()
-        session.query(FAISSMetadata).delete()
-        session.query(Experience).delete()
-        session.query(CategoryManual).delete()
-        session.query(Category).delete()
-        session.flush()
+    try:
+        with db.session_scope() as session:
+            logger.info("Clearing existing categories, experiences, manuals, and embeddings")
+            session.query(Embedding).delete()
+            session.query(FAISSMetadata).delete()
+            session.query(Experience).delete()
+            session.query(CategoryManual).delete()
+            session.query(Category).delete()
+            session.flush()
 
-        now_iso = utc_now()
+            now_iso = utc_now()
 
-        for row in categories_rows:
-            code = _require_value(row, "code", "Category").upper()
-            name = _require_value(row, "name", "Category")
-            category = Category(
-                code=code,
-                name=name,
-                description=_str_or_none(row.get("description")),
-                created_at=_str_or_none(row.get("created_at")) or now_iso,
-            )
-            session.add(category)
-
-        for row in experiences_rows:
-            try:
-                exp = Experience(
-                    id=_require_value(row, "id", "Experience"),
-                    category_code=_require_value(row, "category_code", "Experience").upper(),
-                    section=_require_value(row, "section", "Experience"),
-                    title=_require_value(row, "title", "Experience"),
-                    playbook=_require_value(row, "playbook", "Experience"),
-                    context=_str_or_none(row.get("context")),
-                    source=_str_or_none(row.get("source")) or "local",
-                    sync_status=_int_or_default(row.get("sync_status"), default=1),
-                    author=_str_or_none(row.get("author")),
-                    embedding_status="pending",
+            for row in categories_rows:
+                code = _require_value(row, "code", "Category").upper()
+                name = _require_value(row, "name", "Category")
+                category = Category(
+                    code=code,
+                    name=name,
+                    description=_str_or_none(row.get("description")),
                     created_at=_str_or_none(row.get("created_at")) or now_iso,
-                    updated_at=_str_or_none(row.get("updated_at")) or now_iso,
-                    synced_at=_str_or_none(row.get("synced_at")),
-                    exported_at=_str_or_none(row.get("exported_at")),
                 )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Invalid experience row (id={row.get('id', '<missing>')}) - {exc}"
-                ) from exc
-            session.add(exp)
+                session.add(category)
 
-        for row in manuals_rows:
-            try:
-                manual = CategoryManual(
-                    id=_require_value(row, "id", "Manual"),
-                    category_code=_require_value(row, "category_code", "Manual").upper(),
-                    title=_require_value(row, "title", "Manual"),
-                    content=_require_value(row, "content", "Manual"),
-                    summary=_str_or_none(row.get("summary")),
-                    source=_str_or_none(row.get("source")) or "local",
-                    sync_status=_int_or_default(row.get("sync_status"), default=1),
-                    author=_str_or_none(row.get("author")),
-                    embedding_status="pending",
-                    created_at=_str_or_none(row.get("created_at")) or now_iso,
-                    updated_at=_str_or_none(row.get("updated_at")) or now_iso,
-                    synced_at=_str_or_none(row.get("synced_at")),
-                    exported_at=_str_or_none(row.get("exported_at")),
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Invalid manual row (id={row.get('id', '<missing>')}) - {exc}"
-                ) from exc
-            session.add(manual)
+            for row in experiences_rows:
+                try:
+                    exp = Experience(
+                        id=_require_value(row, "id", "Experience"),
+                        category_code=_require_value(row, "category_code", "Experience").upper(),
+                        section=_require_value(row, "section", "Experience"),
+                        title=_require_value(row, "title", "Experience"),
+                        playbook=_require_value(row, "playbook", "Experience"),
+                        context=_str_or_none(row.get("context")),
+                        source=_str_or_none(row.get("source")) or "local",
+                        sync_status=_int_or_default(row.get("sync_status"), default=1),
+                        author=_str_or_none(row.get("author")),
+                        embedding_status="pending",
+                        created_at=_str_or_none(row.get("created_at")) or now_iso,
+                        updated_at=_str_or_none(row.get("updated_at")) or now_iso,
+                        synced_at=_str_or_none(row.get("synced_at")),
+                        exported_at=_str_or_none(row.get("exported_at")),
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid experience row (id={row.get('id', '<missing>')}) - {exc}"
+                    ) from exc
+                session.add(exp)
 
-    logger.info(
-        "Import completed. Wrote %s categories, %s experiences and %s manuals.",
-        len(categories_rows),
-        len(experiences_rows),
-        len(manuals_rows),
-    )
+            for row in manuals_rows:
+                try:
+                    manual = CategoryManual(
+                        id=_require_value(row, "id", "Manual"),
+                        category_code=_require_value(row, "category_code", "Manual").upper(),
+                        title=_require_value(row, "title", "Manual"),
+                        content=_require_value(row, "content", "Manual"),
+                        summary=_str_or_none(row.get("summary")),
+                        source=_str_or_none(row.get("source")) or "local",
+                        sync_status=_int_or_default(row.get("sync_status"), default=1),
+                        author=_str_or_none(row.get("author")),
+                        embedding_status="pending",
+                        created_at=_str_or_none(row.get("created_at")) or now_iso,
+                        updated_at=_str_or_none(row.get("updated_at")) or now_iso,
+                        synced_at=_str_or_none(row.get("synced_at")),
+                        exported_at=_str_or_none(row.get("exported_at")),
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid manual row (id={row.get('id', '<missing>')}) - {exc}"
+                    ) from exc
+                session.add(manual)
 
-    if args.skip_embeddings:
         logger.info(
-            "Skipping automatic embedding regeneration (--skip-embeddings). "
-            "Run `python scripts/sync_embeddings.py --retry-failed` when ready."
+            "Import completed. Wrote %s categories, %s experiences and %s manuals.",
+            len(categories_rows),
+            len(experiences_rows),
+            len(manuals_rows),
         )
-    else:
-        success, reason = auto_sync_embeddings(db, data_path, database_path, logger)
-        if not success:
-            detail = f" ({reason})" if reason else ""
-            logger.warning(
-                "Automatic embedding sync was skipped or failed%s. "
-                "Run `python scripts/sync_embeddings.py --retry-failed` to finish the workflow.",
-                detail,
+
+        if args.skip_embeddings:
+            logger.info(
+                "Skipping automatic embedding regeneration (--skip-embeddings). "
+                "Run `python scripts/sync_embeddings.py --retry-failed` when ready."
             )
+        else:
+            success, reason = auto_sync_embeddings(db, data_path, database_path, logger)
+            if not success:
+                detail = f" ({reason})" if reason else ""
+                logger.warning(
+                    "Automatic embedding sync was skipped or failed%s. "
+                    "Run `python scripts/sync_embeddings.py --retry-failed` to finish the workflow.",
+                    detail,
+                )
+
+    finally:
+        # Resume workers if they were paused (Phase 4)
+        if api_coordinated:
+            logger.info("Resuming background workers...")
+            _resume_workers(args.api_url, logger)
 
 
 if __name__ == "__main__":

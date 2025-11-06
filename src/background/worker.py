@@ -159,7 +159,10 @@ class EmbeddingWorker:
                         self.jobs_failed += 1
 
                 except Exception as e:
-                    logger.error(f"Failed to process experience {exp.id}: {e}")
+                    logger.exception(
+                        f"Worker {self.worker_id} failed to embed experience "
+                        f"(id={exp.id}, category={exp.category_code}, section={exp.section}): {e}"
+                    )
                     session.rollback()
 
                     # Mark as failed
@@ -167,7 +170,11 @@ class EmbeddingWorker:
                         exp.embedding_status = 'failed'
                         session.commit()
                         self.jobs_failed += 1
-                    except Exception:
+                        logger.warning(
+                            f"Experience {exp.id} marked as failed after embedding error"
+                        )
+                    except Exception as mark_err:
+                        logger.exception(f"Failed to mark experience {exp.id} as failed: {mark_err}")
                         session.rollback()
 
             # Process manuals
@@ -183,14 +190,21 @@ class EmbeddingWorker:
                         self.jobs_failed += 1
 
                 except Exception as e:
-                    logger.error(f"Failed to process manual {man.id}: {e}")
+                    logger.exception(
+                        f"Worker {self.worker_id} failed to embed manual "
+                        f"(id={man.id}, category={man.category_code}, title='{man.title[:50]}'): {e}"
+                    )
                     session.rollback()
 
                     try:
                         man.embedding_status = 'failed'
                         session.commit()
                         self.jobs_failed += 1
-                    except Exception:
+                        logger.warning(
+                            f"Manual {man.id} marked as failed after embedding error"
+                        )
+                    except Exception as mark_err:
+                        logger.exception(f"Failed to mark manual {man.id} as failed: {mark_err}")
                         session.rollback()
 
             self.last_run = time.time()
