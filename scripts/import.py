@@ -20,7 +20,7 @@ from _config_loader import (
 )
 from _embedding_sync import auto_sync_embeddings
 from src.storage.database import Database
-import requests
+from src.api_client import CHLAPIClient
 from src.storage.schema import (
     Category,
     CategoryManual,
@@ -133,115 +133,6 @@ def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.debug("Logging configured. Writing to %s", log_path)
     return logger
-
-
-def _check_api_server(base_url: str, timeout: int = 2) -> bool:
-    """Check if API server is running.
-
-    Args:
-        base_url: Base URL for API server (e.g., http://localhost:8000)
-        timeout: Request timeout in seconds
-
-    Returns:
-        True if server is reachable, False otherwise
-    """
-    try:
-        response = requests.get(f"{base_url}/health", timeout=timeout)
-        return response.status_code in (200, 307)  # 307 is redirect to /health/
-    except Exception:
-        return False
-
-
-def _pause_workers(base_url: str, logger: logging.Logger, timeout: int = 5) -> bool:
-    """Pause background workers via API.
-
-    Args:
-        base_url: Base URL for API server
-        logger: Logger instance
-        timeout: Request timeout in seconds
-
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        response = requests.post(f"{base_url}/admin/queue/pause", timeout=timeout)
-        if response.status_code == 200:
-            logger.info("Background workers paused successfully")
-            return True
-        elif response.status_code == 503:
-            logger.info("Worker pool not initialized (ML dependencies not available)")
-            return True  # Not an error, just not available
-        else:
-            logger.warning(f"Failed to pause workers: HTTP {response.status_code}")
-            return False
-    except Exception as e:
-        logger.warning(f"Failed to pause workers: {e}")
-        return False
-
-
-def _drain_queue(base_url: str, logger: logging.Logger, timeout: int = 300) -> bool:
-    """Wait for embedding queue to drain via API.
-
-    Args:
-        base_url: Base URL for API server
-        logger: Logger instance
-        timeout: Maximum wait time in seconds
-
-    Returns:
-        True if drained successfully, False otherwise
-    """
-    try:
-        logger.info(f"Waiting for embedding queue to drain (max {timeout}s)...")
-        response = requests.post(
-            f"{base_url}/admin/queue/drain",
-            params={"timeout": timeout},
-            timeout=timeout + 10  # Add buffer to request timeout
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("status") == "drained":
-                logger.info(f"Queue drained in {result.get('elapsed', 0):.1f}s")
-                return True
-            else:
-                remaining = result.get("remaining", "unknown")
-                logger.warning(f"Queue drain timeout after {timeout}s ({remaining} jobs remaining)")
-                return False
-        elif response.status_code == 503:
-            logger.info("Worker pool not initialized (nothing to drain)")
-            return True
-        else:
-            logger.warning(f"Failed to drain queue: HTTP {response.status_code}")
-            return False
-    except Exception as e:
-        logger.warning(f"Failed to drain queue: {e}")
-        return False
-
-
-def _resume_workers(base_url: str, logger: logging.Logger, timeout: int = 5) -> bool:
-    """Resume background workers via API.
-
-    Args:
-        base_url: Base URL for API server
-        logger: Logger instance
-        timeout: Request timeout in seconds
-
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        response = requests.post(f"{base_url}/admin/queue/resume", timeout=timeout)
-        if response.status_code == 200:
-            logger.info("Background workers resumed successfully")
-            return True
-        elif response.status_code == 503:
-            logger.info("Worker pool not initialized (nothing to resume)")
-            return True
-        else:
-            logger.warning(f"Failed to resume workers: HTTP {response.status_code}")
-            return False
-    except Exception as e:
-        logger.warning(f"Failed to resume workers: {e}")
-        return False
 
 
 def main() -> None:
@@ -408,15 +299,17 @@ def main() -> None:
 
     # Coordinate with API server workers (Phase 4)
     # This ensures pending embeddings are processed before clearing the database
+    api_client = None
     api_coordinated = False
     if not args.skip_api_coordination:
         logger.info("Checking for running API server at %s", args.api_url)
-        if _check_api_server(args.api_url):
+        api_client = CHLAPIClient(args.api_url)
+        if api_client.check_health():
             logger.info("API server detected, coordinating with background workers...")
             # Pause workers
-            if _pause_workers(args.api_url, logger):
+            if api_client.pause_workers():
                 # Wait for pending jobs to complete
-                if _drain_queue(args.api_url, logger, timeout=300):
+                if api_client.drain_queue(timeout=300):
                     api_coordinated = True
                 else:
                     logger.warning("Queue drain incomplete, proceeding anyway")
@@ -559,9 +452,9 @@ def main() -> None:
 
     finally:
         # Resume workers if they were paused (Phase 4)
-        if api_coordinated:
+        if api_coordinated and api_client:
             logger.info("Resuming background workers...")
-            _resume_workers(args.api_url, logger)
+            api_client.resume_workers()
 
 
 if __name__ == "__main__":

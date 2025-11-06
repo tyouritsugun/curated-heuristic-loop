@@ -101,9 +101,9 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - Keep the API server single-process for simplicity; horizontal scaling is not a near-term concern.
 
 ## Delivery Plan
-- **Phase 1 - Core Operations UI**: Import/export pages, worker control dashboard, queue monitoring. Keep existing configuration methods working.
+- **Phase 1 - MCP HTTP Client**: Refactor MCP server to call API instead of database. Test backward compatibility and performance.
 - **Phase 2 - Settings & Configuration**: Settings page with credential upload, sheet ID configuration, model selection. Migrate configuration from YAML to database.
-- **Phase 3 - MCP HTTP Client**: Refactor MCP server to call API instead of database. Test backward compatibility and performance.
+- **Phase 3 - Core Operations UI**: Import/export pages, worker control dashboard, queue monitoring. Keep existing configuration methods working.
 - **Phase 4 - Enhanced UX**: Real-time updates, progress indicators, validation feedback, mobile responsiveness.
 - **Phase 5 - Curator Tools**: Entry review interface, duplicate detection, merge workflow, tagging and filtering (future roadmap).
 
