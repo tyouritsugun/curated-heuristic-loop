@@ -364,6 +364,207 @@ Tips:
 
 ---
 
+## 3: API Server Operations
+
+The optional FastAPI server provides REST endpoints and asynchronous embedding processing. The MCP server and API server are independent—use the API for high-volume workflows or programmatic integration.
+
+### Start the API Server
+```bash
+uv run uvicorn src.api_server:app --host 0.0.0.0 --port 8000
+```
+
+**Output** (successful startup):
+```
+INFO:     Started server process [12345]
+INFO:     Waiting for application startup.
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Starting CHL API server..."}
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Database initialized: /path/to/chl.db"}
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Search service initialized with primary provider: vector_faiss"}
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Worker pool initialized with 2 workers"}
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Embedding worker pool started"}
+{"timestamp": "2025-11-06T...", "level": "INFO", "message": "CHL API server started successfully"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+### Health Check
+```bash
+curl http://localhost:8000/health
+```
+
+Returns service status and component health:
+```json
+{
+  "status": "healthy",
+  "components": {
+    "database": {"status": "available", "path": "/path/to/chl.db"},
+    "faiss_index": {"status": "available", "vectors": 150},
+    "embedding_model": {"status": "available", "model": "Qwen/Qwen3-Embedding-0.6B"}
+  },
+  "timestamp": "2025-11-06T..."
+}
+```
+
+### Monitor Embedding Queue
+```bash
+curl http://localhost:8000/admin/queue/status
+```
+
+Returns queue depth and worker status:
+```json
+{
+  "queue": {
+    "pending": {"experiences": 5, "manuals": 2, "total": 7},
+    "failed": {"experiences": 0, "manuals": 0, "total": 0}
+  },
+  "workers": {
+    "num_workers": 2,
+    "workers": [
+      {
+        "worker_id": 0,
+        "running": true,
+        "paused": false,
+        "jobs_processed": 150,
+        "jobs_succeeded": 148,
+        "jobs_failed": 2,
+        "last_run": 1699520400.0
+      },
+      {
+        "worker_id": 1,
+        "running": true,
+        "paused": false,
+        "jobs_processed": 143,
+        "jobs_succeeded": 142,
+        "jobs_failed": 1,
+        "last_run": 1699520398.0
+      }
+    ],
+    "total_jobs_processed": 293,
+    "total_jobs_succeeded": 290,
+    "total_jobs_failed": 3
+  }
+}
+```
+
+### Pause/Resume Workers
+```bash
+# Pause all workers (for maintenance)
+curl -X POST http://localhost:8000/admin/queue/pause
+
+# Resume workers
+curl -X POST http://localhost:8000/admin/queue/resume
+```
+
+**When to use**:
+- Before manual database operations
+- During bulk imports (automatic when using `scripts/import.py`)
+- For controlled maintenance windows
+
+### Retry Failed Embeddings
+```bash
+curl -X POST http://localhost:8000/admin/queue/retry-failed
+```
+
+Resets all failed entries to `pending` status so workers retry them:
+```json
+{
+  "retried": {
+    "experiences": 2,
+    "manuals": 1,
+    "total": 3
+  }
+}
+```
+
+### Drain Queue (Wait for Completion)
+```bash
+curl -X POST "http://localhost:8000/admin/queue/drain?timeout=300"
+```
+
+Blocks until all pending jobs are processed (max 5 minutes):
+```json
+{
+  "status": "drained",
+  "elapsed": 45.2
+}
+```
+
+**When to use**:
+- Before shutting down the API server
+- Before bulk import operations (automatic)
+- To ensure all embeddings are complete before backups
+
+### FAISS Index Status
+```bash
+curl http://localhost:8000/admin/index/status
+```
+
+Returns index health and configuration:
+```json
+{
+  "status": "available",
+  "index_size": 150,
+  "tombstone_ratio": 0.02,
+  "needs_rebuild": false,
+  "save_policy": "periodic",
+  "rebuild_threshold": 0.2,
+  "model_name": "Qwen/Qwen3-Embedding-0.6B",
+  "dimension": 1024
+}
+```
+
+### Trigger Index Operations
+```bash
+# Force save FAISS index to disk
+curl -X POST http://localhost:8000/admin/index/save
+
+# Force rebuild FAISS index from embeddings
+curl -X POST http://localhost:8000/admin/index/rebuild
+```
+
+**Warning**: Rebuild is a blocking operation that may take several seconds.
+
+### Configuration
+
+Environment variables for API server:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CHL_NUM_EMBEDDING_WORKERS` | `2` | Number of background workers |
+| `CHL_WORKER_POLL_INTERVAL` | `5` | Seconds between queue polls |
+| `CHL_WORKER_BATCH_SIZE` | `10` | Entries processed per batch |
+| `CHL_FAISS_SAVE_POLICY` | `periodic` | When to save index (`manual`, `periodic`, `immediate`) |
+| `CHL_FAISS_SAVE_INTERVAL` | `300` | Seconds between periodic saves |
+| `CHL_FAISS_REBUILD_THRESHOLD` | `0.2` | Tombstone ratio triggering rebuild (0.0-1.0) |
+
+### Background Worker Lifecycle
+
+1. **Startup**: Workers are created when API server starts (if ML dependencies available)
+2. **Polling**: Each worker polls for pending entries every `WORKER_POLL_INTERVAL` seconds
+3. **Batch Processing**: Workers fetch up to `WORKER_BATCH_SIZE` entries and generate embeddings
+4. **Status Updates**: Entries are marked as `embedded` or `failed` after processing
+5. **FAISS Updates**: Index is updated incrementally as embeddings complete
+6. **Shutdown**: Workers drain pending jobs (up to 30s) before server shutdown
+
+### Troubleshooting
+
+**Workers not starting**:
+- Check logs: `{"message": "Worker pool not initialized (embedding service unavailable)"}`
+- Install ML dependencies: `uv sync --python 3.11 --extra ml`
+- Verify models are downloaded: `uv run python scripts/setup.py`
+
+**High failure rate**:
+- Check worker logs for specific errors
+- Retry failed jobs: `curl -X POST http://localhost:8000/admin/queue/retry-failed`
+- If errors persist, rebuild index: `python scripts/rebuild_index.py`
+
+**Queue not draining**:
+- Check worker status: `curl http://localhost:8000/admin/queue/status`
+- Ensure workers are not paused
+- Check for stuck entries (status still `pending` after long time)
+
+---
+
 ## Script Development Guidelines
 
 When adding new scripts:

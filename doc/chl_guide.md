@@ -19,12 +19,17 @@ Give every developer a fast local loop for capturing task heuristics while prese
 Developer + LLM (Generator / Evaluator prompts)
           ↓ MCP Protocol
    Local CHL Service (SQLite + FAISS)
+          ↕ Background Workers (async embedding)
           ↓ export script
    Review Sheet (Google Sheets per category)
           ↓ curator merge + publish
    Published Sheet (reviewed Google Sheet)
           ↑ sync helper rebuilds local SQLite + FAISS
 ```
+
+**Write Path**: Entries are written to SQLite immediately; embeddings are generated asynchronously by background workers (if enabled). This keeps write operations fast (<100ms) while maintaining index freshness.
+
+**Search Path**: FAISS vector search retrieves candidates, optional Qwen3 reranker scores them, then full records are fetched from SQLite.
 
 See [User Stories](#user-stories) for a walkthrough of how Generator, Evaluator, and Curator collaborate in this architecture.
 
@@ -35,19 +40,20 @@ See [User Stories](#user-stories) for a walkthrough of how Generator, Evaluator,
 - **Published Sheet** – the reviewed Google Sheet (often the same document with a dedicated "Published" tab or version). Developers sync from this sheet—or an individual merged copy—to rebuild local SQLite + FAISS.
 
 ## End-to-End Workflow
-1. **Capture** – MCP `write_*` writes to SQLite. Before committing, the assistant retrieves semantic matches (FAISS → optional Qwen3 reranker scoring) to guide the write:
+1. **Capture** – MCP `write_*` writes to SQLite immediately with `embedding_status='pending'`. Before committing, the assistant retrieves semantic matches (FAISS → optional Qwen3 reranker scoring) to guide the write:
    - For **atomic experiences**: do not auto-update/merge global entries on high similarity. Prefer adding a new atomic entry or proposing a refactor to keep experiences orthogonal; surface near-duplicates to curators.
    - For **category manuals**: updates are allowed when the change is integrative background or cross-cutting context. Keep manuals concise; if the intended change is a global atomic heuristic, do not add it to the manual—create an experience instead.
    Nearby matches may be surfaced to curators during review; no relationship graph is stored in current phases.
-2. **Index Maintenance** – when FAISS is enabled, on insert/update/delete the vector index is updated incrementally (add/replace/remove vectors). Full rebuilds happen after syncs or model changes.
-3. **Export for Review** – a periodic job extracts rows where `source='local'` or `sync_status='pending'` and writes them to a locked-schema Google Sheet (category-scoped tabs). Export does not change `sync_status`; entries remain `pending` until the curated set is imported.
-4. **Curate** – reviewers inspect clusters, merge/supersede where appropriate, adjust playbooks, and enrich metadata directly in the review sheet (or a curator UI backed by SQLite).
-5. **Publish** – curators apply the approved entries to the Published Sheet (versioned Google Sheet). Rows imported from the sheet inherit `source='global'`; timestamps capture provenance.
-6. **Distribute** – teammates run the import script (`python scripts/import.py …`) to pull from the Published Sheet—or a curated merged sheet—rebuild local SQLite, refresh FAISS, and keep personal additions intact.
+2. **Async Embedding** – background workers (when enabled) poll for `embedding_status='pending'` entries, generate embeddings in batches, and update FAISS incrementally. Write operations return immediately; embeddings complete in the background. Workers automatically handle failures with retry logic.
+3. **Index Maintenance** – FAISS is updated incrementally as embeddings complete (add/replace/remove vectors). Full rebuilds happen after syncs or model changes. The index save policy (`manual`, `periodic`, `immediate`) controls persistence frequency.
+4. **Export for Review** – a periodic job extracts rows where `source='local'` or `sync_status='pending'` and writes them to a locked-schema Google Sheet (category-scoped tabs). Export does not change `sync_status`; entries remain `pending` until the curated set is imported. If the optional API server is running, the export script coordinates with background workers (pause → drain → export → resume) to ensure consistency.
+5. **Curate** – reviewers inspect clusters, merge/supersede where appropriate, adjust playbooks, and enrich metadata directly in the review sheet (or a curator UI backed by SQLite).
+6. **Publish** – curators apply the approved entries to the Published Sheet (versioned Google Sheet). Rows imported from the sheet inherit `source='global'`; timestamps capture provenance.
+7. **Distribute** – teammates run the import script (`python scripts/import.py …`) to pull from the Published Sheet—or a curated merged sheet—rebuild local SQLite, refresh FAISS, and keep personal additions intact. Worker coordination (pause → drain → import → resume) happens automatically if the API server is running.
 
 ## MCP Interface Strategy
 - **Reads** – retrieve candidates via FAISS (vector), optionally rerank with the Qwen3 reranker, then fetch full records from SQLite by ID. Responses include `source` metadata so clients can distinguish global vs personal entries.
-- **Writes** – persist to SQLite; FAISS updates happen automatically. MCP never writes directly to review or published sheets.
+- **Writes** – persist to SQLite immediately with `embedding_status='pending'`; return success. FAISS updates happen asynchronously via background workers (when enabled) or can be triggered manually with `scripts/sync_embeddings.py`. MCP never writes directly to review or published sheets.
 - **Dedup & Decision Hints** – every write returns top-k matches with scores, sections, and source flags, plus guidance on whether to: (a) add a new atomic experience, (b) refactor an existing atomic experience, or (c) update a category manual (for integrative, non-atomic context). Keep manuals concise—do not add global atomic heuristics to manuals.
 - **Review Hooks** – optionally expose an MCP tool to request a change to a global entry; the server marks `sync_status='pending'` and records a curator-facing note.
 
@@ -58,11 +64,12 @@ See [User Stories](#user-stories) for a walkthrough of how Generator, Evaluator,
 - Evaluator prompts should explicitly make this decision, citing the reason (atomic vs. integrative) so curators can audit later.
 
 ## Handling SQLite + FAISS + Sheets
-- SQLite is the single truth for local work; FAISS is a performance layer rebuilt incrementally.
-- Sheets exist only for human review/export. The export script enforces column order, locks headers, and carries provenance (`author`, `source`) so curators know origin.
+- SQLite is the single truth for local work; FAISS is a performance layer updated incrementally (asynchronously when background workers are enabled).
+- Entries are written to SQLite with `embedding_status='pending'`; background workers poll for pending entries and generate embeddings in batches. Write operations return immediately while embeddings complete in the background.
+- Sheets exist only for human review/export. The export script enforces column order, locks headers, and carries provenance (`author`, `source`) so curators know origin. Worker coordination (pause → drain → import/export → resume) ensures consistency during bulk operations.
 - The merge pipeline can ingest the last published sheet, fresh exports, and reviewer edits to produce the next published tab. Vector similarity assists clustering, but the final decision sits with humans.
 - Each FAISS vector stores the `last_synced_at` timestamp; during sync, outdated vectors are replaced, and stale local edits trigger merge prompts.
-- The `sync_status` flag tracks whether entries are already published, pending curator review, or kept local for personal use.
+- The `sync_status` flag tracks whether entries are already published, pending curator review, or kept local for personal use. The `embedding_status` flag (`pending`, `embedded`, `failed`) tracks async processing state.
 
 ## Review & Governance
 - Provision database schema via the setup script (tables are created idempotently using SQLAlchemy metadata).

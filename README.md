@@ -1,6 +1,10 @@
 # CHL MCP Server
 
-Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend for managing experience-based knowledge. For the full system overview and workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md).
+Curated Heuristic Loop (CHL) MCP Server – a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, your assistant builds a shared memory of useful patterns, searchable with semantic embeddings.
+
+**What it does**: Captures task-specific heuristics as you work, searches them with FAISS/reranking, and lets teams curate the knowledge base through Google Sheets.
+
+For the complete workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md). For advanced operations, see [doc/chl_manual.md](doc/chl_manual.md).
 
 ## Setup
 
@@ -161,7 +165,37 @@ Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend f
 
 - `uv run python scripts/export.py` – writes the local SQLite content to the configured worksheets. Add `--dry-run` to preview counts without making changes.
 - `uv run python scripts/import.py --yes` – replaces local tables with the sheet contents and automatically regenerates embeddings/FAISS metadata (skip with `--skip-embeddings`). If you skip or the sync is skipped due to missing ML dependencies, run `python scripts/sync_embeddings.py --retry-failed` afterwards and restart the MCP server so it reloads the updated index.
+  - **Worker coordination**: If the optional API server is running (see [Advanced Setup](#advanced-setup)), the import script automatically pauses background workers, waits for pending embeddings to complete, then resumes after import. Use `--skip-api-coordination` to bypass this.
 
+## Advanced Setup
+
+### Optional: API Server with Background Workers
+
+CHL includes an optional FastAPI server that enables:
+- **Async embedding generation**: Write operations return immediately (<100ms) while embeddings are generated in the background
+- **Web API access**: REST endpoints for programmatic access
+- **Worker management**: Monitor and control the embedding queue
+
+**When to use**: For high-volume workflows or when integrating CHL with other tools via HTTP.
+
+**Setup**:
+```bash
+# Start the API server (runs on http://localhost:8000)
+uv run uvicorn src.api_server:app --host 0.0.0.0 --port 8000
+
+# Check server health
+curl http://localhost:8000/health
+
+# Monitor embedding queue (if ML dependencies installed)
+curl http://localhost:8000/admin/queue/status
+```
+
+**Configuration** (optional environment variables):
+- `CHL_NUM_EMBEDDING_WORKERS` - Number of background workers (default: 2)
+- `CHL_WORKER_POLL_INTERVAL` - Seconds between queue checks (default: 5)
+- `CHL_WORKER_BATCH_SIZE` - Entries to process per batch (default: 10)
+
+The MCP server and API server can run independently—use whichever fits your workflow. For details on API endpoints and worker management, see [doc/chl_manual.md](doc/chl_manual.md#api-server-operations).
 
 ## License
 
