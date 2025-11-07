@@ -67,6 +67,9 @@ class Database:
         session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.session_factory = scoped_session(session_factory)
 
+        # Ensure tables exist (no-op if already created)
+        Base.metadata.create_all(self.engine)
+
         self._initialized = True
 
     def create_tables(self):

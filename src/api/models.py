@@ -117,3 +117,74 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     error_code: Optional[str] = None
+
+
+# Settings models
+class CredentialsSettingsRequest(BaseModel):
+    path: str = Field(..., description="Absolute or relative path to credentials JSON")
+    notes: Optional[str] = Field(None, description="Optional operator notes")
+
+
+class SheetsSettingsRequest(BaseModel):
+    spreadsheet_id: str
+    experiences_tab: str = "Experiences"
+    manuals_tab: str = "Manuals"
+    categories_tab: str = "Categories"
+
+
+class ModelSettingsRequest(BaseModel):
+    embedding_repo: Optional[str] = None
+    embedding_quant: Optional[str] = None
+    reranker_repo: Optional[str] = None
+    reranker_quant: Optional[str] = None
+
+
+class SettingsSnapshotResponse(BaseModel):
+    credentials: Optional[Dict[str, Any]]
+    sheets: Optional[Dict[str, Any]]
+    models: Optional[Dict[str, Any]]
+    updated_at: Optional[str]
+
+
+# Operation models
+class OperationRequest(BaseModel):
+    payload: Optional[Dict[str, Any]] = None
+
+
+class OperationResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    job_type: str
+    status: str
+    requested_by: Optional[str]
+    created_at: Optional[str]
+    started_at: Optional[str]
+    finished_at: Optional[str]
+    cancelled_at: Optional[str]
+    payload: Optional[Dict[str, Any]] = None
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+# Worker models
+class WorkerActionResponse(BaseModel):
+    status: str
+    elapsed: Optional[float] = None
+    remaining: Optional[int] = None
+
+
+class WorkerStatusResponse(BaseModel):
+    queue: Dict[str, Any]
+    workers: Optional[Dict[str, Any]]
+
+
+# Telemetry models
+class TelemetrySnapshotResponse(BaseModel):
+    queue: Optional[Dict[str, Any]]
+    worker_pool: Optional[Dict[str, Any]]
+    workers: List[Dict[str, Any]]
+    jobs: List[Dict[str, Any]]

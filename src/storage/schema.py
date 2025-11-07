@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     Text,
     LargeBinary,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -164,6 +165,111 @@ class FAISSMetadata(Base):
 
     def __repr__(self):
         return f"<FAISSMetadata(entity_id='{self.entity_id}', faiss_id={self.faiss_internal_id}, deleted={self.deleted})>"
+
+
+class Setting(Base):
+    """Key/value metadata for operator-configurable settings (no secrets)."""
+
+    __tablename__ = "settings"
+
+    key = Column(String, primary_key=True)
+    value_json = Column(Text, nullable=False)
+    checksum = Column(String, nullable=True)
+    validated_at = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, default=utc_now)
+    updated_at = Column(Text, nullable=False, default=utc_now)
+
+    def __repr__(self):
+        return f"<Setting(key='{self.key}')>"
+
+
+class WorkerMetric(Base):
+    """Latest heartbeat metrics for background workers."""
+
+    __tablename__ = "worker_metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    heartbeat_at = Column(Text, nullable=False)
+    queue_depth = Column(Integer, nullable=False, default=0)
+    processed = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    payload = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("worker_id", name="uq_worker_metrics_worker"),
+    )
+
+    def __repr__(self):
+        return f"<WorkerMetric(worker_id='{self.worker_id}', status='{self.status}')>"
+
+
+class JobHistory(Base):
+    """Lifecycle tracking for long-running operations (import/export/index)."""
+
+    __tablename__ = "job_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String, unique=True, nullable=False)
+    job_type = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    requested_by = Column(String, nullable=True)
+    payload = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
+    error_detail = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, default=utc_now)
+    started_at = Column(Text, nullable=True)
+    finished_at = Column(Text, nullable=True)
+    cancelled_at = Column(Text, nullable=True)
+
+    def __repr__(self):
+        return f"<JobHistory(job_id='{self.job_id}', type='{self.job_type}', status='{self.status}')>"
+
+
+class AuditLog(Base):
+    """Audit log entries for operator actions and configuration changes."""
+
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(String, nullable=False)
+    actor = Column(String, nullable=True)
+    context = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, default=utc_now)
+
+    def __repr__(self):
+        return f"<AuditLog(event_type='{self.event_type}', actor='{self.actor}')>"
+
+
+class OperationLock(Base):
+    """Advisory locks that serialize operations triggered via API."""
+
+    __tablename__ = "operation_locks"
+
+    name = Column(String, primary_key=True)
+    owner = Column(String, nullable=False)
+    expires_at = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, default=utc_now)
+
+    def __repr__(self):
+        return f"<OperationLock(name='{self.name}', owner='{self.owner}')>"
+
+
+class TelemetrySample(Base):
+    """Historical telemetry samples for queue depth and worker state."""
+
+    __tablename__ = "telemetry_samples"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    metric = Column(String, nullable=False)
+    value_json = Column(Text, nullable=False)
+    recorded_at = Column(Text, nullable=False, default=utc_now)
+
+    def __repr__(self):
+        return f"<TelemetrySample(metric='{self.metric}', recorded_at='{self.recorded_at}')>"
 
 
 def utc_now() -> str:

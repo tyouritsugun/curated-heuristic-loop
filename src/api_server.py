@@ -21,6 +21,14 @@ from src.api.routers.entries import router as entries_router
 from src.api.routers.search import router as search_router
 from src.api.routers.guidelines import router as guidelines_router
 from src.api.routers.admin import router as admin_router
+from src.api.routers.settings import router as settings_router
+from src.api.routers.operations import router as operations_router
+from src.api.routers.workers import router as workers_router
+from src.api.routers.telemetry import router as telemetry_router
+from src.services.settings_service import SettingsService
+from src.services.operations_service import OperationsService
+from src.services.worker_control import WorkerControlService
+from src.services.telemetry_service import TelemetryService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,10 @@ db = None
 search_service = None
 thread_safe_faiss = None  # ThreadSafeFAISSManager instance
 worker_pool = None  # WorkerPool instance (Phase 4)
+settings_service = None
+operations_service = None
+worker_control_service = None
+telemetry_service = None
 
 
 class JSONFormatter(logging.Formatter):
@@ -61,6 +73,7 @@ def configure_logging():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     global config, db, search_service, thread_safe_faiss, worker_pool
+    global settings_service, operations_service, worker_control_service, telemetry_service
 
     logger.info("Starting CHL API server...")
 
@@ -73,6 +86,22 @@ async def lifespan(app: FastAPI):
         db = Database(config.database_path)
         db.init_database()
         logger.info(f"Database initialized: {config.database_path}")
+
+        # Initialize service layer singletons
+        settings_service = SettingsService(db.get_session, config.experience_root)
+        worker_control_service = WorkerControlService(db.get_session)
+        operations_service = OperationsService(db.get_session)
+        logger.info("Core services initialized (settings, worker control, operations)")
+
+        def queue_probe():
+            session = db.get_session()
+            try:
+                return worker_control_service.queue_depth(session)
+            finally:
+                session.close()
+
+        def worker_probe():
+            return worker_pool.get_status() if worker_pool else None
 
         # Initialize search service (sessionless for thread-safety)
         try:
@@ -207,6 +236,15 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("Worker pool not initialized (embedding service unavailable)")
 
+        telemetry_service = TelemetryService(
+            session_factory=db.get_session,
+            queue_probe=queue_probe,
+            worker_probe=worker_probe,
+            interval_seconds=getattr(config, "telemetry_interval", 5),
+        )
+        await telemetry_service.start()
+        logger.info("Telemetry service started")
+
         logger.info("CHL API server started successfully")
 
         yield  # Application is running
@@ -218,6 +256,18 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown cleanup
         logger.info("Shutting down CHL API server...")
+
+        if telemetry_service:
+            try:
+                await telemetry_service.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping telemetry service: {e}")
+
+        if operations_service:
+            try:
+                operations_service.shutdown()
+            except Exception as e:
+                logger.warning(f"Error shutting down operations service: {e}")
 
         # Shutdown worker pool (Phase 4)
         if worker_pool:
@@ -287,6 +337,10 @@ app.include_router(entries_router)
 app.include_router(search_router)
 app.include_router(guidelines_router)
 app.include_router(admin_router)
+app.include_router(settings_router)
+app.include_router(operations_router)
+app.include_router(workers_router)
+app.include_router(telemetry_router)
 
 
 @app.get("/")

@@ -40,3 +40,27 @@ def get_faiss_lock():
     """Provide global FAISS lock for thread-safe operations."""
     from src.api_server import faiss_lock
     return faiss_lock
+
+
+def get_settings_service():
+    """Provide initialized SettingsService instance."""
+    from src.api_server import settings_service
+    return settings_service
+
+
+def get_operations_service():
+    """Provide OperationsService singleton."""
+    from src.api_server import operations_service
+    return operations_service
+
+
+def get_worker_control_service():
+    """Provide WorkerControlService singleton."""
+    from src.api_server import worker_control_service
+    return worker_control_service
+
+
+def get_telemetry_service():
+    """Provide TelemetryService singleton."""
+    from src.api_server import telemetry_service
+    return telemetry_service
