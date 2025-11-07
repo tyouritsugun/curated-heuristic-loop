@@ -6,11 +6,11 @@
 - Provide visibility into current configuration state (last validation, errors, required follow-up actions).
 
 ## Success Criteria
-- Visiting `/settings` displays sections for credentials, sheet IDs, embedding model, and advanced options with current values populated from SQLite.
+- Visiting `/settings` shows credential, sheet, model, audit, and backup cards populated from SQLite plus a diagnostics panel summarizing validation state.
 - Credential helper supports two paths: (1) uploading the JSON so the server saves it into the managed directory (`~/.config/chl/credentials/`) with `0o600` permissions, and (2) pointing at an existing on-disk path and validating it without uploading bytes. Both flows update metadata only after validation passes and never duplicate secrets into SQLite.
-- Sheet ID and model changes trigger immediate validation (call Sheets API, check model availability) and surface inline errors.
-- Settings page exposes “Rotate credentials”, “Test connectivity”, and “Download configuration backup” actions.
-- All changes emit audit log entries (who/when/what) stored locally for troubleshooting.
+- Sheet ID and model changes trigger immediate validation (lightweight structural checks today, deeper API probes later) and surface inline errors via htmx swaps.
+- Diagnostics panel exposes “Test connectivity” and refreshes credentials/sheets/model badges inline without reloading the entire page.
+- Download/restore card provides a JSON snapshot (metadata only) plus a restore textarea that replays credentials, sheets, and model metadata; all actions emit audit log entries for troubleshooting.
 
 ## Prerequisites
 - Phase 0 settings endpoints and validation services.
@@ -20,28 +20,29 @@
 ## Implementation Guide
 
 ### 1. UI Structure
-- Add `src/web/templates/settings.html` with sections:
-  1. **Setup Wizard** (if required configs missing) guiding first-time users.
-  2. **Credentials** card showing current status (valid/invalid, last checked timestamp, checksum snippet) plus two tabs: “Upload to this machine” (default) and “Use existing file” (advanced path input with helper text reminding users to place the file somewhere the server can read).
-  3. **Sheets** form for review + published IDs (two inputs plus validate button).
-  4. **Embedding Model** selector with radio buttons (e.g., small/medium/large) and disk space indicator.
-  5. **Advanced** collapsible area for managed paths, telemetry toggles.
-- Use htmx forms to submit each section independently, returning partials for inline updates.
+- `src/web/templates/settings.html` now composes reusable partials:
+  - Header explaining the localhost binding + “Download backup” link.
+  - Diagnostics card (`partials/diagnostics_panel.html`) that lists credentials/sheets/models status rows and includes a “Test connectivity” button.
+  - Card stack for credentials, sheets, and model preferences. Each card renders its forms plus status pill and metadata grid, and every form uses `hx-post`/`hx-target` to refresh only that card.
+  - Audit log card fed by `GET /ui/settings/audit-log` via htmx `hx-trigger="load, settings-changed"` for automatic refresh.
+  - Backup card for download + restore flows.
+- All cards share the same styling (PicoCSS + custom dark theme) and rely on out-of-band flash updates so inline success/error messages stay in sync.
 
 ### 2. Backend Endpoints
-- In `src/api/routers/ui.py`, add handlers for rendering templates and returning partial fragments.
-- Map forms to Phase 0 REST endpoints using server-side fetches (or call services directly to avoid double serialization when rendering).
-- Provide `POST /ui/settings/credentials/upload` that accepts `UploadFile`, writes to managed directory, triggers validation, and returns success/error partial.
-- Provide `POST /ui/settings/credentials/path` that accepts a server-side path string, checks that it resides within the managed root (or an allow-listed location), validates the credential, and simply stores metadata pointing to that path (no bytes copied).
+- `src/api/routers/ui.py` centralizes rendering helpers (`_build_context`, `_respond`) so every endpoint can emit full-page or partial responses with optional `HX-Trigger` headers.
+- Credential, sheet, and model forms call the underlying `SettingsService` methods directly and return the relevant card partial; success responses emit the `settings-changed` htmx trigger so diagnostics/audit cards auto-refresh.
+- Diagnostics: `GET /ui/settings/diagnostics` returns the status card; `POST /ui/settings/diagnostics` revalidates the stored credential path (if present), updates timestamps, and returns the same partial + flash message.
+- Audit log: `GET /ui/settings/audit-log` streams the latest entries (JSON context pretty-printed) for the UI to poll when `settings-changed` fires.
+- Backup restore: `POST /ui/settings/backup/restore` accepts pasted JSON, validates sections individually, replays updates through `SettingsService`, and reuses the card partial for inline feedback.
 
 ### 3. Validation Feedback
-- Extend settings service to surface structured validation results (status enum, message, remediation).
-- Render badges/icons (e.g., green “Valid”, orange “Needs attention”) next to each section.
-- Offer “Test Connectivity” button that runs the same validation pipeline and streams the result (htmx swap).
+- `SettingsService.diagnostics()` now returns structured status dataclasses for credentials, sheets, and models (state/headline/detail/timestamp). Credentials validation re-parses the JSON, ensures the file exists, and flags permissive file modes; sheets/models perform structural checks and inherit credential warnings.
+- Diagnostics card renders these statuses with colored dots/badges and timestamps; the same data powers each card’s status pill so page and inline updates stay consistent.
+- The “Test Connectivity” button re-runs credential validation and swaps only the diagnostics card while also refreshing flash/audit info via htmx triggers.
 
 ### 4. Configuration Backup & Restore
-- Add action to download current metadata + pointers as JSON for support purposes (no secret blobs).
-- Optionally support uploading a metadata backup to restore previous sheet IDs/model choices.
+- “Download Backup JSON” links to `/ui/settings/backup` which returns the snapshot (credentials path/checksum, sheets tabs, model prefs) as an attachment.
+- Restore form accepts pasted JSON, validates each section, and applies updates via the existing services ensuring secrets remain on disk. Successful restores refresh diagnostics/audit cards via `settings-changed` events; failures surface inline errors without mutating state.
 
 ### 5. Security & File Handling
 - Enforce that uploaded credential files land inside the managed directory (e.g., `~/.config/chl/credentials/`) and reject attempts to escape with `..` or symlinks.
@@ -50,15 +51,14 @@
 - Display guidance text reminding users not to expose the API server beyond localhost without additional auth (ties back to deployment assumptions) and clarify that only metadata goes into SQLite.
 
 ### 6. UX Polish
-- Include progress indicator when validating credentials (htmx `hx-indicator`).
-- Auto-disable submit buttons while validation in flight to avoid duplicate requests.
-- Provide contextual help links to docs for obtaining sheet IDs or generating Google service accounts.
+- htmx indicators show “Uploading…/Saving…/Restoring…” next to each form while requests are in flight; status pills provide instant feedback without reloading the page.
+- Out-of-band flash updates keep the global message banner accurate even when only a single card refreshes; `HX-Trigger` plus polling cards avoid duplicate markup.
+- Helper text reinforces the “secrets stay on disk” rule and reminds operators to keep the server behind localhost unless they add their own auth proxy.
 
 ## Testing & Validation
-- Browser-based manual test: run through setup wizard from blank database to fully configured state.
-- Automated tests for upload endpoint (permission bits, checksum calculation, failure cases such as invalid JSON).
-- Integration test ensuring invalid sheet IDs produce inline errors and do not persist changes.
-- Accessibility pass (keyboard navigation, focus management) for key forms.
+- Manual smoke test: start from a blank DB, upload credentials, configure sheets/models, trigger diagnostics, download + restore backup, and verify audit log entries.
+- Automated coverage: API tests exercise credential upload/path flows, diagnostics GET/POST, audit-log polling, and backup restore (including error cases for invalid JSON or missing sections).
+- Future work: add contract tests for true Google Sheets connectivity once mocked credentials are available.
 
 ## Risks & Mitigations
 - **User uploads wrong file** → keep previous valid credential until new one passes validation; show side-by-side metadata before switching.

@@ -6,123 +6,20 @@
       <p class="muted">Secrets stay on disk under <code>{{ secrets_root }}</code>; SQLite stores only metadata (path, checksum, timestamps).</p>
     </div>
     <div class="actions">
-      <form method="post" action="/ui/settings/credentials/test">
-        <button type="submit" class="secondary">Test Connectivity</button>
-      </form>
       <a class="contrast" href="/ui/settings/backup">Download Backup</a>
     </div>
   </header>
 
-  {% if message %}
-    <article class="flash {{ message_level }}">{{ message }}</article>
-  {% endif %}
-  {% if error %}
-    <article class="flash error">{{ error }}</article>
-  {% endif %}
+  {% include "partials/flash.html" %}
 
-  {% set credentials = snapshot.credentials %}
-  {% set sheets = snapshot.sheets %}
-  {% set models = snapshot.models %}
+  {% include "partials/diagnostics_panel.html" %}
 
-  <section class="card">
-    <header>
-      <h2>Credentials</h2>
-      <span class="status {{ 'ok' if credentials else 'warn' }}">
-        {{ 'Valid as of ' ~ credentials.validated_at if credentials and credentials.validated_at else 'Missing' }}
-      </span>
-    </header>
-    <p>Upload the Google service-account JSON into the managed directory (<code>{{ managed_credentials_dir }}</code>) or point to an existing readable path. Only the path, checksum, and validation timestamp are stored.</p>
+  <div class="card-stack">
+    {% include "partials/credentials_card.html" %}
+    {% include "partials/sheets_card.html" %}
+    {% include "partials/models_card.html" %}
+  </div>
 
-    <details open>
-      <summary>Upload to this machine</summary>
-      <form method="post" action="/ui/settings/credentials/upload" enctype="multipart/form-data">
-        <label>
-          Select credential JSON
-          <input type="file" name="credential_file" accept="application/json" required />
-        </label>
-        <label>
-          Notes (optional)
-          <input type="text" name="notes" placeholder="e.g., Rotated 2025-11-07" />
-        </label>
-        <button type="submit">Upload &amp; Validate</button>
-      </form>
-    </details>
-
-    <details>
-      <summary>Use existing file (advanced)</summary>
-      <form method="post" action="/ui/settings/credentials/path">
-        <label>
-          Absolute or managed-relative path
-          <input type="text" name="path" value="{{ credentials.path if credentials else '' }}" placeholder="/path/to/credentials.json" required />
-        </label>
-        <label>
-          Notes (optional)
-          <input type="text" name="notes" placeholder="Visible in audit log" />
-        </label>
-        <button type="submit" class="secondary">Validate Path</button>
-      </form>
-      <small class="muted">Browser paths are not accessible to the server. Place the file somewhere this process can read (SSH tunnel, shared volume, etc.).</small>
-    </details>
-  </section>
-
-  <section class="card">
-    <header>
-      <h2>Google Sheets</h2>
-      <span class="status {{ 'ok' if sheets else 'warn' }}">
-        {{ 'Last updated ' ~ sheets.validated_at if sheets and sheets.validated_at else 'Not configured' }}
-      </span>
-    </header>
-    <form method="post" action="/ui/settings/sheets">
-      <label>
-        Spreadsheet ID
-        <input type="text" name="spreadsheet_id" value="{{ sheets.spreadsheet_id if sheets else '' }}" placeholder="1abc..." required />
-      </label>
-      <div class="grid">
-        <label>
-          Experiences tab
-          <input type="text" name="experiences_tab" value="{{ sheets.experiences_tab if sheets else 'Experiences' }}" />
-        </label>
-        <label>
-          Manuals tab
-          <input type="text" name="manuals_tab" value="{{ sheets.manuals_tab if sheets else 'Manuals' }}" />
-        </label>
-        <label>
-          Categories tab
-          <input type="text" name="categories_tab" value="{{ sheets.categories_tab if sheets else 'Categories' }}" />
-        </label>
-      </div>
-      <button type="submit">Save Sheets</button>
-    </form>
-  </section>
-
-  <section class="card">
-    <header>
-      <h2>Embedding &amp; Reranker Models</h2>
-      <span class="status {{ 'ok' if models else 'warn' }}">
-        {{ 'Last updated ' ~ models.validated_at if models and models.validated_at else 'Using defaults' }}
-      </span>
-    </header>
-    <form method="post" action="/ui/settings/models">
-      <div class="grid">
-        <label>
-          Embedding repo
-          <input type="text" name="embedding_repo" value="{{ models.embedding_repo if models else '' }}" placeholder="Qwen/Embedding" />
-        </label>
-        <label>
-          Embedding quant
-          <input type="text" name="embedding_quant" value="{{ models.embedding_quant if models else '' }}" placeholder="Q8_0" />
-        </label>
-        <label>
-          Reranker repo
-          <input type="text" name="reranker_repo" value="{{ models.reranker_repo if models else '' }}" placeholder="Mungert/Reranker" />
-        </label>
-        <label>
-          Reranker quant
-          <input type="text" name="reranker_quant" value="{{ models.reranker_quant if models else '' }}" placeholder="Q4_K_M" />
-        </label>
-      </div>
-      <button type="submit">Save Model Preferences</button>
-    </form>
-  </section>
-
+  {% include "partials/audit_log.html" %}
+  {% include "partials/backup_card.html" %}
 {% endblock %}

@@ -1,0 +1,32 @@
+<section id="backup-card" class="card">
+  <header>
+    <div>
+      <h2>Backup &amp; Restore</h2>
+      <p class="muted">Download current metadata or restore from a JSON export. Secrets remain on disk.</p>
+    </div>
+  </header>
+  <div class="backup-actions">
+    <a class="contrast" href="/ui/settings/backup">Download Backup JSON</a>
+  </div>
+  <form
+    method="post"
+    action="/ui/settings/backup/restore"
+    hx-post="/ui/settings/backup/restore"
+    hx-target="#backup-card"
+    hx-swap="outerHTML"
+    hx-indicator="#backup-indicator"
+  >
+    <label>
+      Paste backup JSON
+      <textarea name="backup_json" rows="6" placeholder='{"credentials": {...}}' required></textarea>
+    </label>
+    <button type="submit">Restore Configuration</button>
+  </form>
+  <span class="htmx-indicator" id="backup-indicator">Restoring…</span>
+
+  {% if is_partial and (message or error) %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+</section>

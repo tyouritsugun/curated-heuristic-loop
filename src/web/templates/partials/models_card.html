@@ -1,0 +1,46 @@
+{% set models = snapshot.models %}
+{% set model_diag = diagnostics.models %}
+<section id="models-card" class="card">
+  <header>
+    <div>
+      <h2>Embedding &amp; Reranker Models</h2>
+      <p class="muted">Override defaults if you have local GGUF builds or remote repos.</p>
+    </div>
+    <span class="status-pill {{ model_diag.state }}">{{ model_diag.headline }}</span>
+  </header>
+  <form
+    method="post"
+    action="/ui/settings/models"
+    hx-post="/ui/settings/models"
+    hx-target="#models-card"
+    hx-swap="outerHTML"
+    hx-indicator="#models-indicator"
+  >
+    <div class="grid">
+      <label>
+        Embedding repo
+        <input type="text" name="embedding_repo" value="{{ models.embedding_repo if models else '' }}" placeholder="Qwen/Embedding" />
+      </label>
+      <label>
+        Embedding quant
+        <input type="text" name="embedding_quant" value="{{ models.embedding_quant if models else '' }}" placeholder="Q8_0" />
+      </label>
+      <label>
+        Reranker repo
+        <input type="text" name="reranker_repo" value="{{ models.reranker_repo if models else '' }}" placeholder="Mungert/Reranker" />
+      </label>
+      <label>
+        Reranker quant
+        <input type="text" name="reranker_quant" value="{{ models.reranker_quant if models else '' }}" placeholder="Q4_K_M" />
+      </label>
+    </div>
+    <button type="submit">Save Model Preferences</button>
+  </form>
+  <span class="htmx-indicator" id="models-indicator">Saving…</span>
+
+  {% if is_partial and (message or error) %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+</section>

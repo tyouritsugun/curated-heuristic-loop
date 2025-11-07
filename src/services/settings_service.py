@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -47,6 +48,26 @@ class ModelSettings:
     reranker_repo: Optional[str]
     reranker_quant: Optional[str]
     validated_at: Optional[str]
+
+
+@dataclass
+class DiagnosticStatus:
+    """Represents validation state for a settings section."""
+
+    name: str
+    state: str  # ok | warn | error
+    headline: str
+    detail: Optional[str] = None
+    validated_at: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "state": self.state,
+            "headline": self.headline,
+            "detail": self.detail,
+            "validated_at": self.validated_at,
+        }
 
 
 class SettingsService:
@@ -181,6 +202,23 @@ class SettingsService:
             if owns_session and session is not None:
                 session.close()
 
+    def diagnostics(self, session: Session) -> Dict[str, DiagnosticStatus]:
+        """Return validation diagnostics for each settings section."""
+        snapshot = self.snapshot(session)
+        credentials = snapshot.get("credentials")
+        sheets = snapshot.get("sheets")
+        models = snapshot.get("models")
+
+        cred_status = self._diagnose_credentials(credentials)
+        sheets_status = self._diagnose_sheets(sheets, cred_status)
+        model_status = self._diagnose_models(models)
+
+        return {
+            "credentials": cred_status,
+            "sheets": sheets_status,
+            "models": model_status,
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -273,4 +311,142 @@ class SettingsService:
             reranker_repo=data.get("reranker_repo"),
             reranker_quant=data.get("reranker_quant"),
             validated_at=record.validated_at,
+        )
+
+    def _diagnose_credentials(self, data: Optional[Dict[str, Any]]) -> DiagnosticStatus:
+        if not data:
+            return DiagnosticStatus(
+                name="credentials",
+                state="error",
+                headline="Missing credentials",
+                detail="Upload the Google service-account JSON or point to an existing readable file.",
+            )
+
+        path = Path(data.get("path", "")).expanduser()
+        if not path.exists():
+            return DiagnosticStatus(
+                name="credentials",
+                state="error",
+                headline="Credential file not found",
+                detail=str(path),
+                validated_at=data.get("validated_at"),
+            )
+
+        if not path.is_file():
+            return DiagnosticStatus(
+                name="credentials",
+                state="error",
+                headline="Credential path is not a file",
+                detail=str(path),
+                validated_at=data.get("validated_at"),
+            )
+
+        try:
+            raw = path.read_text("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return DiagnosticStatus(
+                name="credentials",
+                state="error",
+                headline="Unable to read credential JSON",
+                detail=str(exc),
+                validated_at=data.get("validated_at"),
+            )
+
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError as exc:
+            return DiagnosticStatus(
+                name="credentials",
+                state="error",
+                headline="Credential JSON is invalid",
+                detail=f"Line {exc.lineno}: {exc.msg}",
+                validated_at=data.get("validated_at"),
+            )
+
+        try:
+            mode = path.stat().st_mode
+            perms = stat.S_IMODE(mode)
+        except OSError:
+            perms = None
+
+        if perms is not None and perms & 0o077:
+            return DiagnosticStatus(
+                name="credentials",
+                state="warn",
+                headline="Credential readable by other users",
+                detail=f"Permissions are {oct(perms)}; recommend 0o600.",
+                validated_at=data.get("validated_at"),
+            )
+
+        return DiagnosticStatus(
+            name="credentials",
+            state="ok",
+            headline="Credential JSON looks valid",
+            detail=f"Stored at {path}",
+            validated_at=data.get("validated_at"),
+        )
+
+    def _diagnose_sheets(self, data: Optional[Dict[str, Any]], cred_status: DiagnosticStatus) -> DiagnosticStatus:
+        if not data:
+            return DiagnosticStatus(
+                name="sheets",
+                state="warn",
+                headline="Sheets configuration missing",
+                detail="Add spreadsheet ID and worksheet names to sync content.",
+            )
+
+        spreadsheet_id = (data.get("spreadsheet_id") or "").strip()
+        if not spreadsheet_id:
+            return DiagnosticStatus(
+                name="sheets",
+                state="error",
+                headline="Spreadsheet ID required",
+                detail="Paste the ID from the Google Sheets URL.",
+                validated_at=data.get("validated_at"),
+            )
+
+        detail = f"Tabs: {data.get('experiences_tab')}, {data.get('manuals_tab')}, {data.get('categories_tab')}"
+        state = "ok"
+        headline = "Sheet metadata saved"
+
+        if cred_status.state != "ok":
+            state = "warn"
+            headline = "Credentials not ready"
+            detail = "Sheets will fail until credentials validate."
+
+        return DiagnosticStatus(
+            name="sheets",
+            state=state,
+            headline=headline,
+            detail=detail,
+            validated_at=data.get("validated_at"),
+        )
+
+    def _diagnose_models(self, data: Optional[Dict[str, Any]]) -> DiagnosticStatus:
+        if not data:
+            return DiagnosticStatus(
+                name="models",
+                state="warn",
+                headline="Using default models",
+                detail="Set embedding and reranker repos if you need overrides.",
+            )
+
+        embedding_repo = data.get("embedding_repo")
+        reranker_repo = data.get("reranker_repo")
+
+        if not embedding_repo and not reranker_repo:
+            return DiagnosticStatus(
+                name="models",
+                state="warn",
+                headline="No overrides provided",
+                detail="System defaults will be used until you set repos.",
+                validated_at=data.get("validated_at"),
+            )
+
+        return DiagnosticStatus(
+            name="models",
+            state="ok",
+            headline="Model preferences saved",
+            detail=", ".join(filter(None, [embedding_repo, reranker_repo])) or None,
+            validated_at=data.get("validated_at"),
         )

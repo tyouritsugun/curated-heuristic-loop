@@ -95,6 +95,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 1. Navigate to Settings page to update sheet IDs, credentials, or model choices.
 2. Changes persist to database and take effect immediately (or after restart prompt for model changes).
 3. View current configuration and validation status (credentials valid, sheets accessible, models loaded).
+4. Use the diagnostics/test action plus audit/backup cards to verify connectivity, download metadata, or restore a previous snapshot without editing files manually.
 
 ## Operational Considerations
 - UI must enforce safe operations: disable import button while workers are running, show confirmation for destructive actions.
@@ -110,7 +111,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 ## Delivery Plan
 - **Phase 0 - API Foundations**: Introduce settings/import/export/worker-control endpoints plus locking/validation so both CLI and UI clients can rely on the HTTP surface.
 - **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs, guarded by a feature flag fallback to direct database mode until parity is confirmed.
-- **Phase 2 - Settings & Configuration UI**: Settings page with credential placement helper (upload into managed directory or point at an existing local file), sheet ID configuration, model selection. Store metadata in SQLite while secrets stay on disk.
+- **Phase 2 - Settings & Configuration UI**: Interactive settings page with credential placement helper (upload into managed directory or point at an existing local file), sheet/model forms, diagnostics panel, audit log feed, and metadata backup/restore. Store metadata in SQLite while secrets stay on disk; secrets remain files under the managed root.
 - **Phase 3 - Core Operations & UX**: Import/export pages, worker control dashboard, queue monitoring backed by the telemetry pipeline, and user-experience polish such as real-time visualizations, progress indicators, validation feedback, and initial mobile responsiveness.
 
 ## MCP HTTP Rollout Controls

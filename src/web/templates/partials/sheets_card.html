@@ -1,0 +1,46 @@
+{% set sheets = snapshot.sheets %}
+{% set sheet_diag = diagnostics.sheets %}
+<section id="sheets-card" class="card">
+  <header>
+    <div>
+      <h2>Google Sheets</h2>
+      <p class="muted">Provide the spreadsheet ID and tab names used for experiences, manuals, and categories.</p>
+    </div>
+    <span class="status-pill {{ sheet_diag.state }}">{{ sheet_diag.headline }}</span>
+  </header>
+  <form
+    method="post"
+    action="/ui/settings/sheets"
+    hx-post="/ui/settings/sheets"
+    hx-target="#sheets-card"
+    hx-swap="outerHTML"
+    hx-indicator="#sheets-indicator"
+  >
+    <label>
+      Spreadsheet ID
+      <input type="text" name="spreadsheet_id" value="{{ sheets.spreadsheet_id if sheets else '' }}" placeholder="1abc..." required />
+    </label>
+    <div class="grid">
+      <label>
+        Experiences tab
+        <input type="text" name="experiences_tab" value="{{ sheets.experiences_tab if sheets else 'Experiences' }}" />
+      </label>
+      <label>
+        Manuals tab
+        <input type="text" name="manuals_tab" value="{{ sheets.manuals_tab if sheets else 'Manuals' }}" />
+      </label>
+      <label>
+        Categories tab
+        <input type="text" name="categories_tab" value="{{ sheets.categories_tab if sheets else 'Categories' }}" />
+      </label>
+    </div>
+    <button type="submit">Save Sheets</button>
+  </form>
+  <span class="htmx-indicator" id="sheets-indicator">Saving…</span>
+
+  {% if is_partial and (message or error) %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+</section>
