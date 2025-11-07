@@ -3,7 +3,8 @@
 ## Goals
 - Provide HTTP endpoints for configuration, operations (import/export/index rebuild), and worker orchestration that both MCP and the future UI can consume.
 - Add safety primitives (advisory locks, validation) that enforce correct sequencing even when requests originate outside the browser.
-- Capture telemetry (queue depth, worker heartbeats, operation progress) in a canonical channel that SSE can stream later.
+- Capture telemetry (queue depth, worker heartbeats, operation progress) in a canonical channel that SSE can stream later and persist summaries into `job_history`.
+- Record every configuration or operational change in an `audit_log` table so UI users can trace who changed what and when.
 
 ## Success Criteria
 - `/api/settings` CRUD endpoints persist configuration metadata (not secrets) into SQLite, validate inputs, and return structured error messages.
@@ -11,6 +12,8 @@
 - `/api/workers` endpoints can pause, resume, drain, and report health for each worker process.
 - Telemetry table or in-memory publisher records queue depth, worker state, and job progress at least every 5 seconds.
 - FastAPI startup initializes advisory-lock helpers, telemetry publisher, and background cleanup tasks without race conditions.
+- `job_history` retains the last N operation snapshots (id, type, status, started_at, finished_at, cancellation_reason) so UI timelines have context.
+- `audit_log` rows (action, actor, scope, payload) are written whenever settings change or operations start/stop for compliance.
 
 ## Prerequisites
 - Existing FastAPI app skeleton from web API project (routers, dependency injection, structured logging).
@@ -22,7 +25,10 @@
 ### 1. Schema & Config Metadata
 - Add `settings` table with columns: `key`, `value_json`, `checksum`, `validated_at`, `notes`. Store only metadata (e.g., credential path) and retain secrets on disk.
 - Add `worker_metrics` (worker_id, heartbeat_at, status, queue_depth, processed, failed, payload JSON for custom counters).
-- Provide migration script that populates existing YAML/env config into this table on first run.
+- Add `operation_locks` keyed by operation name to coordinate long-running tasks, and `job_history` capturing lifecycle metadata plus a pointer to any persisted progress log.
+- Add `telemetry_samples` with `metric`, `value`, `unit`, `source`, `recorded_at` so downstream consumers share naming conventions (`queue.depth`, `worker.latency_ms`, etc.).
+- Add `audit_log` (id, actor, action, scope, payload_json, created_at) with helper to redact sensitive fields before persistence.
+- Provide migration script that populates existing YAML/env config into `settings` on first run and initializes the other tables empty but ready.
 
 ### 2. Settings Service & Validation
 - Create `src/services/settings_service.py` with methods to read/update typed configs and perform validation hooks (e.g., ping Google Sheets, verify credential path exists, ensure model choice supported).
@@ -33,9 +39,10 @@
 
 ### 3. Operations Orchestrator
 - Add `src/services/operations.py` responsible for starting long-running jobs via background tasks or Celery-like worker (initially `asyncio.create_task`).
-- Implement advisory lock helper using SQLite `BEGIN IMMEDIATE` or a dedicated `locks` table. Provide `with operation_lock("import")` context manager.
-- `/api/operations/import` endpoint checks lock, schedules async job that reuses existing import logic, and writes progress events (percent, current row) to telemetry.
-- Similar endpoints for export and index rebuild. Include `status` endpoint returning latest job metadata so UI can poll if SSE unavailable.
+- Implement advisory lock helper using SQLite `BEGIN IMMEDIATE` or the `operation_locks` table. Provide `with operation_lock("import")` context manager plus `cancel_operation(name)` to release locks and mark `job_history` entries as `cancelled`.
+- `/api/operations/import` endpoint checks lock, schedules async job that reuses existing import logic, and writes progress events (percent, current row) to telemetry + `job_history`.
+- Similar endpoints for export and index rebuild. Include `status` endpoint returning latest job metadata so UI can poll if SSE unavailable, and `POST /api/operations/{name}/cancel` that respects the advisory lock/cancellation flag.
+- Mirror each transition (queued, running, succeeded, failed, cancelled) into `audit_log` to provide traceability.
 
 ### 4. Worker Control Endpoints
 - Wrap current worker manager in `WorkerController` class capable of pause/resume/drain.
@@ -47,8 +54,8 @@
 
 ### 5. Telemetry Publisher
 - Run background task that every few seconds gathers queue length (pending embeddings), worker heartbeats, and operation progress.
-- Store metrics rows and push to an in-process pub/sub (e.g., `asyncio.Queue`) consumed by SSE router in Phase 3.
-- Provide `GET /api/telemetry/snapshot` for polling clients.
+- Store metrics rows in `telemetry_samples` using consistent metric names (`queue.depth`, `workers.active`, `operations.import.progress_pct`) and push to an in-process pub/sub (e.g., `asyncio.Queue`) consumed by SSE router in Phase 3.
+- Provide `GET /api/telemetry/snapshot` for polling clients and ensure snapshots reuse the same naming scheme as stored samples so charting logic is simple.
 
 ### 6. Startup & Lifecycle
 - Ensure FastAPI `lifespan` initializes: config loader, settings service, worker controller, telemetry scheduler, operations service.

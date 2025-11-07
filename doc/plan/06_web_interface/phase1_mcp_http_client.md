@@ -19,15 +19,17 @@
 ## Implementation Guide
 
 ### 1. HTTP Client Abstraction
-- Create `src/mcp/http_client.py` encapsulating FastAPI calls with retry/backoff and JSON schema conversions.
-- Methods mirror existing repository calls: `list_categories`, `read_entries`, `write_entry`, `run_import`, etc.
-- Use `httpx.AsyncClient` or `requests` depending on MCP runtime; prefer async if MCP already async-friendly.
-- Centralize serialization/deserialization to keep MCP handlers slim.
+- `src/mcp/api_client.py` wraps FastAPI calls with retry/backoff (tenacity) plus a small circuit breaker so repeated failures short‑circuit instead of hammering the API.
+- Methods mirror existing repository calls: `list_categories`, `read_entries`, `write_entry`, `run_import`, etc., returning parsed JSON blobs so handlers remain thin.
+- Use a single `httpx.Client` instance with keep-alive; log every request via `http_request method=... path=... status=... duration_ms=...`.
+- Centralize serialization/deserialization and HTTP→MCP error translation (`MCPTransportError`, `MCPValidationError`, etc.) to keep handler code consistent.
 
 ### 2. Feature Flag Wiring
-- Add env var + CLI flag to toggle HTTP mode. Example: `CHL_MCP_HTTP_MODE=0` keeps old behavior.
-- At startup, log which mode is active and which base URL the HTTP client targets (default `http://127.0.0.1:8000`).
-- Provide fallback path: if HTTP call fails (connection refused) and flag set to `auto`, drop back to direct DB for that request and emit warning.
+- `CHL_MCP_HTTP_MODE` accepts `http`, `auto`, or `direct` (legacy). Legacy `CHL_USE_API=0` forces `direct` for backward compatibility.
+- CLI flag `--chl-http-mode={http|auto|direct}` overrides env vars per invocation so users can flip modes without editing config files.
+- `auto` mode wraps `_request_with_fallback`: network errors raise `MCPTransportError`, log a warning, then transparently invoke the legacy handler for that tool. Pure `http` mode propagates the transport error so the user fixes their API server.
+- `CHL_API_CIRCUIT_BREAKER_THRESHOLD` / `_TIMEOUT` knobs cap cascading failures, while `CHL_API_HEALTH_CHECK_MAX_WAIT` governs initial readiness.
+- Tests can set `CHL_SKIP_MCP_AUTOSTART=1` to import `src.server` without immediately spinning up HTTP mode—fixtures inject fake API clients before calling `init_server()`.
 
 ### 3. MCP Tool Adaptation
 - Update each MCP handler to call the HTTP client abstraction rather than repositories:
@@ -35,6 +37,7 @@
   - `read_entries` → passes through query parameters.
   - `write_entry`/`update_entry`/`delete_entry` → call HTTP endpoints, propagate validation errors.
   - Operational tools (import/export) call `/api/operations/...` endpoints and include job status in MCP response.
+- Cache read-mostly payloads (e.g., `list_categories`) for ~30 seconds to prevent repeated HTTP chatter during a single IDE session.
 - Ensure streaming/large payload scenarios use pagination or chunking to avoid memory spikes.
 
 ### 4. Error Translation
@@ -51,8 +54,8 @@
 - Benchmark common flows locally, compare to baseline, and document results.
 
 ### 6. Observability & Logging
-- Add structured logs on MCP side for each HTTP call (method, path, latency, status).
-- Emit metrics (e.g., via StatsD or Prometheus exporter) for success/failure counts while flag is on, aiding rollout monitoring.
+- Add structured logs on MCP side for each HTTP call (method, path, latency, status) plus explicit warnings when fallback from HTTP→direct triggers.
+- Emit metrics (e.g., via StatsD or Prometheus exporter) for success/failure counts while flag is on, aiding rollout monitoring. The circuit breaker should log OPEN/HALF\_OPEN transitions for production debugging.
 
 ### 7. Documentation
 - Update `doc/plan/06_web_interface.md` (already references Phase 1) with pointers to new env vars and risk mitigations.
@@ -60,7 +63,7 @@
 
 ## Testing & Validation
 - Unit tests for HTTP client covering retries, error mapping, and serialization.
-- Integration tests running MCP commands against a live FastAPI instance (can use docker-compose or pytest fixtures) to ensure parity.
+- Integration tests (`tests/integration/test_mcp_http_mode.py`) run MCP commands against a live FastAPI instance (or a stub) to ensure parity across `http`, `auto`, and `direct`. Each test sets `CHL_SKIP_MCP_AUTOSTART=1` before importing `src.server`.
 - Regression suite comparing outputs between legacy and HTTP modes for a fixed dataset.
 
 ## Risks & Mitigations

@@ -70,8 +70,9 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - `src/api/routers/settings.py` (new) - CRUD endpoints for system configuration stored in database.
 - `src/storage/schema.py` - Add settings table for persistent configuration (credentials path, sheet IDs, model choices).
 - `src/web/` (new) - Static assets (HTML, CSS, JavaScript) for the web interface.
-- `src/mcp_client.py` (new) - HTTP client abstraction for MCP server to call API endpoints instead of database.
-- `src/server.py` - Refactor to use HTTP client for all operations, keeping only MCP protocol translation logic.
+- `src/mcp/api_client.py` - HTTP client abstraction with retry/circuit-breaker logic so MCP calls the API instead of SQLite.
+- `src/server.py` - Refactor to use HTTP client for all operations, keeping only MCP protocol translation logic (plus direct fallback handlers).
+- `tests/integration/test_mcp_http_mode.py` - Coverage for HTTP/auto/direct toggles, caching, and transport failures.
 - `scripts/` - Gradually migrate operational scripts to call API endpoints instead of direct database access.
 
 ## User Experience Flow
@@ -111,6 +112,13 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs, guarded by a feature flag fallback to direct database mode until parity is confirmed.
 - **Phase 2 - Settings & Configuration UI**: Settings page with credential upload (writes to managed filesystem path), sheet ID configuration, model selection. Store metadata in SQLite while secrets stay on disk.
 - **Phase 3 - Core Operations & UX**: Import/export pages, worker control dashboard, queue monitoring backed by the telemetry pipeline, and user-experience polish such as real-time visualizations, progress indicators, validation feedback, and initial mobile responsiveness.
+
+## MCP HTTP Rollout Controls
+- `CHL_MCP_HTTP_MODE` governs transport: `http` (force API), `auto` (API with direct fallback), or `direct` (legacy SQLite). Legacy `CHL_USE_API=0` maps to `direct`.
+- `--chl-http-mode` CLI flag temporarily overrides the environment, making it easy to test a mode without editing config files.
+- HTTP startup waits for `/health` and uses `CHL_API_CIRCUIT_BREAKER_*` thresholds so outages trip a circuit breaker instead of hanging MCP calls. Auto mode transparently drops to direct handlers when transport errors occur.
+- Categories payloads fetched over HTTP are cached for 30 seconds; handshake responses include the currently active transport so clients can display status.
+- Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to import `src.server` without immediately starting the HTTP client, enabling deterministic injection of fake API clients.
 
 
 ## Technology Choices

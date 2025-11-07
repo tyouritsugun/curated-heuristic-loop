@@ -125,6 +125,9 @@ For the complete workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md). 
    # Optional overrides (defaults shown)
    # CHL_DATABASE_PATH = "/absolute/path/to/curated_heuristic_loop/data/chl.db"
    # CHL_FAISS_INDEX_PATH = "/absolute/path/to/curated_heuristic_loop/data/faiss_index"
+   # HTTP transport (Phase 1 rollout)
+   # CHL_MCP_HTTP_MODE = "auto"  # options: http, auto, direct (legacy SQLite)
+   # CHL_API_BASE_URL = "http://127.0.0.1:8000"
    # Export pipeline (configure after preparing Google Sheets)
    # CHL_REVIEW_SHEET_ID = "your-review-sheet-id"
    # CHL_PUBLISHED_SHEET_ID = "your-published-sheet-id"
@@ -142,6 +145,19 @@ For the complete workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md). 
      codex-cli mcp tool call chl get_guidelines --params guide_type=generator
      ```
      (Use `guide_type=evaluator` for the evaluator version.)
+
+### MCP HTTP Modes & Troubleshooting
+- `CHL_MCP_HTTP_MODE` controls how `src/server.py` talks to the local API:
+  - `http` (default) – always call the FastAPI endpoints (requires `uvicorn src.api_server:app` running).
+  - `auto` – prefer HTTP but transparently fall back to legacy SQLite handlers when transport errors occur.
+  - `direct` – legacy mode that bypasses the API entirely. Equivalent to setting the older `CHL_USE_API=0`.
+- Override the mode per run with `--chl-http-mode`:
+  ```bash
+  uv --directory /path/to/curated-heuristic-loop run python src/server.py --chl-http-mode=direct
+  ```
+- HTTP behavior is further tuned via `CHL_API_TIMEOUT`, `CHL_API_CIRCUIT_BREAKER_THRESHOLD`, and `CHL_API_CIRCUIT_BREAKER_TIMEOUT`. When the circuit breaker opens, MCP requests fail fast with actionable hints instead of hanging.
+- For tests or scripts that import `src.server`, set `CHL_SKIP_MCP_AUTOSTART=1` so the module doesn’t immediately start the HTTP client. The integration tests use this switch to inject stub HTTP clients.
+- If you see `MCPTransportError: Failed to connect to API server`, start/restart the FastAPI server (defaults to `http://127.0.0.1:8000`) or switch to `--chl-http-mode=direct` temporarily.
 
 ## Import & Export
 
