@@ -60,6 +60,11 @@ class SettingsService:
         self._session_factory = session_factory
         self._secrets_root = Path(secrets_root).resolve()
 
+    @property
+    def secrets_root(self) -> Path:
+        """Return the managed secrets root directory used for relative paths."""
+        return self._secrets_root
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------

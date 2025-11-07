@@ -2,12 +2,14 @@
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
 import json
 import time
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from src.config import Config
 from src.storage.database import Database
@@ -25,6 +27,7 @@ from src.api.routers.settings import router as settings_router
 from src.api.routers.operations import router as operations_router
 from src.api.routers.workers import router as workers_router
 from src.api.routers.telemetry import router as telemetry_router
+from src.api.routers.ui import router as ui_router
 from src.services.settings_service import SettingsService
 from src.services.operations_service import OperationsService
 from src.services.worker_control import WorkerControlService
@@ -341,6 +344,7 @@ app.include_router(settings_router)
 app.include_router(operations_router)
 app.include_router(workers_router)
 app.include_router(telemetry_router)
+app.include_router(ui_router)
 
 
 @app.get("/")
@@ -357,6 +361,12 @@ def root():
 
 # Configure logging on module import
 configure_logging()
+
+
+# Mount static assets for the web UI
+static_dir = Path(__file__).resolve().parent / "web" / "static"
+static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "CHL Settings" }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.10/css/pico.min.css" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='css/settings.css') }}" />
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-CsC25QxEqk3+rXhN3kLBXjg5eQof8I4eAbOe+tfLOcOfeUOLuO/FFKs/d4V2kM5D" crossorigin="anonymous"></script>
+</head>
+<body hx-boost="true">
+  <main class="container" id="settings-root">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

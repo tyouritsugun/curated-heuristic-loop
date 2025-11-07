@@ -1,0 +1,103 @@
+body {
+  background: #0f1115;
+  color: #f4f5f7;
+}
+
+main.container {
+  max-width: 920px;
+  padding: 2rem 1rem 4rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.page-header .muted {
+  color: #9aa0b3;
+}
+
+.page-header .actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.card {
+  background: #1a1d24;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status.ok {
+  color: #7ee787;
+}
+
+.status.warn {
+  color: #f88c5d;
+}
+
+.flash {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.flash.success {
+  background: #13281c;
+  color: #7ee787;
+}
+
+.flash.info {
+  background: #0f1f2e;
+  color: #7dc4ff;
+}
+
+.flash.error {
+  background: #2a0f19;
+  color: #ff8ea2;
+}
+
+details {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+}
+
+input[type="text"],
+input[type="file"] {
+  margin-top: 0.35rem;
+}
+
+small.muted {
+  display: block;
+  margin-top: -0.5rem;
+  color: #9aa0b3;
+}
+
+code {
+  background: #0f1f2e;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+}
