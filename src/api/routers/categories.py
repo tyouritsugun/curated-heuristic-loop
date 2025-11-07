@@ -20,7 +20,8 @@ def list_categories(session: Session = Depends(get_db_session)):
             CategoryResponse(
                 code=cat.code,
                 name=cat.name,
-                description=cat.description
+                description=cat.description,
+                created_at=cat.created_at,
             )
             for cat in categories
         ]

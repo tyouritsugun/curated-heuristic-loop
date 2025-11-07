@@ -2,7 +2,7 @@
 from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 
 from .schema import Base
@@ -63,9 +63,8 @@ class Database:
                 except Exception:
                     pass
 
-        # Create session factory
-        session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
-        self.session_factory = scoped_session(session_factory)
+        # Create session factory (new session per request)
+        self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
 
         # Ensure tables exist (no-op if already created)
         Base.metadata.create_all(self.engine)
@@ -123,8 +122,7 @@ class Database:
 
     def close(self):
         """Close database connections."""
-        if self.session_factory:
-            self.session_factory.remove()
+        self.session_factory = None
         if self.engine:
             self.engine.dispose()
         self._initialized = False

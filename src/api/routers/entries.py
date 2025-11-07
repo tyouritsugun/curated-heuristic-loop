@@ -60,6 +60,9 @@ def read_entries(
 
         limit = request.limit if request.limit is not None else (config.read_details_limit if config else 10)
 
+        if request.entity_type not in {"experience", "manual"}:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
+
         if request.entity_type == "experience":
             exp_repo = ExperienceRepository(session)
 
@@ -202,21 +205,21 @@ def write_entry(
 ):
     """Create a new entry."""
     try:
-        # Validate category
-        cat_repo = CategoryRepository(session)
-        category = cat_repo.get_by_code(request.category_code)
-        if not category:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Category '{request.category_code}' not found"
-            )
-
         if request.entity_type == "experience":
-            # Validate experience data
+            # Validate experience data before checking category to surface schema issues first
             try:
                 validated = ExperienceWritePayload.model_validate({**request.data})
             except PydanticValidationError as e:
                 raise HTTPException(status_code=400, detail=format_validation_error(e))
+
+            # Validate category after payload passes basic checks
+            cat_repo = CategoryRepository(session)
+            category = cat_repo.get_by_code(request.category_code)
+            if not category:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Category '{request.category_code}' not found"
+                )
 
             exp_repo = ExperienceRepository(session)
             new_obj = exp_repo.create({
@@ -249,6 +252,14 @@ def write_entry(
                 raise HTTPException(
                     status_code=400,
                     detail="Content cannot be empty"
+                )
+
+            cat_repo = CategoryRepository(session)
+            category = cat_repo.get_by_code(request.category_code)
+            if not category:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Category '{request.category_code}' not found"
                 )
 
             man_repo = CategoryManualRepository(session)

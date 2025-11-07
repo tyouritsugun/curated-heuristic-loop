@@ -487,7 +487,8 @@ def test_delete_experience(client):
     entry_id = write_response.json()["entry_id"]
 
     # Delete it
-    delete_response = client.delete(
+    delete_response = client.request(
+        "DELETE",
         "/api/v1/entries/delete",
         json={
             "entity_type": "experience",
@@ -539,7 +540,8 @@ def test_delete_manual(client):
     entry_id = write_response.json()["entry_id"]
 
     # Delete it
-    delete_response = client.delete(
+    delete_response = client.request(
+        "DELETE",
         "/api/v1/entries/delete",
         json={
             "entity_type": "manual",
@@ -553,7 +555,8 @@ def test_delete_manual(client):
 
 def test_delete_nonexistent_entry(client):
     """Test deleting an entry that doesn't exist."""
-    response = client.delete(
+    response = client.request(
+        "DELETE",
         "/api/v1/entries/delete",
         json={
             "entity_type": "experience",

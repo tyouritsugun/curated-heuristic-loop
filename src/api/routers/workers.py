@@ -19,11 +19,11 @@ def worker_status(
 
 @router.post("/pause", response_model=WorkerActionResponse)
 async def pause_workers(
+    request: Request,
     session: Session = Depends(get_db_session),
     worker_control=Depends(get_worker_control_service),
-    request: Request | None = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         return worker_control.pause(session, actor)
     except WorkerUnavailableError as exc:
@@ -32,11 +32,11 @@ async def pause_workers(
 
 @router.post("/resume", response_model=WorkerActionResponse)
 async def resume_workers(
+    request: Request,
     session: Session = Depends(get_db_session),
     worker_control=Depends(get_worker_control_service),
-    request: Request | None = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         return worker_control.resume(session, actor)
     except WorkerUnavailableError as exc:
@@ -45,12 +45,12 @@ async def resume_workers(
 
 @router.post("/drain", response_model=WorkerActionResponse)
 async def drain_workers(
+    request: Request,
     timeout: int = Query(300, ge=10, le=3600),
     session: Session = Depends(get_db_session),
     worker_control=Depends(get_worker_control_service),
-    request: Request | None = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         result = worker_control.drain(session, timeout, actor)
     except WorkerUnavailableError as exc:

@@ -21,8 +21,8 @@ class ExperienceWritePayload(BaseModel):
         valid_sections = {"useful", "harmful", "contextual"}
         if section not in valid_sections:
             raise ValueError(f"Invalid section '{section}'. Must be one of: useful, harmful, contextual")
-        if section == "contextual":
-            raise ValueError("Cannot write directly to 'contextual' section")
+        if section == "contextual" and not data.get("context"):
+            raise ValueError("Contextual entries require non-empty context metadata")
         return data
 
     @model_validator(mode="after")

@@ -17,6 +17,11 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+def utc_now() -> str:
+    """Return current UTC timestamp in ISO 8601 format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 class Category(Base):
     """Category metadata and definitions."""
 
@@ -270,8 +275,3 @@ class TelemetrySample(Base):
 
     def __repr__(self):
         return f"<TelemetrySample(metric='{self.metric}', recorded_at='{self.recorded_at}')>"
-
-
-def utc_now() -> str:
-    """Return current UTC timestamp in ISO 8601 format."""
-    return datetime.now(timezone.utc).isoformat()

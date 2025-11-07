@@ -11,6 +11,7 @@ class CategoryResponse(BaseModel):
     code: str
     name: str
     description: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class ListCategoriesResponse(BaseModel):

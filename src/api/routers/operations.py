@@ -11,12 +11,12 @@ router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
 
 @router.post("/{operation_type}", response_model=OperationResponse)
 async def trigger_operation(
+    request: Request,
     operation_type: str,
     request_payload: OperationRequest | None = None,
     operations_service=Depends(get_operations_service),
-    request: Request | None = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     payload = request_payload.payload if request_payload else None
     try:
         return operations_service.trigger(operation_type, payload, actor)
@@ -40,11 +40,11 @@ async def job_status(
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse)
 async def cancel_job(
+    request: Request,
     job_id: str,
     operations_service=Depends(get_operations_service),
-    request: Request | None = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         return operations_service.cancel_job(job_id, actor)
     except JobNotFoundError as exc:

@@ -24,12 +24,12 @@ def read_settings(
 
 @router.put("/credentials", response_model=SettingsSnapshotResponse)
 async def update_credentials(
+    request: Request,
     request_payload: CredentialsSettingsRequest,
     session: Session = Depends(get_db_session),
     settings_service=Depends(get_settings_service),
-    request: Request = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         settings_service.update_credentials(
             session,
@@ -44,12 +44,12 @@ async def update_credentials(
 
 @router.put("/sheets", response_model=SettingsSnapshotResponse)
 async def update_sheets(
+    request: Request,
     request_payload: SheetsSettingsRequest,
     session: Session = Depends(get_db_session),
     settings_service=Depends(get_settings_service),
-    request: Request = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     try:
         settings_service.update_sheets(
             session,
@@ -66,12 +66,12 @@ async def update_sheets(
 
 @router.put("/models", response_model=SettingsSnapshotResponse)
 async def update_models(
+    request: Request,
     request_payload: ModelSettingsRequest,
     session: Session = Depends(get_db_session),
     settings_service=Depends(get_settings_service),
-    request: Request = None,
 ):
-    actor = request.headers.get("x-actor") if request else None
+    actor = request.headers.get("x-actor")
     settings_service.update_models(
         session,
         embedding_repo=request_payload.embedding_repo,
