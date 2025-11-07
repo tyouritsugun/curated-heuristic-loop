@@ -27,6 +27,11 @@ class MCPServerError(MCPError):
     pass
 
 
+class MCPTransportError(MCPServerError):
+    """Network/transport failure talking to the API server."""
+    pass
+
+
 def translate_http_error(http_error: httpx.HTTPStatusError) -> MCPError:
     """
     Translate HTTP error to MCP error.

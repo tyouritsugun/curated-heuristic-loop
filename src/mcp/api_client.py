@@ -5,7 +5,14 @@ import time
 from typing import Dict, Any, Optional, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, retry_if_exception
 
-from src.mcp.errors import MCPServerError, translate_http_error
+from src.mcp.errors import (
+    MCPServerError,
+    MCPTransportError,
+    MCPValidationError,
+    MCPNotFoundError,
+    MCPConflictError,
+    translate_http_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +68,7 @@ class CircuitBreaker:
         except Exception as e:
             # Only count server-side failures and transport errors
             # Do NOT count client errors (400, 404, 409)
-            from .errors import MCPServerError, MCPValidationError, MCPNotFoundError, MCPConflictError
-            import httpx
-
-            is_server_failure = isinstance(e, (MCPServerError, httpx.RequestError))
+            is_server_failure = isinstance(e, (MCPServerError, MCPTransportError))
             is_client_error = isinstance(e, (MCPValidationError, MCPNotFoundError, MCPConflictError))
 
             if is_server_failure:
@@ -143,7 +147,16 @@ class APIClient:
         url = f"{self.base_url}{path}"
         logger.debug(f"{method} {url}")
 
+        start = time.perf_counter()
         response = self.client.request(method, url, **kwargs)
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "http_request method=%s path=%s status=%s duration_ms=%.1f",
+            method,
+            path,
+            response.status_code,
+            duration_ms,
+        )
 
         # Retry on specific status codes by raising exception
         if response.status_code in (503, 429):
@@ -180,7 +193,7 @@ class APIClient:
                 raise translate_http_error(e)
 
             except httpx.RequestError as e:
-                raise MCPServerError(f"Failed to connect to API server: {e}")
+                raise MCPTransportError(f"Failed to connect to API server: {e}")
 
         # Execute with circuit breaker
         return self.circuit_breaker.call(_request)
