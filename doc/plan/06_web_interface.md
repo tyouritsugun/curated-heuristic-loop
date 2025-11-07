@@ -53,12 +53,16 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - Internationalization and accessibility features - focus on core functionality first.
 - Distributed or cloud deployment scenarios - single-machine setup only.
 
+**Deployment assumptions**
+- FastAPI binds to `127.0.0.1` by default; exposing it beyond the local machine requires the user to place a reverse proxy with their own authentication in front of it to protect credential upload and worker control endpoints.
+
 ## Component Overview
 - **Web UI layer**: HTML templates or static assets served by FastAPI, communicating with API endpoints via fetch/AJAX.
 - **API endpoints**: Extend existing FastAPI routers to support UI operations (upload credentials, trigger import, configure settings).
-- **Configuration storage**: Move configuration from YAML/env vars into SQLite (new settings table) so UI can read/write it.
+- **Configuration storage**: Move configuration metadata from YAML/env vars into SQLite (new settings table) while keeping sensitive blobs (Google credentials, FAISS indexes) as files on disk. The DB only stores canonical paths, checksums, and validation timestamps so the runtime keeps reading secrets from the filesystem without duplicating them.
 - **Real-time updates**: Server-sent events or WebSocket for live queue status and worker metrics.
 - **MCP migration**: Refactor MCP server from direct database access to HTTP client forwarding requests to local API.
+- **Telemetry pipeline**: Workers emit periodic heartbeats and queue counters into a lightweight metrics table or in-process broadcast channel; FastAPI consumes that data when streaming live dashboards.
 
 ## Source Layout
 - `src/api_server.py` - Add static file serving and template rendering alongside existing API routes.
@@ -93,7 +97,9 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 
 ## Operational Considerations
 - UI must enforce safe operations: disable import button while workers are running, show confirmation for destructive actions.
+- Server-side endpoints mirror those guarantees by acquiring advisory locks before running long tasks (import/export/index rebuild) and rejecting concurrent or invalid requests even if they originate outside the browser UI.
 - File uploads (credentials, index files) need size limits and validation before processing.
+- Credential uploads write to a managed directory (e.g., `~/.config/chl/`) with restricted permissions; SQLite stores only the path, checksum, and last validation timestamp so sensitive JSON never lives in the database.
 - Long-running operations (import, export, index rebuild) should show progress and allow cancellation where safe.
 - Error messages must be user-friendly and actionable (not stack traces or technical jargon).
 - Configuration changes should validate before saving (test sheet access, verify credentials format).
@@ -101,11 +107,11 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - Keep the API server single-process for simplicity; horizontal scaling is not a near-term concern.
 
 ## Delivery Plan
-- **Phase 1 - MCP HTTP Client**: Refactor MCP server to call API instead of database. Test backward compatibility and performance.
-- **Phase 2 - Settings & Configuration**: Settings page with credential upload, sheet ID configuration, model selection. Migrate configuration from YAML to database.
-- **Phase 3 - Core Operations UI**: Import/export pages, worker control dashboard, queue monitoring. Keep existing configuration methods working.
-- **Phase 4 - Enhanced UX**: Real-time updates, progress indicators, validation feedback, mobile responsiveness.
-- **Phase 5 - Curator Tools**: Entry review interface, duplicate detection, merge workflow, tagging and filtering (future roadmap).
+- **Phase 0 - API Foundations**: Introduce settings/import/export/worker-control endpoints plus locking/validation so both CLI and UI clients can rely on the HTTP surface.
+- **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs, guarded by a feature flag fallback to direct database mode until parity is confirmed.
+- **Phase 2 - Settings & Configuration UI**: Settings page with credential upload (writes to managed filesystem path), sheet ID configuration, model selection. Store metadata in SQLite while secrets stay on disk.
+- **Phase 3 - Core Operations & UX**: Import/export pages, worker control dashboard, queue monitoring backed by the telemetry pipeline, and user-experience polish such as real-time visualizations, progress indicators, validation feedback, and initial mobile responsiveness.
+
 
 ## Technology Choices
 **UI Framework: Jinja2 + htmx**
@@ -130,7 +136,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 
 **Real-time Updates**
 - Server-sent events for one-way updates (queue status, worker metrics, progress indicators).
-- htmx supports SSE natively for updating page sections as events arrive.
+- htmx supports SSE natively for updating page sections as events arrive; FastAPI streams JSON generated from worker heartbeats and queue-length samples.
 - Avoid WebSocket complexity unless bidirectional communication becomes necessary.
 
 ## Risks & Mitigations
