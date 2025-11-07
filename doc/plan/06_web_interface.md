@@ -42,7 +42,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 **In scope**
 - Web pages for import/export with one-click execution and progress feedback.
 - Worker control dashboard (pause, resume, drain queue, view status).
-- Settings page for uploading Google credentials, configuring sheet IDs, and selecting embedding models.
+- Settings page that guides users through credential placement (upload helper or pointing at an existing local file), sheet ID configuration, and embedding model selection.
 - Real-time queue monitoring showing pending/failed counts and worker metrics.
 - Index management UI (trigger rebuild, view statistics, download/upload index files).
 
@@ -58,7 +58,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 
 ## Component Overview
 - **Web UI layer**: HTML templates or static assets served by FastAPI, communicating with API endpoints via fetch/AJAX.
-- **API endpoints**: Extend existing FastAPI routers to support UI operations (upload credentials, trigger import, configure settings).
+- **API endpoints**: Extend existing FastAPI routers to support UI operations (upload credentials, register existing credential paths, trigger import, configure settings).
 - **Configuration storage**: Move configuration metadata from YAML/env vars into SQLite (new settings table) while keeping sensitive blobs (Google credentials, FAISS indexes) as files on disk. The DB only stores canonical paths, checksums, and validation timestamps so the runtime keeps reading secrets from the filesystem without duplicating them.
 - **Real-time updates**: Server-sent events or WebSocket for live queue status and worker metrics.
 - **MCP migration**: Refactor MCP server from direct database access to HTTP client forwarding requests to local API.
@@ -79,7 +79,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 **Initial Setup**
 1. Clone repository and run single command to start API server.
 2. Open browser to localhost:8000, see welcome page with setup wizard.
-3. Upload Google credentials JSON via file picker.
+3. Use the credential helper to either upload the Google JSON or point at an existing path that already lives on the machine.
 4. Paste review and published sheet IDs from Google Sheets.
 5. Select embedding model size (auto-download on first use).
 6. Click "Initialize" to create database, download models, and start workers.
@@ -100,7 +100,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - UI must enforce safe operations: disable import button while workers are running, show confirmation for destructive actions.
 - Server-side endpoints mirror those guarantees by acquiring advisory locks before running long tasks (import/export/index rebuild) and rejecting concurrent or invalid requests even if they originate outside the browser UI.
 - File uploads (credentials, index files) need size limits and validation before processing.
-- Credential uploads write to a managed directory (e.g., `~/.config/chl/`) with restricted permissions; SQLite stores only the path, checksum, and last validation timestamp so sensitive JSON never lives in the database.
+- Credential helpers either copy uploaded files into a managed directory (e.g., `~/.config/chl/credentials/`) or register a pre-existing path on disk; in both cases SQLite stores only the path, checksum, and last validation timestamp so sensitive JSON never lives in the database.
 - Long-running operations (import, export, index rebuild) should show progress and allow cancellation where safe.
 - Error messages must be user-friendly and actionable (not stack traces or technical jargon).
 - Configuration changes should validate before saving (test sheet access, verify credentials format).
@@ -110,7 +110,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 ## Delivery Plan
 - **Phase 0 - API Foundations**: Introduce settings/import/export/worker-control endpoints plus locking/validation so both CLI and UI clients can rely on the HTTP surface.
 - **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs, guarded by a feature flag fallback to direct database mode until parity is confirmed.
-- **Phase 2 - Settings & Configuration UI**: Settings page with credential upload (writes to managed filesystem path), sheet ID configuration, model selection. Store metadata in SQLite while secrets stay on disk.
+- **Phase 2 - Settings & Configuration UI**: Settings page with credential placement helper (upload into managed directory or point at an existing local file), sheet ID configuration, model selection. Store metadata in SQLite while secrets stay on disk.
 - **Phase 3 - Core Operations & UX**: Import/export pages, worker control dashboard, queue monitoring backed by the telemetry pipeline, and user-experience polish such as real-time visualizations, progress indicators, validation feedback, and initial mobile responsiveness.
 
 ## MCP HTTP Rollout Controls
