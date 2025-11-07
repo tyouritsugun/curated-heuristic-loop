@@ -7,7 +7,18 @@ import numpy as np
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
-from .schema import Category, Experience, CategoryManual, Embedding, FAISSMetadata, utc_now
+from .schema import (
+    Category,
+    Experience,
+    CategoryManual,
+    Embedding,
+    FAISSMetadata,
+    JobHistory,
+    AuditLog,
+    TelemetrySample,
+    WorkerMetric,
+    utc_now,
+)
 
 
 def generate_experience_id(category_code: str) -> str:
@@ -412,3 +423,175 @@ class EmbeddingRepository:
                 result[status] = result.get(status, 0) + count
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# Operations & Telemetry repositories (Phase 0 expanded schema)
+# ---------------------------------------------------------------------------
+
+
+class JobHistoryRepository:
+    """Repository for job history records (import/export/index)."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get(self, job_id: str) -> Optional[JobHistory]:
+        return (
+            self.session.query(JobHistory)
+            .filter(JobHistory.job_id == job_id)
+            .one_or_none()
+        )
+
+    def list_recent(self, limit: int = 10) -> list[JobHistory]:
+        return (
+            self.session.query(JobHistory)
+            .order_by(JobHistory.created_at.desc())
+            .limit(max(1, limit))
+            .all()
+        )
+
+    def serialize(self, row: JobHistory) -> dict:
+        data = {
+            "job_id": row.job_id,
+            "job_type": row.job_type,
+            "status": row.status,
+            "requested_by": row.requested_by,
+            "created_at": row.created_at,
+            "started_at": row.started_at,
+            "finished_at": row.finished_at,
+            "cancelled_at": row.cancelled_at,
+        }
+        if row.payload:
+            try:
+                data["payload"] = json.loads(row.payload)
+            except json.JSONDecodeError:
+                data["payload"] = row.payload
+        if row.result:
+            try:
+                data["result"] = json.loads(row.result)
+            except json.JSONDecodeError:
+                data["result"] = row.result
+        if row.error_detail:
+            data["error"] = row.error_detail
+        return data
+
+
+class AuditLogRepository:
+    """Repository for audit log entries."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def add(self, event_type: str, actor: Optional[str] = None, context: Optional[dict] = None) -> AuditLog:
+        payload = None
+        if context is not None:
+            try:
+                payload = json.dumps(context, ensure_ascii=False)
+            except Exception:
+                payload = str(context)
+        row = AuditLog(
+            event_type=event_type,
+            actor=actor,
+            context=payload,
+            created_at=utc_now(),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def list_recent(self, limit: int = 50) -> list[AuditLog]:
+        return (
+            self.session.query(AuditLog)
+            .order_by(AuditLog.created_at.desc())
+            .limit(max(1, limit))
+            .all()
+        )
+
+
+class TelemetryRepository:
+    """Repository for telemetry samples and worker metrics."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def insert_sample(self, metric: str, value: dict) -> TelemetrySample:
+        row = TelemetrySample(
+            metric=metric,
+            value_json=json.dumps(value, ensure_ascii=False),
+            recorded_at=utc_now(),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def latest_sample(self, metric: str) -> Optional[TelemetrySample]:
+        return (
+            self.session.query(TelemetrySample)
+            .filter(TelemetrySample.metric == metric)
+            .order_by(TelemetrySample.recorded_at.desc())
+            .first()
+        )
+
+    def recent_samples(self, metric: str, limit: int = 100) -> list[TelemetrySample]:
+        return (
+            self.session.query(TelemetrySample)
+            .filter(TelemetrySample.metric == metric)
+            .order_by(TelemetrySample.recorded_at.desc())
+            .limit(max(1, limit))
+            .all()
+        )
+
+    def prune_samples(self, metric: str, retain: int) -> int:
+        ids = (
+            self.session.query(TelemetrySample.id)
+            .filter(TelemetrySample.metric == metric)
+            .order_by(TelemetrySample.id.desc())
+            .offset(max(0, retain))
+            .all()
+        )
+        if not ids:
+            return 0
+        deleted = (
+            self.session.query(TelemetrySample)
+            .filter(TelemetrySample.id.in_([row[0] for row in ids]))
+            .delete(synchronize_session=False)
+        )
+        return int(deleted or 0)
+
+    def upsert_worker_metric(
+        self,
+        worker_id: str,
+        status: str,
+        heartbeat_at: Optional[str],
+        queue_depth: int,
+        processed: int,
+        failed: int,
+        payload: Optional[dict] = None,
+    ) -> WorkerMetric:
+        row = self.session.query(WorkerMetric).filter(WorkerMetric.worker_id == worker_id).one_or_none()
+        payload_json = json.dumps(payload, ensure_ascii=False) if payload is not None else None
+        if row is None:
+            row = WorkerMetric(
+                worker_id=worker_id,
+                status=status,
+                heartbeat_at=heartbeat_at or utc_now(),
+                queue_depth=int(queue_depth),
+                processed=int(processed),
+                failed=int(failed),
+                payload=payload_json,
+                created_at=utc_now(),
+            )
+            self.session.add(row)
+        else:
+            row.status = status
+            row.heartbeat_at = heartbeat_at or utc_now()
+            row.queue_depth = int(queue_depth)
+            row.processed = int(processed)
+            row.failed = int(failed)
+            row.payload = payload_json
+        self.session.flush()
+        return row
+
+    def list_worker_metrics(self) -> list[WorkerMetric]:
+        return self.session.query(WorkerMetric).order_by(WorkerMetric.worker_id.asc()).all()

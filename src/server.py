@@ -93,6 +93,21 @@ TOOL_INDEX = [
         "description": "Return the generator or evaluator workflow manual seeded in GLN.",
         "example": {"guide_type": "generator"}
     },
+    {
+        "name": "run_import",
+        "description": "Trigger import operation via API; returns job id + status.",
+        "example": {"payload": {"mode": "full"}}
+    },
+    {
+        "name": "run_export",
+        "description": "Trigger export operation via API; returns job id + status.",
+        "example": {"payload": {"dest": "sheets"}}
+    },
+    {
+        "name": "rebuild_index",
+        "description": "Trigger index maintenance via API operations; returns job id + status.",
+        "example": {}
+    },
 ]
 
 WORKFLOW_MODE_PAYLOAD = {
@@ -243,13 +258,17 @@ def _request_with_fallback(
     payload: Optional[Dict[str, Any]] = None,
     fallback_name: Optional[str] = None,
     fallback_kwargs: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Tuple[Dict[str, Any], str]:
     """Call API and optionally fall back to the direct handler."""
     fallback_kwargs = fallback_kwargs or {}
 
     if _http_enabled() and api_client is not None:
         try:
-            request_kwargs = {"json": payload} if payload is not None else {}
+            request_kwargs: Dict[str, Any] = {"json": payload} if payload is not None else {}
+            if headers:
+                # Merge/override default headers
+                request_kwargs["headers"] = headers
             return api_client.request(method, path, **request_kwargs), "http"
         except MCPTransportError as exc:
             if _auto_mode_enabled() and fallback_name:
@@ -422,6 +441,9 @@ def init_server():
     mcp.tool()(update_entry)
     mcp.tool()(delete_entry)
     mcp.tool()(get_guidelines)
+    mcp.tool()(run_import)
+    mcp.tool()(run_export)
+    mcp.tool()(rebuild_index)
 
     try:
         mcp.instructions = json.dumps(_build_handshake_payload())
@@ -658,6 +680,70 @@ def get_guidelines(guide_type: str, version: str = None) -> Dict[str, Any]:
         raise
     except Exception as e:  # pragma: no cover - defensive
         logger.exception(f"Unexpected error in get_guidelines: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def _actor_header() -> Dict[str, str]:
+    """Best-effort actor header for operations audit trail."""
+    try:
+        import getpass
+        actor = getpass.getuser() or "unknown"
+    except Exception:
+        actor = "unknown"
+    return {"x-actor": actor}
+
+
+def run_import(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Trigger an import job via API operations endpoint."""
+    try:
+        body = {"payload": payload} if payload else {}
+        response, _ = _request_with_fallback(
+            "POST",
+            "/api/v1/operations/import",
+            payload=body,
+            headers=_actor_header(),
+        )
+        return response
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in run_import: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def run_export(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Trigger an export job via API operations endpoint."""
+    try:
+        body = {"payload": payload} if payload else {}
+        response, _ = _request_with_fallback(
+            "POST",
+            "/api/v1/operations/export",
+            payload=body,
+            headers=_actor_header(),
+        )
+        return response
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in run_export: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def rebuild_index(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Trigger an index maintenance job via API operations endpoint."""
+    try:
+        body = {"payload": payload} if payload else {}
+        response, _ = _request_with_fallback(
+            "POST",
+            "/api/v1/operations/index",
+            payload=body,
+            headers=_actor_header(),
+        )
+        return response
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in rebuild_index: {e}")
         raise MCPError(f"Unexpected error: {e}")
 
 

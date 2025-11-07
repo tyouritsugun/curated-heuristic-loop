@@ -14,6 +14,7 @@ from src.storage.schema import (
     JobHistory,
     utc_now,
 )
+from src.services.telemetry_names import QUEUE_DEPTH, WORKER_POOL
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +79,9 @@ class TelemetryService:
         session = self._session_factory()
         try:
             if queue_sample is not None:
-                self._insert_sample(session, "queue_depth", queue_sample)
+                self._insert_sample(session, QUEUE_DEPTH, queue_sample)
             if worker_sample is not None:
-                self._insert_sample(session, "worker_pool", worker_sample)
+                self._insert_sample(session, WORKER_POOL, worker_sample)
                 self._record_worker_metrics(session, worker_sample, queue_sample)
             session.commit()
         except Exception:
@@ -90,8 +91,8 @@ class TelemetryService:
             session.close()
 
     def snapshot(self, session: Session, jobs_limit: int = 5) -> Dict[str, Any]:
-        queue = self._latest_sample(session, "queue_depth")
-        worker_pool = self._latest_sample(session, "worker_pool")
+        queue = self._latest_sample(session, QUEUE_DEPTH)
+        worker_pool = self._latest_sample(session, WORKER_POOL)
         workers = self._current_worker_metrics(session)
         jobs = self._recent_jobs(session, jobs_limit)
 
