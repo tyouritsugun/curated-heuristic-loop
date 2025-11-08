@@ -2,7 +2,7 @@
   id="diagnostics-panel"
   class="card diagnostics"
   hx-get="/ui/settings/diagnostics"
-  hx-trigger="load, settings-changed from:body"
+  {% if not is_partial %}hx-trigger="revealed once, settings-changed from:body"{% endif %}
   hx-target="#diagnostics-panel"
   hx-swap="outerHTML"
 >
@@ -39,8 +39,17 @@
   <span class="htmx-indicator" id="diagnostics-indicator">Checking…</span>
 </section>
 
-{% if is_partial and (message or error) %}
-  {% with oob=True %}
-    {% include "partials/flash.html" %}
-  {% endwith %}
+{% if is_partial %}
+  <span class="htmx-indicator" id="diagnostics-indicator" hx-swap-oob="true"></span>
+  {% if message or error %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+{% else %}
+  {% if message or error %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
 {% endif %}

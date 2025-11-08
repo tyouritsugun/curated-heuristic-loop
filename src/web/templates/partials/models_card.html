@@ -5,7 +5,7 @@
     <div>
       <h2>Embedding &amp; Reranker Models</h2>
       <p class="muted">Embeddings turn every sentence into a vector so FAISS can search it. Rerankers re-order the top hits using a tiny cross-encoder for better relevance.</p>
-      <p class="muted">This deployment pins the repos to <strong>Qwen/Qwen3-Embedding</strong> and <strong>Mungert/Qwen3-Reranker</strong>. Pick the bundle size/quantization that matches your RAM/VRAM budget.</p>
+      <p class="muted">This deployment pins the repos to <strong>Qwen/Qwen3-Embedding</strong> and <strong>Mungert/Qwen3-Reranker</strong>. Pick the bundle size/quantization that matches your RAM/VRAM budget (0.6B Q4_K_M is the minimum, 4B Q4_K_M is the recommended sweet spot).</p>
     </div>
     <span class="status-pill {{ model_diag.state }}">{{ model_diag.headline }}</span>
   </header>

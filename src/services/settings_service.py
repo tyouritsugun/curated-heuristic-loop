@@ -585,13 +585,17 @@ class SettingsService:
                 validated_at=data.get("validated_at"),
             )
 
-        summary = (
-            "Categories → {cat}\nExperiences → {exp}\nManuals → {man}".format(
-                cat=f"{cat_sheet_id}/{cat_ws}",
-                exp=f"{exp_sheet_id}/{exp_ws}",
-                man=f"{man_sheet_id}/{man_ws}",
-            )
-        )
+        summary_lines = []
+        if cat_ws:
+            # summary_lines.append(f"Categories → {cat_ws}")
+            summary_lines.append(f"{cat_ws}, ")
+        if exp_ws:
+            # summary_lines.append(f"Experiences → {exp_ws}")
+            summary_lines.append(f"{exp_ws}, ")
+        if man_ws:
+            # summary_lines.append(f"Manuals → {man_ws}")
+            summary_lines.append(f"{man_ws} ")
+        summary = "\n".join(summary_lines) 
 
         state = "ok"
         headline = "Sheet config loaded"

@@ -98,7 +98,7 @@ RERANKER_CHOICES = [
         "repo": "Mungert/Qwen3-Reranker-0.6B-GGUF",
         "quant": "Q4_K_M",
         "label": "0.6B · Q4_K_M · ~300 MB",
-        "tag": "recommended",
+        "tag": "minimum",
         "notes": "Great accuracy on CPU",
     },
     {
@@ -112,7 +112,7 @@ RERANKER_CHOICES = [
         "repo": "Mungert/Qwen3-Reranker-4B-GGUF",
         "quant": "Q4_K_M",
         "label": "4B · Q4_K_M · ~2.5 GB",
-        "tag": None,
+        "tag": "recommended",
         "notes": "Use when you have GPU VRAM",
     },
     {
