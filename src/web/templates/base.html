@@ -4,24 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "Curated Heuristic Loop" }}</title>
+  <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.10/css/pico.min.css" />
   <link rel="stylesheet" href="{{ request.url_for('static', path='css/settings.css') }}" />
   <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-CsC25QxEqk3+rXhN3kLBXjg5eQof8I4eAbOe+tfLOcOfeUOLuO/FFKs/d4V2kM5D" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
 </head>
 <body hx-boost="true">
-  <header class="site-nav">
-    <div class="container">
-      <nav>
-        <a href="/" class="brand">CHL</a>
-        <div class="links">
-          <a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a>
-          <a href="/operations" class="{% if active_page == 'operations' %}active{% endif %}">Operations</a>
-        </div>
-      </nav>
-    </div>
-  </header>
-  <main class="container" id="settings-root">
+  {% include "partials/sidebar.html" %}
+  <main class="main-content" style="margin-left:250px">
     {% block content %}{% endblock %}
   </main>
 </body>

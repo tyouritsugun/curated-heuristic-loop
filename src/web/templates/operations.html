@@ -1,18 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="content-wrapper">
   <header class="page-header">
     <div>
       <h1>Operations &amp; Monitoring</h1>
-      <p class="muted">Trigger imports/exports, watch worker status, and monitor queue health in real time.</p>
     </div>
     <div class="actions">
-      <a class="secondary" href="/settings">View Settings</a>
       <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
     </div>
   </header>
 
   {% include "partials/flash.html" %}
-  {% include "partials/ops_onboarding.html" %}
+
+  <div id="operations-onboarding-card" class="operations-section">
+    {% include "partials/ops_onboarding.html" %}
+  </div>
 
   {% set cred_diag = diagnostics.credentials %}
   {% if cred_diag.state != 'ok' %}
@@ -23,14 +25,23 @@
   {% endif %}
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
-    {% include "partials/ops_operations_card.html" %}
-    {% include "partials/ops_index_card.html" %}
-    {% include "partials/ops_workers_card.html" %}
-    {% include "partials/ops_queue_card.html" %}
-    <div class="full-span">
+    <div id="ops-controls-card" class="operations-section">
+      {% include "partials/ops_operations_card.html" %}
+    </div>
+    <div id="ops-index-card" class="operations-section">
+      {% include "partials/ops_index_card.html" %}
+    </div>
+    <div id="ops-workers-card" class="operations-section">
+      {% include "partials/ops_workers_card.html" %}
+    </div>
+    <div id="ops-queue-card" class="operations-section">
+      {% include "partials/ops_queue_card.html" %}
+    </div>
+    <div id="ops-jobs-card" class="full-span operations-section">
       {% include "partials/ops_jobs_card.html" %}
     </div>
   </div>
+</div>
   <script>
     (function() {
       function setSseState(cls, text) {
@@ -55,5 +66,30 @@
         setSseState('error', 'Disconnected');
       });
     })();
+
+    document.addEventListener('DOMContentLoaded', function () {
+      function showSection(sectionId) {
+        var sections = document.getElementsByClassName('operations-section');
+        for (var i = 0; i < sections.length; i++) {
+          sections[i].style.display = 'none';
+        }
+        var section = document.getElementById(sectionId);
+        if (section) {
+          section.style.display = 'block';
+        }
+      }
+
+      function handleHashChange() {
+        var hash = window.location.hash.substring(1);
+        if (hash) {
+          showSection(hash);
+        } else {
+          showSection('operations-onboarding-card');
+        }
+      }
+
+      window.addEventListener('hashchange', handleHashChange);
+      handleHashChange(); // Show initial section
+    });
   </script>
 {% endblock %}

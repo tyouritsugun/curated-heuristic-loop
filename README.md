@@ -2,7 +2,7 @@
 
 Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
-For the full workflow philosophy see [doc/chl_guide.md](doc/chl_guide.md). For detailed operator procedures see [doc/chl_manual.md](doc/chl_manual.md).
+For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detailed operator procedures see [doc/manual.md](doc/manual.md).
 
 ## Quick Start (Web UI first)
 
@@ -49,7 +49,7 @@ Add CHL to `~/.cursor/mcp.json` or another MCP-aware client if you want the assi
       "command": "uv",
       "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"],
       "env": {
-        // Optional overrides; see doc/chl_manual.md for all keys
+        // Optional overrides; see doc/manual.md for all keys
         // "CHL_GOOGLE_CREDENTIALS_PATH": "/path/to/credentials.json",
         // "CHL_EXPERIENCE_ROOT": "/path/to/data"
       }
@@ -105,8 +105,8 @@ Both dashboards share the same process as the MCP/API stack, so every change is 
 
 ## Advanced references
 
-- Workflow philosophy: [doc/chl_guide.md](doc/chl_guide.md)
-- Operator runbooks & API details: [doc/chl_manual.md](doc/chl_manual.md)
+- Workflow philosophy: [doc/concept.md](doc/concept.md)
+- Operator runbooks & API details: [doc/manual.md](doc/manual.md)
 - Web plan breakdown (Phases 0–3): [doc/plan/06_web_interface/](doc/plan/06_web_interface/)
 - Advanced toggle: set `CHL_OPERATIONS_MODE=noop` before starting the server if you need the Operations buttons to stay in dry-run mode (the default `scripts` mode executes the CLI helpers).
 

@@ -723,7 +723,7 @@ def print_next_steps():
 
     print("For more information, see:")
     print("  - doc/script_commands.md")
-    print("  - doc/chl_guide.md\n")
+    print("  - doc/concept.md\n")
 
 
 def check_platform():

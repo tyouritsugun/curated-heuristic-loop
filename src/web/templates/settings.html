@@ -1,26 +1,54 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="content-wrapper">
   <header class="page-header">
     <div>
       <h1>Settings &amp; Configuration</h1>
-      <p class="muted">Secrets stay on disk under <code>{{ secrets_root }}</code>; SQLite stores only metadata (path, checksum, timestamps).</p>
-    </div>
-    <div class="actions">
-      <a class="contrast" href="/ui/settings/backup">Download Backup</a>
     </div>
   </header>
 
   {% include "partials/flash.html" %}
-  {% include "partials/settings_onboarding.html" %}
 
-  {% include "partials/diagnostics_panel.html" %}
-
-  <div class="card-stack">
+  <div id="checklist" class="w3-container settings-section">
+    {% include "partials/settings_onboarding.html" %}
+  </div>
+  <div id="credentials" class="w3-container settings-section">
     {% include "partials/credentials_card.html" %}
+  </div>
+  <div id="sheets" class="w3-container settings-section">
     {% include "partials/sheets_card.html" %}
+  </div>
+  <div id="models" class="w3-container settings-section">
     {% include "partials/models_card.html" %}
   </div>
+  <div id="backup" class="w3-container settings-section">
+    {% include "partials/backup_card.html" %}
+  </div>
+</div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      function showSection(sectionId) {
+        var sections = document.getElementsByClassName('settings-section');
+        for (var i = 0; i < sections.length; i++) {
+          sections[i].style.display = 'none';
+        }
+        var section = document.getElementById(sectionId);
+        if (section) {
+          section.style.display = 'block';
+        }
+      }
 
-  {% include "partials/audit_log.html" %}
-  {% include "partials/backup_card.html" %}
+      function handleHashChange() {
+        var hash = window.location.hash.substring(1);
+        if (hash) {
+          showSection(hash);
+        } else {
+          showSection('checklist');
+        }
+      }
+
+      window.addEventListener('hashchange', handleHashChange);
+      handleHashChange(); // Show initial section
+    });
+  </script>
 {% endblock %}

@@ -1,10 +1,10 @@
 body {
-  background: #0f1115;
-  color: #f4f5f7;
+  background: #ffffff;
+  color: #000000;
 }
 
 .site-nav {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   margin-bottom: 1rem;
 }
 
@@ -22,24 +22,26 @@ body {
 .site-nav .brand {
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #7dc4ff;
+  color: #007bff;
   text-decoration: none;
 }
 
 .site-nav .links a {
   margin-left: 1rem;
   text-decoration: none;
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .site-nav .links a.active {
-  color: #f4f5f7;
+  color: #000000;
   font-weight: 600;
 }
 
-main.container {
+.container {
   max-width: 920px;
   padding: 2rem 1rem 4rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .page-header {
@@ -48,10 +50,11 @@ main.container {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
+  padding: 0 1.5rem;
 }
 
 .page-header .muted {
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .page-header .actions {
@@ -61,11 +64,12 @@ main.container {
 }
 
 .card {
-  background: #1a1d24;
+  background: #f8f9fa;
   border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid #dee2e6;
 }
 
 .ops-grid {
@@ -126,11 +130,11 @@ main.container {
 }
 
 .status.ok {
-  color: #7ee787;
+  color: #28a745;
 }
 
 .status.warn {
-  color: #f88c5d;
+  color: #fd7e14;
 }
 
 .flash {
@@ -140,18 +144,18 @@ main.container {
 }
 
 .flash.success {
-  background: #13281c;
-  color: #7ee787;
+  background: #d4edda;
+  color: #155724;
 }
 
 .flash.info {
-  background: #0f1f2e;
-  color: #7dc4ff;
+  background: #d1ecf1;
+  color: #0c5460;
 }
 
 .flash.error {
-  background: #2a0f19;
-  color: #ff8ea2;
+  background: #f8d7da;
+  color: #721c24;
 }
 
 .status-pill {
@@ -163,23 +167,23 @@ main.container {
 }
 
 .status-pill.ok {
-  background: rgba(126, 231, 135, 0.12);
-  color: #7ee787;
+  background: rgba(40, 167, 69, 0.12);
+  color: #28a745;
 }
 
 .status-pill.warn {
-  background: rgba(248, 140, 93, 0.12);
-  color: #f88c5d;
+  background: rgba(253, 126, 20, 0.12);
+  color: #fd7e14;
 }
 
 .status-pill.info {
-  background: rgba(125, 196, 255, 0.12);
-  color: #7dc4ff;
+  background: rgba(23, 162, 184, 0.12);
+  color: #17a2b8;
 }
 
 .status-pill.error {
-  background: rgba(255, 142, 162, 0.15);
-  color: #ff8ea2;
+  background: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
 }
 
 .diagnostics-list {
@@ -196,7 +200,7 @@ main.container {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .diag-row:last-child {
@@ -214,19 +218,19 @@ main.container {
   height: 12px;
   border-radius: 50%;
   margin-top: 0.4rem;
-  background: #7dc4ff;
+  background: #17a2b8;
 }
 
 .diag-row.ok .status-dot {
-  background: #7ee787;
+  background: #28a745;
 }
 
 .diag-row.warn .status-dot {
-  background: #f88c5d;
+  background: #fd7e14;
 }
 
 .diag-row.error .status-dot {
-  background: #ff8ea2;
+  background: #dc3545;
 }
 
 .diag-title {
@@ -236,12 +240,12 @@ main.container {
 
 .diag-detail {
   margin: 0;
-  color: #9aa0b3;
+  color: #6c757d;
   font-size: 0.9rem;
 }
 
 .diag-timestamp {
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 details {
@@ -261,10 +265,10 @@ textarea {
   margin-top: 0.35rem;
   width: 100%;
   min-height: 150px;
-  background: #11141a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #f8f9fa;
+  border: 1px solid #ced4da;
   border-radius: 8px;
-  color: #f4f5f7;
+  color: #000000;
 }
 
 .meta-grid {
@@ -278,7 +282,7 @@ textarea {
   margin: 0;
   text-transform: uppercase;
   font-size: 0.75rem;
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .meta-value {
@@ -288,8 +292,8 @@ textarea {
 }
 
 .ops-status-alert {
-  border-left: 4px solid #f88c5d;
-  background: #2a1b11;
+  border-left: 4px solid #fd7e14;
+  background: #fff3cd;
   padding: 1rem;
   border-radius: 8px;
   margin-bottom: 1.5rem;
@@ -302,14 +306,14 @@ textarea {
 }
 
 .stat-pair {
-  background: #141821;
+  background: #e9ecef;
   border-radius: 10px;
   padding: 1rem;
 }
 
 .stat-label {
   margin: 0;
-  color: #9aa0b3;
+  color: #6c757d;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -346,7 +350,7 @@ textarea {
 .job-table th,
 .job-table td {
   padding: 0.6rem 0.4rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   text-align: left;
 }
 
@@ -354,23 +358,23 @@ textarea {
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .job-status-running {
-  color: #7dc4ff;
+  color: #17a2b8;
 }
 
 .job-status-succeeded {
-  color: #7ee787;
+  color: #28a745;
 }
 
 .job-status-failed {
-  color: #ff8ea2;
+  color: #dc3545;
 }
 
 .job-status-cancelled {
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .ops-card form button + button {
@@ -394,7 +398,7 @@ textarea {
   justify-content: space-between;
   gap: 0.75rem;
   padding-top: 0.35rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .run-label {
@@ -421,7 +425,7 @@ textarea {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 .index-meta dd {
@@ -431,7 +435,7 @@ textarea {
 .htmx-indicator {
   display: none;
   margin-top: 0.5rem;
-  color: #9aa0b3;
+  color: #6c757d;
   font-size: 0.9rem;
 }
 
@@ -456,14 +460,14 @@ textarea {
 
 .audit-meta {
   margin: 0.2rem 0;
-  color: #9aa0b3;
+  color: #6c757d;
   font-size: 0.85rem;
 }
 
 .audit-context {
   margin: 0;
   padding: 0.75rem;
-  background: #11141a;
+  background: #e9ecef;
   border-radius: 8px;
   font-size: 0.85rem;
   overflow-x: auto;
@@ -476,11 +480,34 @@ textarea {
 small.muted {
   display: block;
   margin-top: -0.5rem;
-  color: #9aa0b3;
+  color: #6c757d;
 }
 
 code {
-  background: #0f1f2e;
+  background: #e9ecef;
   padding: 0.25rem 0.4rem;
   border-radius: 6px;
+  color: #000;
+}
+
+/* Sidebar Styles */
+.main-menu {
+  font-size: 1.2em;
+  font-weight: 700;
+  padding: 16px 16px 8px 16px;
+  cursor: default;
+}
+
+.sub-menu {
+  padding-left: 32px !important; /* Indentation */
+  font-size: 0.95em;
+}
+
+/* Content Layout */
+.main-content {
+    padding: 2rem;
+}
+
+.content-wrapper {
+  max-width: 920px;
 }
