@@ -19,6 +19,7 @@ import os
 import sys
 import logging
 import time
+import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable, Tuple
@@ -140,6 +141,7 @@ CLI_HTTP_MODE = _parse_http_mode_override()
 HTTP_MODE = "http"
 CATEGORIES_CACHE_TTL = 30.0
 _categories_cache: Dict[str, Any] = {"payload": None, "expires": 0.0}
+_categories_cache_lock = threading.Lock()
 _direct_handlers: Dict[str, Callable] = {}
 
 # Global state
@@ -209,18 +211,27 @@ def _auto_mode_enabled() -> bool:
 def _get_cached_categories() -> Optional[Dict[str, Any]]:
     if not _http_enabled():
         return None
-    payload = _categories_cache.get("payload")
-    expires = _categories_cache.get("expires", 0.0)
-    if payload is None or expires < time.time():
-        return None
-    return payload
+    with _categories_cache_lock:
+        payload = _categories_cache.get("payload")
+        expires = _categories_cache.get("expires", 0.0)
+        if payload is None or expires < time.time():
+            return None
+        return payload
 
 
 def _set_categories_cache(payload: Dict[str, Any], source: str) -> None:
     if source != "http":
         return
-    _categories_cache["payload"] = payload
-    _categories_cache["expires"] = time.time() + CATEGORIES_CACHE_TTL
+    with _categories_cache_lock:
+        _categories_cache["payload"] = payload
+        _categories_cache["expires"] = time.time() + CATEGORIES_CACHE_TTL
+
+
+def invalidate_categories_cache() -> None:
+    """Clear categories cache, e.g., after settings changes."""
+    with _categories_cache_lock:
+        _categories_cache["payload"] = None
+        _categories_cache["expires"] = 0.0
 
 
 def _ensure_direct_handlers() -> Dict[str, Callable]:
@@ -401,6 +412,10 @@ def init_server():
         _setup_logging(config)
     except Exception as e:  # pragma: no cover - logging setup best-effort
         print(f"Warning: failed to initialize file logging: {e}")
+
+    # Warn if legacy alias is used to avoid confusion during rollouts
+    if os.getenv("CHL_USE_API") is not None:
+        logger.warning("CHL_USE_API is deprecated. Prefer CHL_MCP_HTTP_MODE={http|auto|direct}.")
 
     logger.info(
         "MCP HTTP mode resolved to '%s' (base_url=%s)",

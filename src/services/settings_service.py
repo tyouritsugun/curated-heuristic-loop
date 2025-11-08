@@ -113,6 +113,17 @@ class SettingsService:
         if not resolved.exists() or not resolved.is_file():
             raise SettingValidationError(f"Credentials file does not exist: {resolved}")
 
+        # Enforce strict permissions: reject world/group-readable credentials
+        try:
+            import stat as _stat
+            perms = _stat.S_IMODE(resolved.stat().st_mode)
+        except OSError:
+            perms = None
+        if perms is not None and (perms & 0o077):
+            raise SettingValidationError(
+                f"Credential permissions too open ({oct(perms)}). Fix with: chmod 600 {resolved}"
+            )
+
         checksum = self._sha256(resolved)
         metadata = {
             "path": str(resolved),

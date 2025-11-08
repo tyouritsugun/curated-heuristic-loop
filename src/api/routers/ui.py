@@ -1265,6 +1265,15 @@ async def upload_index_snapshot(
         archive_path = await _persist_archive_upload(snapshot)
         restore_result = _restore_index_archive(archive_path, config, search_service)
     except IndexUploadError as exc:
+        # Audit blocked upload attempts for security visibility
+        session.add(
+            AuditLog(
+                event_type="index.snapshot.upload_blocked",
+                actor=actor,
+                context=json.dumps({"error": str(exc)}, ensure_ascii=False),
+                created_at=utc_now(),
+            )
+        )
         if archive_path and archive_path.exists():
             archive_path.unlink(missing_ok=True)
         return _operations_partial_response(
@@ -1425,7 +1434,21 @@ def _restore_index_archive(archive_path: Path, config, search_service) -> dict:
             if not members:
                 raise IndexUploadError("Archive did not contain any files.")
             temp_dir = Path(tempfile.mkdtemp())
-            archive.extractall(temp_dir)
+            # Secure, file-by-file extraction with validation
+            for member in members:
+                rel_name = Path(member.filename).name
+                if not rel_name:
+                    continue
+                # Only allow expected FAISS artifacts
+                if not any(rel_name.endswith(s) for s in (".index", ".json", ".backup")):
+                    raise IndexUploadError(f"Unsupported file '{rel_name}'.")
+                # Enforce size limit per file (~512 MiB total is already enforced on upload)
+                if member.file_size > (512 * 1024 * 1024):
+                    raise IndexUploadError(f"File too large: {rel_name}")
+                dest = (temp_dir / rel_name).resolve()
+                # Write the member content without using extractall/extract to avoid Zip Slip
+                with archive.open(member, "r") as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
     except zipfile.BadZipFile as exc:
         raise IndexUploadError("Uploaded file is not a valid ZIP archive.") from exc
 
@@ -1441,7 +1464,7 @@ def _restore_index_archive(archive_path: Path, config, search_service) -> dict:
                 continue
             if not any(rel_name.endswith(suffix) for suffix in allowed_suffixes):
                 raise IndexUploadError(f"Unsupported file '{rel_name}'.")
-            src_path = (temp_dir / member.filename).resolve()
+            src_path = (temp_dir / rel_name).resolve()
             if not str(src_path).startswith(str(base_temp)):
                 raise IndexUploadError("Archive attempted path traversal.")
             dest_path = index_dir / rel_name

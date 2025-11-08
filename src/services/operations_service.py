@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+import re
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -53,6 +54,11 @@ class OperationsService:
         self._project_root = Path(project_root).resolve() if project_root else Path(__file__).resolve().parents[2]
         self._scripts_dir = self._project_root / "scripts"
         self._handlers: Dict[str, OperationHandler] = {}
+        # Hard cap duration for external scripts (seconds)
+        try:
+            self._timeout_seconds = int(os.getenv("CHL_OPERATIONS_TIMEOUT_SEC", "900"))
+        except ValueError:
+            self._timeout_seconds = 900
         self._register_builtin_handlers()
 
     # ------------------------------------------------------------------
@@ -299,19 +305,36 @@ class OperationsService:
             raise RuntimeError(f"Scripts directory not found: {self._scripts_dir}")
 
         env = os.environ.copy()
+        # Only allow safe overrides of CHL_* variables to avoid injecting arbitrary env
         if payload and isinstance(payload.get("env"), dict):
+            allowed_key = re.compile(r"^[A-Z0-9_]{3,64}$")
             for key, value in payload["env"].items():
-                env[str(key)] = str(value)
+                k = str(key)
+                if not allowed_key.match(k):
+                    logger.warning("Blocked env override for disallowed key: %s", k)
+                    continue
+                if not k.startswith("CHL_"):
+                    logger.warning("Blocked env override for non-CHL key: %s", k)
+                    continue
+                env[k] = str(value)
 
         start = time.perf_counter()
         logger.info("Running operation command: %s", " ".join(command))
-        proc = subprocess.run(
-            command,
-            cwd=str(self._project_root),
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(self._project_root),
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=max(60, self._timeout_seconds),
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration = round(time.perf_counter() - start, 3)
+            tail = self._tail_text((exc.stdout or "") + "\n" + (exc.stderr or ""))
+            raise RuntimeError(
+                f"Command {' '.join(command)} timed out after {duration:.1f}s: {tail}"
+            ) from exc
         duration = round(time.perf_counter() - start, 3)
 
         result = {
