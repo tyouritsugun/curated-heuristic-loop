@@ -1,6 +1,7 @@
 """FastAPI server entrypoint for CHL API."""
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -294,16 +295,10 @@ app.include_router(ui_router)
 app.include_router(docs_router)
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def root():
-    """Root endpoint."""
-    return {
-        "service": "CHL API",
-        "version": "0.2.0",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/health",
-    }
+    """Route visitors to the settings dashboard by default."""
+    return RedirectResponse(url="/settings", status_code=307)
 
 
 # Configure logging on module import
