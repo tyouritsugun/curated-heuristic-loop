@@ -411,13 +411,6 @@ def init_server():
     except Exception:
         session.close()
         raise
-    try:
-        logger.info(
-            f"Embed on write: {'enabled' if getattr(config, 'embed_on_write', False) else 'disabled'}"
-        )
-    except Exception:
-        pass
-
     # Register moved tools (search-related) after services are ready
     mcp.tool()(make_read_entries_handler(db, config, search_service))
     mcp.tool()(make_write_entry_handler(db, config, search_service))

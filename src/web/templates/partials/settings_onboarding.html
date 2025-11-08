@@ -1,0 +1,28 @@
+<section class="card onboarding-card" id="settings-onboarding-card">
+  <header>
+    <div>
+      <h2>First-time checklist</h2>
+      <p class="muted">Follow these steps in order; this page keeps the secrets on disk and stores only metadata in SQLite.</p>
+    </div>
+  </header>
+  <ol>
+    <li>
+      <strong>Place credentials.</strong> Upload the Google service-account JSON into <code>{{ managed_credentials_dir }}</code>
+      or, if the file already exists on this machine, choose “Use existing file”. Browser paths are not readable by the server.
+    </li>
+    <li>
+      <strong>Copy your sheet IDs.</strong> Enter the Spreadsheet ID and tab names from your team’s <code>scripts/scripts_config.yaml</code>
+      (or whatever source of truth you track). The UI never edits that YAML file, so CLI scripts keep working.
+    </li>
+    <li>
+      <strong>Select models.</strong> Pick the embedding and reranker repos/quantization that match the hardware you have available.
+      The worker pool will reuse these settings automatically.
+    </li>
+    <li>
+      <strong>Validate connectivity.</strong> Use the diagnostics panel to re-check credentials + sheet access, then download a JSON backup.
+    </li>
+    <li>
+      <strong>Head to Operations.</strong> Once every section shows a green status pill, open the Operations dashboard to run imports, exports, or index rebuilds.
+    </li>
+  </ol>
+</section>

@@ -21,7 +21,6 @@ from src.storage.repository import (
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.embedding.service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -297,15 +296,6 @@ def make_write_entry_handler(db, config, search_service):
                     entry_id = new_obj.id
 
                     # Best-effort embedding after commit
-                    try:
-                        if getattr(config, "embed_on_write", False) and search_service is not None:
-                            vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                            if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                                emb = EmbeddingService(session=session, embedding_client=vp.embedding_client, faiss_index_manager=vp.index_manager)
-                                emb.upsert_for_experience(entry_id)
-                    except Exception:
-                        logger.exception(f"Inline embedding failed for experience {entry_id}")
-
                     response: Dict[str, Any] = {
                         "meta": {"code": meta_code, "name": meta_name},
                         "entry_id": entry_id,
@@ -344,16 +334,6 @@ def make_write_entry_handler(db, config, search_service):
                     })
 
                     manual_id = new_manual.id
-
-                    # Inline embedding optional
-                    try:
-                        if getattr(config, "embed_on_write", False) and search_service is not None:
-                            vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                            if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                                emb = EmbeddingService(session=session, embedding_client=vp.embedding_client, faiss_index_manager=vp.index_manager)
-                                emb.upsert_for_manual(manual_id)
-                    except Exception:
-                        logger.exception(f"Inline embedding failed for manual {manual_id}")
 
                     return {"meta": {"code": meta_code, "name": meta_name}, "entry_id": manual_id}
 
@@ -465,16 +445,6 @@ def make_update_entry_handler(db, config, search_service):
                         "sync_status": updated.sync_status,
                     }
 
-                    # Inline embedding update
-                    try:
-                        if getattr(config, "embed_on_write", False) and search_service is not None:
-                            vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                            if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                                emb = EmbeddingService(session=session, embedding_client=vp.embedding_client, faiss_index_manager=vp.index_manager)
-                                emb.upsert_for_experience(entry_id)
-                    except Exception:
-                        logger.exception(f"Inline embedding update failed for experience {entry_id}")
-
                     return {"meta": {"code": meta_code, "name": meta_name}, "entry": entry_dict}
 
                 else:  # manual
@@ -508,15 +478,6 @@ def make_update_entry_handler(db, config, search_service):
                         "updated_at": updated.updated_at,
                         "author": updated.author,
                     }
-
-                    try:
-                        if getattr(config, "embed_on_write", False) and search_service is not None:
-                            vp = getattr(search_service, "get_vector_provider", lambda: None)()
-                            if vp and hasattr(vp, "embedding_client") and hasattr(vp, "index_manager"):
-                                emb = EmbeddingService(session=session, embedding_client=vp.embedding_client, faiss_index_manager=vp.index_manager)
-                                emb.upsert_for_manual(entry_id)
-                    except Exception:
-                        logger.exception(f"Inline embedding update failed for manual {entry_id}")
 
                     return {"meta": {"code": meta_code, "name": meta_name}, "entry": manual_dict}
 

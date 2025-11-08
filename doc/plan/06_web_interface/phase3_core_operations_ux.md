@@ -1,16 +1,16 @@
 # Phase 3: Core Operations & UX
 
 ## Goals
-- Build browser pages for import/export control, worker management, queue monitoring, and index maintenance using the Phase 0 APIs.
+- Build browser pages for import/export control, optional worker management, queue monitoring, and index maintenance using the Phase 0 APIs.
 - Surface real-time telemetry via SSE/htmx so operators can see progress without CLI.
 - Add UX polish (progress bars, confirmations, inline errors) that makes routine operations safe for non-programmers.
 
 ## Success Criteria
-- Import, export, and index pages allow triggering operations, show live progress, and enforce locking (buttons disabled when jobs running).
-- Worker dashboard lists all workers, indicates status (running/paused/draining), and supports pause/resume/drain actions with confirmation modals.
-- Queue monitor displays pending/failed counts, recent errors, and embeds charts/tables that update via SSE every few seconds.
-- Index management card shows stats (vector count, last rebuild duration) and supports download/upload of FAISS snapshots with safeguards.
-- UI reflects validation state from Phase 2 settings (e.g., warning banners when credentials invalid) so users know why buttons are disabled.
+- Consolidated operations dashboard (single `/operations` page) exposes import/export/index actions, worker controls, queue health, and job history in one view with advisory locks enforced by the Phase 0 API.
+- Worker card shows live status for each worker heartbeat and surfaces pause/resume/drain controls that return inline feedback; draining accepts a timeout parameter and reports remaining items.
+- Queue monitor card renders pending/failed counts for experiences/manuals, refreshes automatically via SSE every few seconds, and supports manual refresh by emitting `ops-refresh` events after user actions.
+- Job history table lists recent jobs with status colors plus inline cancel buttons for queued/running work; SSE keeps the table in sync without page reloads.
+- Settings diagnostics from Phase 2 appear as warning banners (e.g., invalid credentials) to explain why operations might fail, keeping secrets on disk while metadata shows up in SQLite.
 
 ## Prerequisites
 - Phase 0 telemetry + operations endpoints functioning and emitting data.
@@ -20,39 +20,40 @@
 ## Implementation Guide
 
 ### 1. Page Layout & Navigation
-- Add top-level navigation (Settings, Import, Export, Workers, Queue, Index) in base template.
-- Provide breadcrumb/status bar showing current environment (local, staging) and last sync time.
+- Base template now includes a persistent nav bar (CHL brand + Settings/Operations tabs) so operators can jump between configuration and runtime views.
+- `/operations` renders a single dashboard with sections for controls, workers, queue metrics, and job history; the heading reiterates localhost-only posture.
+- A lightweight onboarding card (“How to use this page”) sits under the flash banner summarizing the recommended flow (run jobs → manage workers → watch telemetry → handle FAISS snapshots) so README instructions are no longer required.
+- Context carries `active_page` so nav items highlight automatically.
 
-### 2. Import/Export Pages
-- Cards summarizing last run (timestamp, duration, outcome, initiated by) by querying telemetry/job history tables.
-- Primary buttons trigger POST to `/api/operations/import|export`; use htmx to swap in progress component that:
-  - Shows percent complete based on telemetry events.
-  - Offers cancel button if supported, otherwise explains lock will auto-release.
-- Display worker auto-pause/resume status retrieved from worker controller.
+### 2. Operation Controls
+- A single card hosts import/export/index buttons. Each button fires an htmx POST to `/ui/operations/run/{type}` and swaps the card HTML back in.
+- Responses emit `HX-Trigger: ops-refresh`, prompting the other cards (and SSE stream) to refetch partials immediately instead of waiting for the next tick.
+- The card now shows the latest run per job type (import/export/index) with actor, timestamp, duration, and status badge so operators know what ran last even if they join mid-cycle.
+- Under the hood the Phase 0 OperationsService runs the CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) whenever `CHL_OPERATIONS_MODE=scripts` (default); set the env var to `noop` in CI/tests to keep the buttons inert.
 
 ### 3. Worker Dashboard
-- Table of workers with columns: ID, role, status, queue depth processed, last heartbeat, actions.
-- Actions call `/api/workers/{id}/pause|resume`; use confirmation dialog for disruptive actions (pause all, drain queue).
-- Badge for “Telemetry stale” when heartbeat older than threshold.
+- Workers card lists current workers from telemetry snapshots (heartbeat, processed, failed counts). When no workers are registered, the card explains that the embedding service is offline.
+- Pause/resume/drain buttons call new UI wrapper endpoints (`/ui/workers/{action}`) so responses stay HTML-aware and can raise friendly errors if the pool is unavailable.
+- Drain form captures a timeout (defaults to 300s) and returns status/remaining counts once the queue clears or the timer expires.
 
 ### 4. Queue Monitoring
-- Visualize pending/failed counts using lightweight charts (could be pure CSS bars or Chart.js if acceptable).
-- Surface list of most recent failures with links to logs; data pulled from telemetry table or dedicated failure log endpoint.
-- Provide filters (time window) implemented via query params + htmx swaps.
+- The queue card summarizes pending/failed totals (overall + experiences/manuals) and shows the timestamp of the latest telemetry sample.
+- Minimal CSS “stat” blocks replace charts for now; future iterations can add spark lines or chart.js if needed.
+- Card swaps via SSE (`event: queue`) and can still respond to manual refresh triggers.
 
 ### 5. Index Management
-- Show vector count, disk size, last rebuild time, and checksum from Phase 0 metadata.
-- Buttons for “Trigger Rebuild” and “Download Snapshot” (forces workers paused).
-- Upload form for restoring an index file: enforces extension/size, writes to disk, and registers metadata.
+- Rebuild index currently shares the generic operations card (button posts to `/ui/operations/run/index`).
+- Dedicated snapshot tooling lets operators download the `.index/.meta/.backup` set as a ZIP or upload a ZIP (512 MiB cap) that replaces those files under `CHL_FAISS_INDEX_PATH`, logs an audit entry, and attempts to hot-reload the in-memory FAISS manager. Upload validation mirrors the credential flow (size/type checks, managed directory, SSE refresh).
 
 ### 6. Real-time Feedback
-- Implement `/ui/sse` endpoint streaming JSON events (telemetry, job progress). htmx `hx-ext="sse"` can target DOM fragments.
-- Ensure SSE channel batches events per topic to avoid flooding the browser.
-- Fall back to periodic polling when SSE unsupported.
+- `/ui/stream/telemetry` streams pre-rendered HTML snippets for queue, worker, and job cards using `sse-starlette`. htmx SSE extension swaps the corresponding DOM nodes when `event: queue/workers/jobs` arrive.
+- Each loop also sleeps 5s to avoid flooding; tests reuse `?cycles=1` to request a single batch for deterministic assertions.
+- When SSE is unavailable the cards still refresh via `hx-trigger="load, ops-refresh"` plus manual refresh events emitted from UI actions.
 
 ### 7. UX Polish & Accessibility
 - Add confirmation modals for destructive actions using dialog element or small JS helper.
 - Provide toast/alert component for success/failure messages with auto-dismiss.
+- Keep the onboarding card concise and responsive; collapse into expandable details if future sections crowd above the fold.
 - Keep forms keyboard-accessible; ensure color choices meet contrast guidelines for status badges.
 
 ## Testing & Validation

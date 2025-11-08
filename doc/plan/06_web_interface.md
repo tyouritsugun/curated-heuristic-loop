@@ -56,6 +56,14 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 **Deployment assumptions**
 - FastAPI binds to `127.0.0.1` by default; exposing it beyond the local machine requires the user to place a reverse proxy with their own authentication in front of it to protect credential upload and worker control endpoints.
 
+## Implementation Status (November 2025)
+- **Phase 0** – API endpoints for settings, workers, operations, telemetry, audit logging, and advisory locks are live; SQLite stores only metadata while credential/index bytes stay on disk.
+- **Phase 1** – MCP server speaks HTTP (`CHL_MCP_HTTP_MODE=http|auto|direct`), caches hot data, and falls back to direct handlers when the API is unreachable.
+- **Phase 2** – `/settings` shipped with credential upload/path helpers, sheet/model forms, diagnostics, audit feed, and metadata backup/restore; secrets remain filesystem-only.
+- **Phase 3 (current)** – `/operations` dashboard streams queue/worker/job cards via SSE, shows per-job-type summaries (actor/timestamp/duration), exposes worker pause/resume/drain, and adds an index snapshot card that downloads or uploads FAISS artifacts (ZIP, 512 MiB cap) with audit logging and hot-reload attempts. Triggered actions emit `ops-refresh` so htmx/SSE keep the UI in sync without reloads.
+- `/operations` buttons call the same CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) whenever `CHL_OPERATIONS_MODE=scripts` (default). Set the env var to `noop` for CI/tests if you want the buttons to stay inert.
+- Worker controls remain optional: the card automatically hides its buttons and displays guidance when no external embedding pool is registered, steering operators toward the FAISS snapshot workflow.
+
 ## Component Overview
 - **Web UI layer**: HTML templates or static assets served by FastAPI, communicating with API endpoints via fetch/AJAX.
 - **API endpoints**: Extend existing FastAPI routers to support UI operations (upload credentials, register existing credential paths, trigger import, configure settings).
@@ -107,6 +115,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 - Configuration changes should validate before saving (test sheet access, verify credentials format).
 - Provide export/download for configuration and logs so users can backup or share setup details.
 - Keep the API server single-process for simplicity; horizontal scaling is not a near-term concern.
+- The operations dashboard streams queue/worker/job updates over SSE (`/ui/stream/telemetry`) while htmx events (`ops-refresh`) provide an immediate fallback when users trigger actions.
 
 ## Delivery Plan
 - **Phase 0 - API Foundations**: Introduce settings/import/export/worker-control endpoints plus locking/validation so both CLI and UI clients can rely on the HTTP surface.

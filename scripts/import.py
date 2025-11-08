@@ -18,7 +18,6 @@ from _config_loader import (
     ScriptConfigError,
     load_scripts_config,
 )
-from _embedding_sync import auto_sync_embeddings
 from src.storage.database import Database
 from src.api_client import CHLAPIClient
 from src.storage.schema import (
@@ -152,11 +151,6 @@ def main() -> None:
         "--verbose",
         action="store_true",
         help="Enable debug logging.",
-    )
-    parser.add_argument(
-        "--skip-embeddings",
-        action="store_true",
-        help="Skip automatic embedding regeneration after import completes.",
     )
     parser.add_argument(
         "--api-url",
@@ -435,23 +429,13 @@ def main() -> None:
             len(manuals_rows),
         )
 
-        if args.skip_embeddings:
-            logger.info(
-                "Skipping automatic embedding regeneration (--skip-embeddings). "
-                "Run `python scripts/sync_embeddings.py --retry-failed` when ready."
-            )
-        else:
-            success, reason = auto_sync_embeddings(db, data_path, database_path, logger)
-            if not success:
-                detail = f" ({reason})" if reason else ""
-                logger.warning(
-                    "Automatic embedding sync was skipped or failed%s. "
-                    "Run `python scripts/sync_embeddings.py --retry-failed` to finish the workflow.",
-                    detail,
-                )
+        logger.info(
+            "Rebuild embeddings/FAISS when convenient via the Operations dashboard "
+            "(use the FAISS Snapshot card to upload a fresh index) before enabling vector search."
+        )
 
     finally:
-        # Resume workers if they were paused (Phase 4)
+        # Resume workers if they were paused (Phase 4 legacy hook)
         if api_coordinated and api_client:
             logger.info("Resuming background workers...")
             api_client.resume_workers()

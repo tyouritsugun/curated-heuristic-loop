@@ -1,0 +1,112 @@
+{% set info = index_info or {} %}
+{% set state = info.state or 'warn' %}
+{% set pill_class = state if state in ['ok', 'warn', 'error'] else 'warn' %}
+<section
+  id="ops-index-card"
+  class="card ops-card"
+  hx-get="/ui/operations/index"
+  hx-trigger="load, ops-refresh from:body"
+  hx-target="this"
+  hx-swap="outerHTML"
+  sse-swap="index"
+>
+  <header>
+    <div>
+      <h2>Index Snapshots</h2>
+      <p class="muted">Download current FAISS artifacts or restore a snapshot.</p>
+    </div>
+    <span class="status-pill {{ pill_class }}">
+      {{ 'Healthy' if state == 'ok' else 'Attention' if state == 'warn' else 'Error' }}
+    </span>
+  </header>
+
+  {% if info.directory %}
+    <dl class="index-meta">
+      <div>
+        <dt>Directory</dt>
+        <dd><code>{{ info.directory }}</code></dd>
+      </div>
+      <div>
+        <dt>Vectors</dt>
+        <dd>
+          {% if info.vector_count is not none %}
+            {{ info.vector_count }} ({{ info.dimension or 'n/a' }} dims)
+          {% else %}
+            n/a
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt>Model</dt>
+        <dd>{{ info.model_name or 'n/a' }}</dd>
+      </div>
+      <div>
+        <dt>Tombstones</dt>
+        <dd>
+          {% if info.tombstone_ratio is not none %}
+            {{ '%.2f%%'|format(info.tombstone_ratio * 100) }}
+          {% else %}
+            n/a
+          {% endif %}
+          {% if info.needs_rebuild %}
+            <span class="status-pill warn">Rebuild advised</span>
+          {% endif %}
+        </dd>
+      </div>
+    </dl>
+  {% else %}
+    <p class="muted">FAISS directory is not configured yet.</p>
+  {% endif %}
+
+  {% if info.message %}
+    <p class="muted">{{ info.message }}</p>
+  {% endif %}
+
+  <div class="ops-actions snapshot-actions">
+    <a class="secondary" href="/ui/index/download">Download ZIP</a>
+    <form
+      hx-post="/ui/index/upload"
+      hx-target="#ops-index-card"
+      hx-swap="outerHTML"
+      hx-encoding="multipart/form-data"
+      enctype="multipart/form-data"
+    >
+      <label class="file-label">
+        <span>Upload snapshot</span>
+        <input type="file" name="snapshot" accept=".zip" required />
+      </label>
+      <button type="submit">Upload</button>
+    </form>
+  </div>
+
+  {% if info.files %}
+    <table class="job-table">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Size</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for file in info.files %}
+          <tr>
+            <td>{{ file.name }}</td>
+            <td>{{ file.size_label }}</td>
+            <td>{{ file.modified_label or file.modified_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No index files detected yet.</p>
+  {% endif %}
+
+  <small class="muted">Snapshots stay on disk; uploads never enter SQLite.</small>
+  <span class="htmx-indicator">Processing snapshot…</span>
+</section>
+{% if is_partial and (message or error) %}
+  {% with oob=True %}
+    {% include "partials/flash.html" %}
+  {% endwith %}
+{% endif %}

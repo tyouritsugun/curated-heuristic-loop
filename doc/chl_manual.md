@@ -1,11 +1,12 @@
 # CHL Manual
 
 This manual covers operational tasks, scripts, and workflows for the Curated Heuristic Loop system.
-For a copy-paste end-to-end setup, see Quickstart in README.md.
+The main README now focuses on the one-command Quick Start; once the FastAPI server is running, the `/settings` page guides operators through setup in the browser.
+Use this manual when you need deeper automation or want to script exports/imports.
 For MCP client configuration (Cursor, Codex CLI), see README.md.
 
 Preconditions
-- Install [uv](https://docs.astral.sh/uv/) and ensure Python 3.10/3.11 is available (see README).
+- Install [uv](https://docs.astral.sh/uv/) and ensure Python 3.10/3.11 is available (see README Quick Start).
 - *(Optional)* Set experience root: `export CHL_EXPERIENCE_ROOT="$(pwd)/data"` (defaults to `<project_root>/data` if not set)
 
 ## Initial Setup
@@ -52,7 +53,7 @@ When using `--download-models`, you'll see a menu to choose:
 - **Embedding models**: 0.6B (~524 MB), 4B (~4 GB), 8B (~8 GB)
 - **Reranker models**: 0.6B (~612 MB), 4B (~4 GB), 8B (~8 GB)
 
-Larger models provide better quality but require more RAM/VRAM. For recommended model selection based on tested hardware, see the main [README](../README.md#prerequisites).
+Larger models provide better quality but require more RAM/VRAM. For recommended model selection based on tested hardware, see the main [README](../README.md#system-requirements).
 
 ### Seed starter content (recommended)
 
@@ -116,11 +117,10 @@ Downloading models (this may take 5-10 minutes)...
 
 Next steps:
 
-  1. Generate embeddings:
-     python scripts/sync_embeddings.py
+  1. Start the FastAPI server:
+     uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
 
-  2. Start MCP server:
-     python src/server.py
+  2. Finish onboarding at http://127.0.0.1:8000/settings, then rebuild/upload a FAISS snapshot via /operations before enabling vector search.
 ```
 
 **Preconditions:**
@@ -171,31 +171,15 @@ python scripts/rebuild_index.py
 
 ---
 
-### Sync Embeddings (Incremental)
-```bash
-python scripts/sync_embeddings.py
-```
+### Manage FAISS Snapshots (Web UI preferred)
+1. Start the FastAPI server: `uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000`
+2. Open `http://127.0.0.1:8000/operations`.
+3. Use the **FAISS Snapshot** card to:
+   - **Download** the current `.index/.meta/.backup` files as a ZIP for safekeeping or to hand off to another machine.
+   - **Upload** a new snapshot (ZIP, ≤512 MiB). The server validates the archive, writes it under `CHL_FAISS_INDEX_PATH`, logs the action, and hot-reloads the vectors when possible.
+4. Queue telemetry + audit log entries confirm who performed each snapshot swap.
 
-**Purpose:** Fix embedding inconsistencies without full rebuild.
-
-**When to use:**
-- Some experiences have embedding_status='pending' or 'failed'
-- After server crash during embedding generation
-- Periodic maintenance (weekly/monthly)
-
-**Process:**
-1. Find experiences/manuals with status='pending' or 'failed'
-2. Retry embedding generation
-3. Find embeddings not in FAISS index
-4. Add missing vectors to index
-
-**Output:**
-- Entities fixed: pending → embedded
-- FAISS entries added
-- Remaining failures (if any)
-
-Important
-- If the MCP server is running when you execute this script, restart the server afterward so it loads the updated FAISS index. The server reads the index on startup and does not hot‑reload changes.
+> Tip: run `uv run python scripts/rebuild_index.py` on a machine with the ML extras when you need to regenerate embeddings, then upload the resulting snapshot through the Operations dashboard.
 
 ---
 
@@ -286,9 +270,7 @@ uv run python scripts/export.py
 uv run python scripts/import.py --yes
 ```
 - Replaces the local experiences/manual tables with the worksheet contents.
-- Automatically regenerates embeddings and the FAISS index (skip with `--skip-embeddings`).
-- If you skip or the sync is skipped due to missing ML dependencies, rerun `python scripts/sync_embeddings.py --retry-failed`
-  afterwards and restart the MCP server.
+- After import, upload or rebuild a FAISS snapshot via `/operations` (or run `uv run python scripts/rebuild_index.py` on a machine with ML extras) so vector search reflects the curated sheet.
 - Omit `--yes` to receive an interactive confirmation prompt.
 
 ---
@@ -350,10 +332,8 @@ unchanged. Provide ISO 8601 strings when editing timestamp columns.
    to Google Sheets using the configuration in `scripts/scripts_config.yaml`.
 2. **Curate in Sheets** – reviewers edit the exported category/experience/manual worksheets, remove rows, or adjust values as needed. Ensure IDs stay unique and category codes remain three-letter uppercase values.
 3. **Import** – `uv run python scripts/import.py --yes` overwrites the local
-   categories, experiences, and manuals with the curated sheet content and regenerates embeddings/FAISS metadata automatically (skip with `--skip-embeddings`).
-4. **Regenerate embeddings (only if skipped/failing)** – Run `python scripts/sync_embeddings.py --retry-failed`
-   when you opt out or when the automatic step is skipped. Restart the MCP server to
-   pick up the refreshed vectors in either case.
+   categories, experiences, and manuals with the curated sheet content. Follow up by uploading/rebuilding a FAISS snapshot via `/operations` (or `uv run python scripts/rebuild_index.py`) so vector search reflects the curated data.
+4. **Regenerate embeddings** – When you need a fresh snapshot (after large imports or model upgrades), run `uv run python scripts/rebuild_index.py` on a machine with the ML extras, then upload the resulting ZIP via the Operations dashboard. Restart MCP clients if they were pointing at outdated vectors.
 
 Tips:
 - Keep a backup of `data/chl.db` if you want the option to roll back imports.
@@ -524,20 +504,41 @@ curl -X POST http://localhost:8000/admin/index/rebuild
 
 **Warning**: Rebuild is a blocking operation that may take several seconds.
 
+### Web UI (Settings & Operations)
+
+When the FastAPI server is running you can manage CHL entirely from the browser on the same machine. The topmost card on `/settings` is a first-time checklist that walks new operators through credential placement, sheet IDs, model selection, diagnostics, and jumping over to `/operations`—no README digging required.
+
+- **Settings Dashboard** – `http://127.0.0.1:8000/settings`
+  - Credentials: upload the Google service-account JSON (copied into `<experience_root>/credentials` with `0600` perms) *or* point to an existing local path. SQLite stores only the path/checksum/validated timestamp; the JSON bytes never enter the database.
+  - Sheets: configure the Review/Published sheet IDs and tab names without touching `scripts/scripts_config.yaml`. The UI writes these values to SQLite for API/UI flows; keep the YAML file in sync manually until the export/import scripts migrate.
+  - Models: choose embedding/reranker repos + quantization; changes update `data/model_selection.json` so workers pick them up.
+  - Diagnostics & backups: validate credentials/Sheets connectivity, view the latest audit events, and download/restore a JSON snapshot of non-secret metadata.
+
+- **Operations Dashboard** – `http://127.0.0.1:8000/operations`
+  - Import/export/index buttons call the same CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) with advisory locks and surface stdout/stderr snippets inline; results trigger an `ops-refresh` event so queue/worker/job cards update immediately.
+  - Worker card only exposes pause/resume/drain when an external worker pool registers; otherwise it stays informational (“no workers connected”) so manual FAISS snapshots are the default workflow.
+  - Queue and job cards stream over SSE/htmx every five seconds; if SSE drops, the `ops-refresh` events keep things in sync.
+  - **FAISS snapshots**: download the current `.index/.meta/.backup` files as a ZIP or upload a ZIP built from the same files. Uploads are limited to 512 MiB, require ZIP format, write files directly to `CHL_FAISS_INDEX_PATH`, log an `index.snapshot.uploaded` audit entry, and attempt to hot-reload the in-memory FAISS manager. If the reload fails, restart the API server to pick up the files.
+
+The UI binds to `127.0.0.1` by default; place your own authenticated reverse proxy in front if you must expose it elsewhere.
+
 ### Configuration
 
 Environment variables for API server:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CHL_NUM_EMBEDDING_WORKERS` | `2` | Number of background workers |
-| `CHL_WORKER_POLL_INTERVAL` | `5` | Seconds between queue polls |
-| `CHL_WORKER_BATCH_SIZE` | `10` | Entries processed per batch |
+| `CHL_NUM_EMBEDDING_WORKERS` | `2` | *Legacy.* Count for the removed background worker pool (ignored in current builds). |
+| `CHL_WORKER_POLL_INTERVAL` | `5` | *Legacy.* Poll interval for the archived worker pool. |
+| `CHL_WORKER_BATCH_SIZE` | `10` | *Legacy.* Batch size for the archived worker pool. |
 | `CHL_FAISS_SAVE_POLICY` | `periodic` | When to save index (`manual`, `periodic`, `immediate`) |
 | `CHL_FAISS_SAVE_INTERVAL` | `300` | Seconds between periodic saves |
 | `CHL_FAISS_REBUILD_THRESHOLD` | `0.2` | Tombstone ratio triggering rebuild (0.0-1.0) |
+| `CHL_OPERATIONS_MODE` | `scripts` | Controls `/operations` job handlers. Use `scripts` (default) to execute the CLI helpers, or `noop` to keep the buttons inert (handy for CI/tests). |
 
 ### Background Worker Lifecycle
+
+> **Legacy notice:** Local embedding workers are no longer bundled. This section remains for operators wiring up an external pool via the API.
 
 1. **Startup**: Workers are created when API server starts (if ML dependencies available)
 2. **Polling**: Each worker polls for pending entries every `WORKER_POLL_INTERVAL` seconds

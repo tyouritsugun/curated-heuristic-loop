@@ -38,7 +38,7 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 
 ## Component Overview
 - **MCP layer**: Handles stdio lifecycle, validates tool requests, and forwards them to the API. Performs health checks on startup and on failure recovery.
-- **API layer**: Serves HTTP endpoints, centralises database/index access, runs background workers, and publishes health metrics.
+- **API layer**: Serves HTTP endpoints, centralises database/index access, and publishes health metrics. (Async embedding workers were archived in Nov 2025; vector refresh now runs via explicit FAISS snapshots.)
 - **Shared services**: SQLite connection pool, FAISS index manager, embedding model instance, and a configurable async queue.
 - **Observability**: Basic health endpoint plus counters/timers for queue depth, embedding latency, and index freshness.
 
@@ -50,8 +50,8 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 - `src/api_client.py` (new) - Shared HTTP client module for operational scripts to call the API without duplicating request code.
 - `src/storage/` - SQLite schema, repositories, and import/export helpers consumed by both layers.
 - `src/search/` - FAISS index management and vector search providers moved behind API-friendly interfaces.
-- `src/embedding/` - Embedding client, service, and reranker code reused by background workers.
-- `src/background/` (new) - Queue primitives, worker lifecycle hooks, and observability for async jobs.
+- `src/embedding/` - Embedding and reranker clients for query-time vectorisation (the legacy `EmbeddingService` was removed alongside the worker pool).
+- `src/background/` - *Archived.* The queue primitives described in Phase 4 were removed when the project switched to manual FAISS snapshot management.
 - `scripts/` - Operational utilities (import/export, index rebuild, embedding sync). Until the API is authoritative, they may talk directly to SQLite/FAISS; once the HTTP layer is ready, migrate them onto the API or require downtime while they run.
 - `scripts/tweak/` - Lightweight CLIs for debugging read/write paths; add an API-backed mode while temporarily preserving direct-database access for local debugging until the HTTP paths are stable.
 - `tests/` - Split suites (`tests/mcp/`, `tests/api/`, `tests/integration/`) covering the stdio shim, HTTP layer, and end-to-end flows.
@@ -63,8 +63,8 @@ MCP Client → stdio MCP shim → HTTP API → shared storage + compute
 - File locks or similar coordination keep FAISS updates consistent when multiple jobs write in quick succession.
 - Provide simple status commands (CLI or HTTP) so on-call engineers can confirm the system state without attaching a debugger.
 - Limit access to the API server to the local network; additional auth is unnecessary for the initial deployment footprint.
-- Use explicit `embedding_status` flags (`pending`, `embedded`, `failed`) so writes can commit quickly while background workers complete the embedding and FAISS update; only flip the status to `embedded` once both operations succeed, otherwise mark `failed` and expose requeue tooling. The API bootstrap sequence (in `src/background/`) should automatically requeue any entries still marked `pending`.
-- Embed queue workers must be idempotent: dedupe outstanding jobs, allow safe retries, and verify before overwriting vectors so double-processing does not corrupt the index; codify this inside the queue utilities introduced in `src/background/`.
+- Use explicit `embedding_status` flags (`pending`, `embedded`, `failed`) so writes can commit quickly while vector refresh runs out-of-band. Status flags still matter for telemetry even though the legacy worker pool was removed.
+- If we reintroduce workers later, they must be idempotent: dedupe outstanding jobs, allow safe retries, and verify before overwriting vectors so double-processing does not corrupt the index.
 - During bulk imports (for example, loading data from Google Sheets), drain the queue and stop (or require the operator to stop) the API server so the database and FAISS index can be rebuilt cleanly before traffic resumes.
 - Spreadsheet imports should treat `embedding_status` as write-only metadata: ignore incoming values from Google Sheets and reset all imported rows to `pending` so the post-import job queue can regenerate embeddings deterministically.
 - Keep developer tooling ergonomic: the `scripts/tweak/` utilities should gain an API-backed mode while temporarily preserving direct-database access for local debugging until the HTTP paths are stable.

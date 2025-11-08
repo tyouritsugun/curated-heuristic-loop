@@ -57,7 +57,6 @@ from src.storage.repository import (
     CategoryManualRepository,
 )
 from src.storage.schema import Experience, CategoryManual
-from _embedding_sync import auto_sync_embeddings
 
 # Configure logging
 logging.basicConfig(
@@ -341,16 +340,10 @@ def _seed_default_content(config) -> bool:
                 print(f"  (Manuals already present: {manual_total})")
 
         if exp_seeded or manual_seeded:
-            data_path = Path(config.experience_root)
-            database_path = Path(config.database_path)
-            success, reason = auto_sync_embeddings(db, data_path, database_path, logger)
-            if not success:
-                detail = f" ({reason})" if reason else ""
-                logger.warning(
-                    "Automatic embedding sync after seeding was skipped or failed%s. "
-                    "Run `python scripts/sync_embeddings.py --retry-failed` to finish setup.",
-                    detail,
-                )
+            logger.info(
+                "Seed data added. Use the Operations dashboard to rebuild or upload a FAISS snapshot "
+                "before enabling vector search."
+            )
 
         return True
     except Exception as e:
@@ -715,10 +708,9 @@ def print_next_steps():
 
     print("\nNext steps:\n")
 
-    print("  1. Generate embeddings:")
-    print("     python scripts/sync_embeddings.py\n")
-    print("  2. Start MCP server:")
-    print("     python src/server.py\n")
+    print("  1. Start the FastAPI server:")
+    print("     uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000\n")
+    print("  2. Visit http://127.0.0.1:8000/settings to finish onboarding, then open /operations to rebuild or upload a FAISS snapshot.")
     print("  3. (Optional) Rebuild index from scratch:")
     print("     python scripts/rebuild_index.py\n")
 

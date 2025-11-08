@@ -1,218 +1,114 @@
 # CHL MCP Server
 
-Curated Heuristic Loop (CHL) MCP Server – a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, your assistant builds a shared memory of useful patterns, searchable with semantic embeddings.
+Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
-**What it does**: Captures task-specific heuristics as you work, searches them with FAISS/reranking, and lets teams curate the knowledge base through Google Sheets.
+For the full workflow philosophy see [doc/chl_guide.md](doc/chl_guide.md). For detailed operator procedures see [doc/chl_manual.md](doc/chl_manual.md).
 
-For the complete workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md). For advanced operations, see [doc/chl_manual.md](doc/chl_manual.md).
+## Quick Start (Web UI first)
 
-## Setup
-
-### Prerequisites
-
-- [uv](https://docs.astral.sh/uv/) - Fast Python package installer
-- Python 3.10 or 3.11
-- **Platform Requirements:**
-  - macOS: Apple Silicon (ARM/M1/M2/M3) required
-  - Intel Mac (x86_64) is **not supported** due to PyTorch compatibility
-  - Linux: x86_64 or ARM64
-  - Windows: x86_64
-
-**Tested Hardware & Recommended Models:**
-- Tested on: Ubuntu 22.04 (32GB RAM, RTX 3060 6GB VRAM) and MacBook M2 (32GB unified memory)
-- Recommended models for best quality/performance balance:
-  - **Embedding**: `Qwen/Qwen3-Embedding-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
-  - **Reranker**: `Mungert/Qwen3-Reranker-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
-- Notes: 8B models yield minimal quality improvement; 0.6B models reduce accuracy but remain usable for dev/testing
-
-- Google Service Account credentials (for export/sync to Google Sheets)
-- Google Sheet for logging
-
-**ONLY RUN THIS FOR ONE MCP CLIENT**
-- Do not run this in multiple MCP clients at the same time
-- If needed, you can make a copy of this repository and ensure each copy serves only one MCP. You can then export the data, merge it, and import it back.
-- I am currently updating this repository to support multiple MCP clients. Please stay tuned.
-  
-### Installation
-
-1. **Install uv (if not already installed):**
+1. **Install [uv](https://docs.astral.sh/uv/)** (one-line installer):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-
-2. **Clone and setup the project:**
-   After clone this project, 
+2. **Clone the repo and enter it**:
    ```bash
-   cd curated_heuristic_loop
+   git clone https://github.com/<your-org>/curated-heuristic-loop.git
+   cd curated-heuristic-loop
    ```
-
-4. **Install the supported Python runtime (once):**
+3. **Start the bundled FastAPI server** (first run downloads every dependency automatically):
    ```bash
-   uv python install 3.11
+   uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
    ```
-   > Torch/Faiss wheels are only published for Python 3.10–3.11. Using 3.12 triggers build failures.
+4. **Open http://127.0.0.1:8000/settings**. The page walks you through:
+   - Uploading (or pointing at) your Google service-account JSON. Secrets stay on disk under `<experience_root>/credentials` with `0600` perms; SQLite only stores path/checksum/validation time.
+   - Entering the Spreadsheet ID + tab names for the review/published sheets. If you already have `scripts/scripts_config.yaml`, copy the IDs from there (UI never edits that file).
+   - Picking embedding/reranker models and running the built-in diagnostics check.
+   - Downloading a JSON backup once things look good.
 
-5. **Install dependencies with the 3.11 interpreter:**
-   ```bash
-   uv sync --python 3.11 --extra ml
-   ```
-   This creates/updates uv’s managed environment and installs the full ML stack (`sentence-transformers`, PyTorch, FAISS, llama-cpp`). You do not need to create or activate a separate `.venv`—uv will reuse this environment automatically.
+As soon as the Settings checklist is green, click **Operations** in the nav bar or visit `http://127.0.0.1:8000/operations` to trigger imports/exports/index rebuilds, pause or drain workers, and monitor queue/job telemetry via SSE without touching the CLI.
 
-6. **Run first-time setup:**
-   ```bash
-   # Automatic setup - uses smallest models (0.6B)
-   uv run python scripts/setup.py
+> ✅ That’s it for most users: run one command to start the server, then use the in-app instructions. No Python, MCP, or database knowledge required.
 
-   # Interactive model selection - choose larger models (4B, 8B)
-   uv run python scripts/setup.py --download-models
+## When you also need the CLI/MCP layers
 
-   ```
+The browser UI now covers all day-to-day administration. Use the CLI pieces only when you need automation or deep scripting:
 
-   This will:
-   - Create database and data directory structure
-   - Auto-install ML dependencies if missing (`uv sync --python 3.11 --extra ml`)
-   - Download embedding models (~1.1 GB, if ML dependencies installed)
-   - Validate setup completeness
-   - For details about the setup, see [manual](./doc/chl_manual.md#2-search--embeddings)
+- `uv run python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences.
+- `uv run python scripts/export.py` – pushes local SQLite data to Google Sheets (uses `scripts/scripts_config.yaml`). Add `--dry-run` to preview counts.
+- `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data. Pass `--skip-api-coordination` only if the FastAPI server is offline.
+- `uv run python scripts/setup.py [--download-models]` – optional helper that downloads models ahead of time; the web UI works without it, but this can save the first user from waiting.
 
-7. **Seed starter content + sync guidelines:**
-   ```bash
-   uv run python scripts/seed_default_content.py
-   ```
-   This single command:
-   - Inserts the default CHL categories and sample entries (idempotent)
-   - Syncs the `GLN` guidelines category from `generator.md` and `evaluator.md`
-   Rerun any time to restore starter content or refresh guidelines.
+### MCP clients (optional)
 
-8. **Configure MCP settings:**
-   
-   Add to your `~/.cursor/mcp.json`, or to an MCP client that accepts JSON. `CHL_EXPERIENCE_ROOT` is optional; if omitted, CHL uses `<project_root>/data` and auto-creates it on first run. `CHL_DATABASE_PATH` and `CHL_FAISS_INDEX_PATH` default to `<experience_root>/chl.db` and `<experience_root>/faiss_index` (relative values are resolved under `<experience_root>`). `CHL_GOOGLE_CREDENTIALS_PATH` is optional—export/import scripts already read the path from `scripts/scripts_config.yaml`, so set the env var only if you prefer managing it outside the YAML. `CHL_READ_DETAILS_LIMIT` defaults to `10`, so include it only if you need a different value.
-   
-   ```json
-   {
-     "mcpServers": {
-       "chl": {
-        "command": "uv",
-        "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"],
-        "env": {
-          // Optional env overrides (use scripts/scripts_config.yaml for defaults)
-          // "CHL_GOOGLE_CREDENTIALS_PATH": "/absolute/path/to/credentials/service_account.json",
-          // "CHL_EXPERIENCE_ROOT": "/absolute/path/to/curated_heuristic_loop/data",
-          // Optional overrides (defaults shown)
-          // "CHL_DATABASE_PATH": "/absolute/path/to/curated_heuristic_loop/data/chl.db",
-          // "CHL_FAISS_INDEX_PATH": "/absolute/path/to/curated_heuristic_loop/data/faiss_index",
-          // "CHL_READ_DETAILS_LIMIT": "10",
-          // Export pipeline (configure after preparing Google Sheets):
-          // "CHL_REVIEW_SHEET_ID": "your-review-sheet-id",
-          // "CHL_PUBLISHED_SHEET_ID": "your-published-sheet-id"
-        }
+Add CHL to `~/.cursor/mcp.json` or another MCP-aware client if you want the assistant integration instead of (or alongside) the web UI:
+
+```json
+{
+  "mcpServers": {
+    "chl": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"],
+      "env": {
+        // Optional overrides; see doc/chl_manual.md for all keys
+        // "CHL_GOOGLE_CREDENTIALS_PATH": "/path/to/credentials.json",
+        // "CHL_EXPERIENCE_ROOT": "/path/to/data"
       }
     }
   }
-   ```
-   
-   For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
-   
-   ```toml
-   [mcp_servers.chl]
-   command = "uv"
-   args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
-
-   [mcp_servers.chl.env]
-   # Optional override if you prefer env vars for the Google credentials path
-   # CHL_GOOGLE_CREDENTIALS_PATH = "/absolute/path/to/credentials/service_account.json"
-   # CHL_EXPERIENCE_ROOT = "/absolute/path/to/curated_heuristic_loop/data"
-   # Optional overrides (defaults shown)
-   # CHL_DATABASE_PATH = "/absolute/path/to/curated_heuristic_loop/data/chl.db"
-   # CHL_FAISS_INDEX_PATH = "/absolute/path/to/curated_heuristic_loop/data/faiss_index"
-   # HTTP transport (Phase 1 rollout)
-   # CHL_MCP_HTTP_MODE = "auto"  # options: http, auto, direct (legacy SQLite)
-   # CHL_API_BASE_URL = "http://127.0.0.1:8000"
-   # Export pipeline (configure after preparing Google Sheets)
-   # CHL_REVIEW_SHEET_ID = "your-review-sheet-id"
-   # CHL_PUBLISHED_SHEET_ID = "your-published-sheet-id"
-   ```
-
-   **Note:** The `--directory` flag tells `uv` where to find the `pyproject.toml` file for dependency management.
-   **Note:** After this step it should be possible to ask your code assistant "Can you access your CHL toolset? ", if can not, then you can go to `data/log` to see the log and troubleshot the problem.
-
-8. **Restart Cursor or other code assistant** to load the MCP server configuration.
-
-9. **Verify MCP integration (optional but recommended):**
-   - `list_categories` (or `codex-cli mcp describe chl`) should list the seeded CHL shelves.
-   - Fetch the guidelines via MCP:
-     ```bash
-     codex-cli mcp tool call chl get_guidelines --params guide_type=generator
-     ```
-     (Use `guide_type=evaluator` for the evaluator version.)
-
-### MCP HTTP Modes & Troubleshooting
-- `CHL_MCP_HTTP_MODE` controls how `src/server.py` talks to the local API:
-  - `http` (default) – always call the FastAPI endpoints (requires `uvicorn src.api_server:app` running).
-  - `auto` – prefer HTTP but transparently fall back to legacy SQLite handlers when transport errors occur.
-  - `direct` – legacy mode that bypasses the API entirely. Equivalent to setting the older `CHL_USE_API=0`.
-- Override the mode per run with `--chl-http-mode`:
-  ```bash
-  uv --directory /path/to/curated-heuristic-loop run python src/server.py --chl-http-mode=direct
-  ```
-- HTTP behavior is further tuned via `CHL_API_TIMEOUT`, `CHL_API_CIRCUIT_BREAKER_THRESHOLD`, and `CHL_API_CIRCUIT_BREAKER_TIMEOUT`. When the circuit breaker opens, MCP requests fail fast with actionable hints instead of hanging.
-- For tests or scripts that import `src.server`, set `CHL_SKIP_MCP_AUTOSTART=1` so the module doesn’t immediately start the HTTP client. The integration tests use this switch to inject stub HTTP clients.
-- If you see `MCPTransportError: Failed to connect to API server`, start/restart the FastAPI server (defaults to `http://127.0.0.1:8000`) or switch to `--chl-http-mode=direct` temporarily.
-
-## Import & Export
-
-### Prepare Google Sheets
-
-- Create the Google Sheet(s) you plan to sync with. You can use a single sheet or split review/published sheets depending on your workflow.
-- Create a service account in Google Cloud Console.
-- Download the credentials JSON file.
-- Share each sheet with the service account email.
-- See the [manual](./doc/chl_manual.md#3-export--import-mvp) for the end-to-end workflow and role expectations.
-
-### Configure script defaults
-
-1. Edit `scripts/scripts_config.yaml` and fill in the commented placeholders:
-   - Set `data_path` and `google_credentials_path` if you want paths different from the defaults.
-   - Under both `export` and `import`, provide the `sheet_id` (or per-sheet `id`) and confirm the worksheet names.
-   - If you use separate review/published sheets, use different IDs in those sections. Shared IDs also work when you curate in a single sheet.
-2. Optionally override settings via CLI flags when running the scripts—the YAML provides the base defaults.
-
-### Run the sync scripts
-
-- `uv run python scripts/export.py` – writes the local SQLite content to the configured worksheets. Add `--dry-run` to preview counts without making changes.
-- `uv run python scripts/import.py --yes` – replaces local tables with the sheet contents and automatically regenerates embeddings/FAISS metadata (skip with `--skip-embeddings`). If you skip or the sync is skipped due to missing ML dependencies, run `python scripts/sync_embeddings.py --retry-failed` afterwards and restart the MCP server so it reloads the updated index.
-  - **Worker coordination**: If the optional API server is running (see [Advanced Setup](#advanced-setup)), the import script automatically pauses background workers, waits for pending embeddings to complete, then resumes after import. Use `--skip-api-coordination` to bypass this.
-
-## Advanced Setup
-
-### Optional: API Server with Background Workers
-
-CHL includes an optional FastAPI server that enables:
-- **Async embedding generation**: Write operations return immediately (<100ms) while embeddings are generated in the background
-- **Web API access**: REST endpoints for programmatic access
-- **Worker management**: Monitor and control the embedding queue
-
-**When to use**: For high-volume workflows or when integrating CHL with other tools via HTTP.
-
-**Setup**:
-```bash
-# Start the API server (runs on http://localhost:8000)
-uv run uvicorn src.api_server:app --host 0.0.0.0 --port 8000
-
-# Check server health
-curl http://localhost:8000/health
-
-# Monitor embedding queue (if ML dependencies installed)
-curl http://localhost:8000/admin/queue/status
+}
 ```
 
-**Configuration** (optional environment variables):
-- `CHL_NUM_EMBEDDING_WORKERS` - Number of background workers (default: 2)
-- `CHL_WORKER_POLL_INTERVAL` - Seconds between queue checks (default: 5)
-- `CHL_WORKER_BATCH_SIZE` - Entries to process per batch (default: 10)
+For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
 
-The MCP server and API server can run independently—use whichever fits your workflow. For details on API endpoints and worker management, see [doc/chl_manual.md](doc/chl_manual.md#api-server-operations).
+```toml
+[mcp_servers.chl]
+command = "uv"
+args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
+
+[mcp_servers.chl.env]
+# Optional overrides; prefer scripts/scripts_config.yaml for defaults
+# CHL_GOOGLE_CREDENTIALS_PATH = "/absolute/path/to/credentials/service_account.json"
+# CHL_EXPERIENCE_ROOT = "/absolute/path/to/curated_heuristic_loop/data"
+# CHL_DATABASE_PATH = "/absolute/path/to/curated_heuristic_loop/data/chl.db"
+# CHL_FAISS_INDEX_PATH = "/absolute/path/to/curated_heuristic_loop/data/faiss_index"
+# CHL_READ_DETAILS_LIMIT = "10"
+# Export pipeline (configure after preparing Google Sheets)
+# CHL_REVIEW_SHEET_ID = "your-review-sheet-id"
+# CHL_PUBLISHED_SHEET_ID = "your-published-sheet-id"
+```
+
+`CHL_MCP_HTTP_MODE` controls whether MCP tools talk to the HTTP API (`http`), fall back to direct handlers (`auto`, the default), or stay fully local (`direct`). Use `--chl-http-mode` on the CLI to override per run. Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to prevent the auto HTTP bootstrap.
+
+### Background workers & API endpoints
+
+The same `uvicorn` process exposes REST APIs plus the `/settings` and `/operations` dashboards. By default it binds to `127.0.0.1`; if you proxy it anywhere else, provide your own authentication layer.
+
+Need raw API access? Hit the documented routes under `/api/v1/` (settings, workers, operations, telemetry). Health checks live at `/health` and `/metrics` (Prometheus). Worker controls (`/ui/workers/*`) remain for deployments that wire up an external embedding pool; by default they return `503 Worker pool not initialized`, so the UI nudges you toward the manual FAISS snapshot workflow.
+
+Import/export/index buttons call the same Python scripts you would run via the CLI. To keep them inert (for CI or local testing), set `CHL_OPERATIONS_MODE=noop` before starting the server. The default `scripts` mode executes the helpers with advisory locks and records stdout/stderr snippets in the job history.
+
+### System requirements
+
+- Python 3.10 or 3.11 (uv installs/interprets 3.11 automatically on first run)
+- Supported OS: macOS Apple Silicon, Linux x86_64/ARM64, Windows x86_64
+- Recommended hardware: 16GB+ RAM (32GB if running local embeddings); GPU optional but helpful for FAISS rebuilds
+- Google Service Account credential JSON + shared review sheet
+- One MCP client at a time per repo clone (export/import scripts let you merge later)
+
+## Web dashboards (Phases 0–3)
+
+- **Settings** – Credential helper (upload or managed path), Sheets configuration, model picker, diagnostics, audit log, and JSON backup/restore. All instructions render inline so a non-technical operator can complete setup without referencing this README.
+- **Operations** – Import/export/index triggers with last-run summaries, live queue depth, job history, and FAISS snapshot upload/download. Worker controls stay hidden unless you attach an external pool. Updates stream over SSE; fall back to manual refresh if SSE is blocked.
+
+Both dashboards share the same process as the MCP/API stack, so every change is logged and subject to the same safety constraints (locks, validation, audit trail).
+
+## Advanced references
+
+- Workflow philosophy: [doc/chl_guide.md](doc/chl_guide.md)
+- Operator runbooks & API details: [doc/chl_manual.md](doc/chl_manual.md)
+- Web plan breakdown (Phases 0–3): [doc/plan/06_web_interface/](doc/plan/06_web_interface/)
+- Advanced toggle: set `CHL_OPERATIONS_MODE=noop` before starting the server if you need the Operations buttons to stay in dry-run mode (the default `scripts` mode executes the CLI helpers).
 
 ## License
 
-See project [license](LICENSE) file.
+[MIT](LICENSE)

@@ -17,8 +17,13 @@ class WorkerUnavailableError(RuntimeError):
 class WorkerControlService:
     """Wraps worker pool operations with queue insights and audit logging."""
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, pool_getter=None):
         self._session_factory = session_factory
+        self._pool_getter = pool_getter or (lambda: None)
+
+    def set_pool_getter(self, pool_getter):
+        """Dynamically override the worker pool getter."""
+        self._pool_getter = pool_getter or (lambda: None)
 
     def status(self, session: Session) -> Dict[str, Any]:
         """Return combined queue + worker status snapshot."""
@@ -75,18 +80,16 @@ class WorkerControlService:
         }
 
     def _pool_status(self) -> Optional[Dict[str, Any]]:
-        from src.api_server import worker_pool
-
-        if not worker_pool:
+        pool = self._pool_getter()
+        if not pool:
             return None
-        return worker_pool.get_status()
+        return pool.get_status()
 
     def _require_pool(self):
-        from src.api_server import worker_pool
-
-        if not worker_pool:
+        pool = self._pool_getter()
+        if not pool:
             raise WorkerUnavailableError("Worker pool not initialized")
-        return worker_pool
+        return pool
 
     def _log(self, session: Session, event_type: str, actor: Optional[str], context: Dict[str, Any]):
         session.add(

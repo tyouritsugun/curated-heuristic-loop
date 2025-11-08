@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
+import sys
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.storage.schema import AuditLog, JobHistory, OperationLock, utc_now
@@ -31,23 +36,54 @@ OperationHandler = Callable[[Dict[str, Any], Session], Dict[str, Any]]
 class OperationsService:
     """Schedules long-running jobs with advisory locks and audit logging."""
 
-    def __init__(self, session_factory, max_workers: int = 3, lock_ttl_seconds: int = 3600):
+    def __init__(
+        self,
+        session_factory,
+        max_workers: int = 3,
+        lock_ttl_seconds: int = 3600,
+        mode: Optional[str] = None,
+        project_root: Optional[Path] = None,
+    ):
         self._session_factory = session_factory
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._handlers: Dict[str, OperationHandler] = {
-            "import": self._noop_handler,
-            "export": self._noop_handler,
-            "index": self._noop_handler,
-        }
         self._lock = threading.Lock()
         self._lock_ttl = lock_ttl_seconds
         self._active_jobs: Dict[str, str] = {}
+        self._mode = (mode or os.getenv("CHL_OPERATIONS_MODE", "scripts")).strip().lower()
+        self._project_root = Path(project_root).resolve() if project_root else Path(__file__).resolve().parents[2]
+        self._scripts_dir = self._project_root / "scripts"
+        self._handlers: Dict[str, OperationHandler] = {}
+        self._register_builtin_handlers()
 
     # ------------------------------------------------------------------
     # Registration / shutdown
     # ------------------------------------------------------------------
     def register_handler(self, name: str, handler: OperationHandler) -> None:
         self._handlers[name] = handler
+
+    def _register_builtin_handlers(self):
+        """Register default handlers based on the configured mode."""
+        if self._mode not in {"scripts", "noop"}:
+            logger.warning("Unknown CHL_OPERATIONS_MODE '%s'; defaulting to 'noop'.", self._mode)
+            self._mode = "noop"
+
+        if self._mode == "scripts":
+            if self._scripts_dir.exists():
+                self._handlers["import"] = self._import_handler
+                self._handlers["export"] = self._export_handler
+                self._handlers["index"] = self._index_handler
+                return
+            logger.warning(
+                "OperationsService mode 'scripts' requested but scripts directory '%s' is missing. "
+                "Falling back to no-op handlers.",
+                self._scripts_dir,
+            )
+            self._mode = "noop"
+
+        # Default noop handlers
+        self._handlers.setdefault("import", self._noop_handler)
+        self._handlers.setdefault("export", self._noop_handler)
+        self._handlers.setdefault("index", self._noop_handler)
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -133,6 +169,28 @@ class OperationsService:
         )
         return [self._serialize_job(row) for row in rows]
 
+    def last_runs_by_type(self, session: Session):
+        """Return the most recent job per operation type."""
+        subquery = (
+            session.query(
+                JobHistory.job_type.label("job_type"),
+                func.max(JobHistory.created_at).label("recent_created_at"),
+            )
+            .group_by(JobHistory.job_type)
+            .subquery()
+        )
+
+        rows = (
+            session.query(JobHistory)
+            .join(
+                subquery,
+                (JobHistory.job_type == subquery.c.job_type)
+                & (JobHistory.created_at == subquery.c.recent_created_at),
+            )
+            .all()
+        )
+        return {row.job_type: self._serialize_job(row) for row in rows}
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -185,10 +243,102 @@ class OperationsService:
         logger.info("Job %s completed with status=%s", job_id, status)
 
     def _noop_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        delay = float(payload.get("_test_delay", 0) or 0)
+        self._simulate_delay(payload)
+        return {"message": "no-op", "received": payload or {}, "mode": self._mode}
+
+    def _import_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        del session  # Handler is side-effect only; DB session not required
+        command = [
+            sys.executable,
+            str(self._scripts_dir / "import.py"),
+            "--yes",
+            "--skip-api-coordination",
+        ]
+        payload = payload or {}
+        if config := payload.get("config"):
+            command.extend(["--config", str(config)])
+        return self._run_script(command, payload)
+
+    def _export_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        del session
+        command = [
+            sys.executable,
+            str(self._scripts_dir / "export.py"),
+        ]
+        payload = payload or {}
+        if payload.get("dry_run"):
+            command.append("--dry-run")
+        if config := payload.get("config"):
+            command.extend(["--config", str(config)])
+        return self._run_script(command, payload)
+
+    def _index_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        del session
+        command = [
+            sys.executable,
+            str(self._scripts_dir / "rebuild_index.py"),
+        ]
+        payload = payload or {}
+        return self._run_script(command, payload)
+
+    def _simulate_delay(self, payload: Optional[Dict[str, Any]]) -> None:
+        if not payload:
+            return
+        try:
+            delay = float(payload.get("_test_delay", 0) or 0)
+        except (TypeError, ValueError):
+            return
         if delay > 0:
             time.sleep(min(delay, 30.0))
-        return {"message": "no-op", "received": payload}
+
+    def _run_script(self, command: list[str], payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        self._simulate_delay(payload)
+        if self._mode != "scripts":
+            return {"message": "skipped (mode != scripts)", "command": command, "mode": self._mode}
+        if not self._scripts_dir.exists():
+            raise RuntimeError(f"Scripts directory not found: {self._scripts_dir}")
+
+        env = os.environ.copy()
+        if payload and isinstance(payload.get("env"), dict):
+            for key, value in payload["env"].items():
+                env[str(key)] = str(value)
+
+        start = time.perf_counter()
+        logger.info("Running operation command: %s", " ".join(command))
+        proc = subprocess.run(
+            command,
+            cwd=str(self._project_root),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        duration = round(time.perf_counter() - start, 3)
+
+        result = {
+            "command": command,
+            "cwd": str(self._project_root),
+            "exit_code": proc.returncode,
+            "stdout_tail": self._tail_text(proc.stdout),
+            "stderr_tail": self._tail_text(proc.stderr),
+            "duration_seconds": duration,
+            "mode": self._mode,
+        }
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Command {' '.join(command)} failed with exit code {proc.returncode}: {result['stderr_tail'] or result['stdout_tail']}"
+            )
+
+        return result
+
+    @staticmethod
+    def _tail_text(text: Optional[str], limit: int = 2000) -> str:
+        if not text:
+            return ""
+        text = text.strip()
+        if len(text) <= limit:
+            return text
+        return text[-limit:]
 
     def _acquire_lock(self, session: Session, name: str, owner: str):
         now = datetime.now(timezone.utc)

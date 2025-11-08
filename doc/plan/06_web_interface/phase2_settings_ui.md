@@ -21,6 +21,7 @@
 
 ### 1. UI Structure
 - `src/web/templates/settings.html` now composes reusable partials:
+  - A “First-time checklist” card that explains, in order, how to place credentials, copy sheet IDs from `scripts/scripts_config.yaml`, choose models, validate connectivity, and proceed to Operations. This replaces the wall of instructions previously hosted in the README.
   - Header explaining the localhost binding + “Download backup” link.
   - Diagnostics card (`partials/diagnostics_panel.html`) that lists credentials/sheets/models status rows and includes a “Test connectivity” button.
   - Card stack for credentials, sheets, and model preferences. Each card renders its forms plus status pill and metadata grid, and every form uses `hx-post`/`hx-target` to refresh only that card.
@@ -52,6 +53,7 @@
 
 ### 6. UX Polish
 - htmx indicators show “Uploading…/Saving…/Restoring…” next to each form while requests are in flight; status pills provide instant feedback without reloading the page.
+- The onboarding card doubles as inline documentation so operators no longer need to read CLI docs before using the UI.
 - Out-of-band flash updates keep the global message banner accurate even when only a single card refreshes; `HX-Trigger` plus polling cards avoid duplicate markup.
 - Helper text reinforces the “secrets stay on disk” rule and reminds operators to keep the server behind localhost unless they add their own auth proxy.
 

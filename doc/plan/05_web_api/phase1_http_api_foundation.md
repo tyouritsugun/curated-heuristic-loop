@@ -802,7 +802,7 @@ CHL_API_LOG_LEVEL=info
 # Existing variables
 CHL_EXPERIENCE_ROOT=/path/to/data
 CHL_DATABASE_PATH=chl.db
-CHL_EMBED_ON_WRITE=1
+# (Legacy) CHL_EMBED_ON_WRITE has been removed; vector refresh now runs via explicit FAISS snapshots.
 # ... other existing vars
 ```
 

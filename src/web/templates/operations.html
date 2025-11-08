@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-header">
+    <div>
+      <h1>Operations &amp; Monitoring</h1>
+      <p class="muted">Trigger imports/exports, watch worker status, and monitor queue health in real time.</p>
+    </div>
+    <div class="actions">
+      <a class="secondary" href="/settings">View Settings</a>
+    </div>
+  </header>
+
+  {% include "partials/flash.html" %}
+  {% include "partials/ops_onboarding.html" %}
+
+  {% set cred_diag = diagnostics.credentials %}
+  {% if cred_diag.state != 'ok' %}
+    <article class="ops-status-alert">
+      <strong>Action required:</strong> {{ cred_diag.headline }} — {{ cred_diag.detail }}.
+      <a href="/settings">Update credentials</a>
+    </article>
+  {% endif %}
+
+  <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
+    {% include "partials/ops_operations_card.html" %}
+    {% include "partials/ops_index_card.html" %}
+    {% include "partials/ops_workers_card.html" %}
+    {% include "partials/ops_queue_card.html" %}
+    <div class="full-span">
+      {% include "partials/ops_jobs_card.html" %}
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,54 @@
+<section
+  id="ops-controls-card"
+  class="card ops-card"
+  hx-get="/ui/operations/controls"
+  hx-trigger="load, ops-refresh from:body"
+  hx-target="this"
+  hx-swap="outerHTML"
+>
+  <header>
+    <div>
+      <h2>Operations</h2>
+      <p class="muted">Trigger import/export/index jobs with advisory locks.</p>
+    </div>
+  </header>
+  <div class="ops-actions">
+    <form hx-post="/ui/operations/run/import" hx-target="#ops-controls-card" hx-swap="outerHTML">
+      <button type="submit">Run Import</button>
+    </form>
+    <form hx-post="/ui/operations/run/export" hx-target="#ops-controls-card" hx-swap="outerHTML">
+      <button type="submit" class="secondary">Run Export</button>
+    </form>
+    <form hx-post="/ui/operations/run/index" hx-target="#ops-controls-card" hx-swap="outerHTML">
+      <button type="submit" class="secondary">Rebuild Index</button>
+    </form>
+  </div>
+  <small class="muted">Buttons disable automatically if a job already holds the lock.</small>
+  <div class="ops-last-run">
+    {% set ordered = ['import', 'export', 'index'] %}
+    {% for job_type in ordered %}
+      {% set summary = (job_summaries or {}).get(job_type) %}
+      <div class="run-row" data-job-type="{{ job_type }}">
+        <div>
+          <p class="run-label">{{ job_type|capitalize }}</p>
+          {% if summary %}
+            <p class="muted">{{ summary.description or 'Activity recorded.' }}</p>
+          {% else %}
+            <p class="muted">No runs yet.</p>
+          {% endif %}
+        </div>
+        {% if summary %}
+          <span class="status-pill {{ summary.pill_class }}" data-job-status="{{ summary.status }}">
+            {{ summary.status_label }}
+          </span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <span class="htmx-indicator">Scheduling…</span>
+</section>
+{% if is_partial and (message or error) %}
+  {% with oob=True %}
+    {% include "partials/flash.html" %}
+  {% endwith %}
+{% endif %}

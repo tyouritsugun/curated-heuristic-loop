@@ -3,6 +3,40 @@ body {
   color: #f4f5f7;
 }
 
+.site-nav {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 1rem;
+}
+
+.site-nav .container {
+  max-width: 960px;
+  padding: 0.75rem 1rem;
+}
+
+.site-nav nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-nav .brand {
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #7dc4ff;
+  text-decoration: none;
+}
+
+.site-nav .links a {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: #9aa0b3;
+}
+
+.site-nav .links a.active {
+  color: #f4f5f7;
+  font-weight: 600;
+}
+
 main.container {
   max-width: 920px;
   padding: 2rem 1rem 4rem;
@@ -32,6 +66,32 @@ main.container {
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.ops-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.onboarding-card ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.onboarding-card li {
+  line-height: 1.5;
+}
+
+@media (min-width: 1100px) {
+  .ops-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-grid .full-span {
+    grid-column: span 2;
+  }
 }
 
 .card header {
@@ -110,6 +170,11 @@ main.container {
 .status-pill.warn {
   background: rgba(248, 140, 93, 0.12);
   color: #f88c5d;
+}
+
+.status-pill.info {
+  background: rgba(125, 196, 255, 0.12);
+  color: #7dc4ff;
 }
 
 .status-pill.error {
@@ -220,6 +285,147 @@ textarea {
   margin: 0.2rem 0 0;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.9rem;
+}
+
+.ops-status-alert {
+  border-left: 4px solid #f88c5d;
+  background: #2a1b11;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.stat-pair {
+  background: #141821;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.stat-label {
+  margin: 0;
+  color: #9aa0b3;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-value {
+  margin: 0.3rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.ops-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.snapshot-actions {
+  align-items: flex-end;
+}
+
+.snapshot-actions form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.job-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.job-table th,
+.job-table td {
+  padding: 0.6rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: left;
+}
+
+.job-table th {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: #9aa0b3;
+}
+
+.job-status-running {
+  color: #7dc4ff;
+}
+
+.job-status-succeeded {
+  color: #7ee787;
+}
+
+.job-status-failed {
+  color: #ff8ea2;
+}
+
+.job-status-cancelled {
+  color: #9aa0b3;
+}
+
+.ops-card form button + button {
+  margin-left: 0.5rem;
+}
+
+.ops-card small.muted {
+  margin-top: 0.4rem;
+}
+
+.ops-last-run {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.run-label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.run-row .muted {
+  margin: 0.15rem 0 0;
+}
+
+.ops-card .htmx-indicator {
+  display: inline-block;
+}
+
+.index-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.index-meta dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9aa0b3;
+}
+
+.index-meta dd {
+  margin: 0.15rem 0 0;
 }
 
 .htmx-indicator {

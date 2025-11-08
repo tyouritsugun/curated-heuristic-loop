@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+import os
 import logging
 import json
 import time
@@ -40,7 +41,6 @@ config = None
 db = None
 search_service = None
 thread_safe_faiss = None  # ThreadSafeFAISSManager instance
-worker_pool = None  # WorkerPool instance (Phase 4)
 settings_service = None
 operations_service = None
 worker_control_service = None
@@ -75,7 +75,7 @@ def configure_logging():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global config, db, search_service, thread_safe_faiss, worker_pool
+    global config, db, search_service, thread_safe_faiss
     global settings_service, operations_service, worker_control_service, telemetry_service
 
     logger.info("Starting CHL API server...")
@@ -93,7 +93,8 @@ async def lifespan(app: FastAPI):
         # Initialize service layer singletons
         settings_service = SettingsService(db.get_session, config.experience_root)
         worker_control_service = WorkerControlService(db.get_session)
-        operations_service = OperationsService(db.get_session)
+        operations_mode = os.getenv("CHL_OPERATIONS_MODE")
+        operations_service = OperationsService(db.get_session, mode=operations_mode)
         logger.info("Core services initialized (settings, worker control, operations)")
 
         def queue_probe():
@@ -104,7 +105,7 @@ async def lifespan(app: FastAPI):
                 session.close()
 
         def worker_probe():
-            return worker_pool.get_status() if worker_pool else None
+            return None
 
         # Initialize search service (sessionless for thread-safety)
         try:
@@ -192,53 +193,6 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Search service initialization failed: {e}")
             search_service = None
 
-        # Initialize background worker pool (Phase 4)
-        # Only initialize if we have an embedding service
-        embedding_service = None
-        if embedding_client and thread_safe_faiss:
-            try:
-                from src.embedding.service import EmbeddingService
-
-                # Create embedding service for workers
-                embedding_service = EmbeddingService(
-                    session=None,  # Workers will create their own sessions
-                    embedding_client=embedding_client,
-                    faiss_manager=thread_safe_faiss,
-                    config=config
-                )
-                logger.info("Embedding service initialized for worker pool")
-            except Exception as e:
-                logger.warning(f"Embedding service initialization failed: {e}")
-
-        if embedding_service:
-            try:
-                from src.background.pool import WorkerPool
-                from src.background.startup import requeue_pending_embeddings
-
-                # Initialize worker pool
-                worker_pool = WorkerPool(
-                    num_workers=config.num_embedding_workers,
-                    session_factory=db.get_session,
-                    embedding_service=embedding_service,
-                    poll_interval=config.worker_poll_interval,
-                    batch_size=config.worker_batch_size,
-                )
-                logger.info(f"Worker pool initialized with {config.num_embedding_workers} workers")
-
-                # Requeue pending embeddings from crash recovery
-                with db.session_scope() as temp_session:
-                    requeue_pending_embeddings(temp_session)
-
-                # Start workers
-                worker_pool.start_all()
-                logger.info("Embedding worker pool started")
-
-            except Exception as e:
-                logger.warning(f"Worker pool initialization failed: {e}")
-                worker_pool = None
-        else:
-            logger.info("Worker pool not initialized (embedding service unavailable)")
-
         telemetry_service = TelemetryService(
             session_factory=db.get_session,
             queue_probe=queue_probe,
@@ -271,15 +225,6 @@ async def lifespan(app: FastAPI):
                 operations_service.shutdown()
             except Exception as e:
                 logger.warning(f"Error shutting down operations service: {e}")
-
-        # Shutdown worker pool (Phase 4)
-        if worker_pool:
-            try:
-                logger.info("Stopping worker pool...")
-                worker_pool.stop_all(timeout=30)
-                logger.info("Worker pool stopped")
-            except Exception as e:
-                logger.warning(f"Error stopping worker pool: {e}")
 
         # Shutdown ThreadSafeFAISSManager (stops periodic saver if running)
         if thread_safe_faiss:

@@ -1,0 +1,25 @@
+<section class="card onboarding-card" id="operations-onboarding-card">
+  <header>
+    <div>
+      <h2>How to use this page</h2>
+      <p class="muted">Each card mirrors an API endpoint, so everything you do here is logged and protected by the same safety checks.</p>
+    </div>
+  </header>
+  <ol>
+    <li>
+      <strong>Start with the job controls.</strong> Use Import to pull from Google Sheets, Export to push local edits out, and Rebuild Index if embeddings drift.
+      Each trigger records the actor, lock status, and result in Job History.
+    </li>
+    <li>
+      <strong>Manage workers only when you bring your own pool.</strong> The Worker Control card hides its buttons until a remote embedding service registers. Most setups rely on the FAISS snapshot card instead.
+    </li>
+    <li>
+      <strong>Watch queue + telemetry.</strong> The SSE stream refreshes queue depth, worker heartbeats (when available), and recent jobs without reloading the page.
+      If SSE is blocked, press the “Refresh” buttons on each card.
+    </li>
+    <li>
+      <strong>Handle FAISS snapshots.</strong> Use the snapshot card to download the current index or upload a prepared ZIP (stays on disk, logged in audit trail).
+      This is the safest way to move vectors between machines.
+    </li>
+  </ol>
+</section>

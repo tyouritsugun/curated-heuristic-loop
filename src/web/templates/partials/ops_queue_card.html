@@ -1,0 +1,48 @@
+{% set queue_sample = snapshot.queue.value if snapshot.queue else (worker_status.get('queue') if worker_status else None) %}
+{% set pending = queue_sample.get('pending') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set failed = queue_sample.get('failed') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set pending_total = pending.get('total', 0) %}
+{% set pending_exp = pending.get('experiences', 0) %}
+{% set pending_man = pending.get('manuals', 0) %}
+{% set failed_total = failed.get('total', 0) %}
+{% set failed_exp = failed.get('experiences', 0) %}
+{% set failed_man = failed.get('manuals', 0) %}
+<section
+  id="ops-queue-card"
+  class="card ops-card"
+  hx-get="/ui/operations/queue"
+  hx-trigger="load, ops-refresh from:body"
+  hx-target="this"
+  hx-swap="outerHTML"
+  sse-swap="queue"
+>
+  <header>
+    <div>
+      <h2>Queue Health</h2>
+      <p class="muted">Pending embedding jobs pulled from telemetry samples.</p>
+    </div>
+    <span class="status-pill {{ 'ok' if pending_total == 0 else 'warn' }}">
+      {{ 'Idle' if pending_total == 0 else pending_total ~ ' pending' }}
+    </span>
+  </header>
+  <div class="stat-grid">
+    <div class="stat-pair">
+      <p class="stat-label">Pending (exp/manuals)</p>
+      <p class="stat-value">{{ pending_total }}<small class="muted"> ({{ pending_exp }}/{{ pending_man }})</small></p>
+    </div>
+    <div class="stat-pair">
+      <p class="stat-label">Failed (exp/manuals)</p>
+      <p class="stat-value">{{ failed_total }}<small class="muted"> ({{ failed_exp }}/{{ failed_man }})</small></p>
+    </div>
+    <div class="stat-pair">
+      <p class="stat-label">Last sample</p>
+      <p class="stat-value">{{ snapshot.queue.recorded_at if snapshot.queue else 'n/a' }}</p>
+    </div>
+  </div>
+  <span class="htmx-indicator">Refreshing…</span>
+</section>
+{% if is_partial and (message or error) %}
+  {% with oob=True %}
+    {% include "partials/flash.html" %}
+  {% endwith %}
+{% endif %}

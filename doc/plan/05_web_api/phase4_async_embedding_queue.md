@@ -1,5 +1,10 @@
 # Phase 4: Async Embedding Queue
 
+> **Status (Nov 2025):** This phase is archived. The legacy `EmbeddingService`/
+> worker pool implementation was removed in favor of manual FAISS snapshot
+> management via the Operations dashboard. The details below remain for
+> historical reference only.
+
 ## Goals
 - Decouple embedding generation from HTTP request path for non-blocking writes
 - Implement background worker pool to process embedding jobs asynchronously

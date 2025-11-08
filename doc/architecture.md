@@ -18,35 +18,36 @@ graph TB
 
     subgraph "Application Services"
         SRCH[SearchService<br/>src/search/service.py]
-        EMB[EmbeddingService<br/>src/embedding/service.py]
+        OPS[OperationsService<br/>src/services/operations_service.py]
     end
 
     subgraph "Storage (src/storage)"
         DB[(SQLite + SQLAlchemy)]
         SHEETS[SheetsClient<br/>Google Sheets]
+        INDEX[FAISS Index + Snapshots]
     end
 
     subgraph "Scripts (scripts/)"
         EXPORT[export.py]
         IMPORT[import.py]
-        SYNC[sync_embeddings.py]
         REBUILD[rebuild_index.py]
     end
 
     CA -->|MCP protocol| HNDL
     HNDL --> SRCH
+    HNDL --> OPS
     HNDL --> DB
     SRCH --> DB
-    SRCH --> EMB
-    EMB --> DB
+    SRCH --> INDEX
+    OPS --> DB
+    OPS --> INDEX
     HNDL --> SHEETS
     EXPORT --> DB
     EXPORT --> SHEETS
     IMPORT --> DB
     IMPORT --> SHEETS
-    SYNC --> DB
-    SYNC --> EMB
-    REBUILD --> EMB
+    REBUILD --> DB
+    REBUILD --> INDEX
 ```
 
 ## Data Flow Patterns
@@ -297,7 +298,6 @@ Configuration is loaded by `src/config.Config`, which reads environment variable
 - Read limits for MCP tools (`CHL_READ_DETAILS_LIMIT`, used by read_entries)
 - ML model overrides (`CHL_EMBEDDING_REPO`, `CHL_EMBEDDING_QUANT`, `CHL_RERANKER_REPO`, `CHL_RERANKER_QUANT`)
 - Export & sync settings (Google credentials path, review/published sheet IDs)
-- Inline embedding toggle (`CHL_EMBED_ON_WRITE`)
 - Logging level (`CHL_LOG_LEVEL`) and optional author override (`CHL_AUTHOR`)
 
 
@@ -320,10 +320,10 @@ Configuration is loaded by `src/config.Config`, which reads environment variable
 
 **Embedding (src/embedding):**
 - `EmbeddingClient` and `RerankerClient` load Qwen3 GGUF models via `llama-cpp-python`.
-- `EmbeddingService` coordinates repository writes, status updates, and FAISS maintenance.
+- Index maintenance now flows through the Operations service + FAISS snapshot tooling rather than an inline `EmbeddingService`.
 
 **Operational Scripts (scripts/):**
-- `setup.py`, `sync_embeddings.py`, `rebuild_index.py`, `export.py`, and `import.py` automate maintenance and data exchange.
+- `setup.py`, `rebuild_index.py`, `export.py`, and `import.py` automate maintenance and data exchange.
 - Shared settings live in `scripts/scripts_config.yaml`; scripts read that file by default but still accept CLI overrides.
 - Run them via `uv run python …` to reuse the managed environment.
 

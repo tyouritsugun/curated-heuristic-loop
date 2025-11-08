@@ -51,12 +51,6 @@ FAISS Persistence (Phase 3):
 - CHL_FAISS_SAVE_INTERVAL: Save interval in seconds for periodic mode (default: 300)
 - CHL_FAISS_REBUILD_THRESHOLD: Tombstone ratio threshold for automatic rebuild (default: 0.10)
 
-Background Worker Pool (Phase 4):
-- CHL_NUM_EMBEDDING_WORKERS: Number of background workers for async embedding (default: 2)
-- CHL_WORKER_POLL_INTERVAL: Seconds between queue polls (default: 5)
-- CHL_WORKER_BATCH_SIZE: Max entries to process per batch (default: 10)
-- CHL_QUEUE_RETRY_FAILED_ON_STARTUP: Retry failed jobs on startup (default: 0)
-
 Note: Author is automatically populated from the OS username during core setup.
 """
 import os
@@ -184,10 +178,6 @@ class Config:
             faiss_path = Path(self.experience_root) / "faiss_index"
         self.faiss_index_path = str(faiss_path)
 
-        # Inline embedding on writes/updates (enabled by default)
-        # Set CHL_EMBED_ON_WRITE=0 to disable
-        self.embed_on_write = os.getenv("CHL_EMBED_ON_WRITE", "1") == "1"
-
         # API client configuration (Phase 2)
         http_mode_env = os.getenv("CHL_MCP_HTTP_MODE")
         if http_mode_env is None:
@@ -210,17 +200,10 @@ class Config:
         self.faiss_save_interval = int(os.getenv("CHL_FAISS_SAVE_INTERVAL", "300"))
         self.faiss_rebuild_threshold = float(os.getenv("CHL_FAISS_REBUILD_THRESHOLD", "0.10"))
 
-        # Background worker pool configuration (Phase 4)
-        self.num_embedding_workers = int(os.getenv("CHL_NUM_EMBEDDING_WORKERS", "2"))
-        self.worker_poll_interval = int(os.getenv("CHL_WORKER_POLL_INTERVAL", "5"))
-        self.worker_batch_size = int(os.getenv("CHL_WORKER_BATCH_SIZE", "10"))
-        self.queue_retry_failed_on_startup = os.getenv("CHL_QUEUE_RETRY_FAILED_ON_STARTUP", "0") == "1"
-
         # Validate configuration
         self._validate_paths()
         self._validate_search_config()
         self._validate_faiss_config()
-        self._validate_worker_config()
     
     def _validate_paths(self):
         """Validate that configured paths exist"""
@@ -340,29 +323,6 @@ class Config:
             raise ValueError(
                 f"Invalid CHL_FAISS_REBUILD_THRESHOLD={self.faiss_rebuild_threshold}. "
                 f"Must be in range [0.0, 1.0]."
-            )
-
-    def _validate_worker_config(self):
-        """Validate background worker pool configuration"""
-        # Validate number of workers (must be positive)
-        if self.num_embedding_workers <= 0:
-            raise ValueError(
-                f"Invalid CHL_NUM_EMBEDDING_WORKERS={self.num_embedding_workers}. "
-                f"Must be > 0."
-            )
-
-        # Validate poll interval (must be positive)
-        if self.worker_poll_interval <= 0:
-            raise ValueError(
-                f"Invalid CHL_WORKER_POLL_INTERVAL={self.worker_poll_interval}. "
-                f"Must be > 0 seconds."
-            )
-
-        # Validate batch size (must be positive)
-        if self.worker_batch_size <= 0:
-            raise ValueError(
-                f"Invalid CHL_WORKER_BATCH_SIZE={self.worker_batch_size}. "
-                f"Must be > 0."
             )
 
 
