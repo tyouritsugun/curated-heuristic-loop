@@ -53,5 +53,5 @@ async def read_doc(request: Request, doc_name: str):
 
     return templates.TemplateResponse(
         "doc_viewer.html",
-        {"request": request, "title": doc_name.replace('_', ' ').title(), "content": html_content}
+        {"request": request, "title": "", "content": html_content}
     )
