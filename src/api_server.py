@@ -29,6 +29,7 @@ from src.api.routers.operations import router as operations_router
 from src.api.routers.workers import router as workers_router
 from src.api.routers.telemetry import router as telemetry_router
 from src.api.routers.ui import router as ui_router
+from src.web.docs import router as docs_router
 from src.services.settings_service import SettingsService
 from src.services.operations_service import OperationsService
 from src.services.worker_control import WorkerControlService
@@ -290,6 +291,7 @@ app.include_router(operations_router)
 app.include_router(workers_router)
 app.include_router(telemetry_router)
 app.include_router(ui_router)
+app.include_router(docs_router)
 
 
 @app.get("/")

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="content-wrapper">
+  <header class="page-header">
+    <div>
+      <h1>{{ title }}</h1>
+    </div>
+  </header>
+
+  <div class="doc-content">
+    {{ content | safe }}
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script>
+  function renderMermaidDiagrams() {
+    mermaid.initialize({
+      startOnLoad: false, // We will call render explicitly
+      theme: 'default'
+    });
+
+    const mermaidElements = document.querySelectorAll('pre code.language-mermaid');
+    mermaidElements.forEach((element, index) => {
+      const graphDefinition = element.textContent;
+      const preTag = element.parentNode; // This is the <pre> tag
+
+      // Check if this diagram has already been rendered
+      if (preTag.nextElementSibling && preTag.nextElementSibling.classList.contains('mermaid-rendered-diagram')) {
+        return; // Skip if already rendered
+      }
+
+      const diagramContainer = document.createElement('div');
+      diagramContainer.id = 'mermaid-diagram-' + index;
+      diagramContainer.classList.add('mermaid-rendered-diagram'); // Add a class to identify rendered diagrams
+      diagramContainer.style.minHeight = '100px'; // Give it some initial height to prevent collapse
+
+      // Insert the new container after the <pre> tag
+      preTag.parentNode.insertBefore(diagramContainer, preTag.nextSibling);
+
+      // Hide the original <pre> tag
+      preTag.style.display = 'none';
+
+      mermaid.render(diagramContainer.id, graphDefinition).then(({ svg, bindFunctions }) => {
+        diagramContainer.innerHTML = svg;
+        if (bindFunctions) {
+          bindFunctions(diagramContainer);
+        }
+      }).catch(error => {
+        console.error('Mermaid rendering failed for diagram:', graphDefinition, error);
+        diagramContainer.innerHTML = `<div style="color: red;">Error rendering Mermaid diagram: ${error.message || error}. Check console for details.</div>`;
+        preTag.style.display = 'block'; // Show original code on error
+      });
+    });
+  }
+
+  // Run on initial page load
+  document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+
+  // Run after HTMX swaps content
+  document.body.addEventListener('htmx:afterSwap', renderMermaidDiagrams);
+</script>
+{% endblock %}
