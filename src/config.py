@@ -46,6 +46,11 @@ API Client (Phase 2):
 - CHL_API_CIRCUIT_BREAKER_THRESHOLD: Failures before circuit breaker opens (default: 5)
 - CHL_API_CIRCUIT_BREAKER_TIMEOUT: Seconds before circuit breaker retries (default: 60)
 
+Operations:
+- CHL_OPERATIONS_MODE: Operations driver for import/export/index (default: scripts; options: scripts, noop)
+- CHL_OPERATIONS_TIMEOUT_SEC: Max seconds per operation (default: 900; minimum enforced: 60)
+- CHL_CATEGORIES_CACHE_TTL: Seconds to cache MCP categories/tool index (default: 30.0)
+
 FAISS Persistence (Phase 3):
 - CHL_FAISS_SAVE_POLICY: Save policy (default: immediate; options: immediate, periodic, manual)
 - CHL_FAISS_SAVE_INTERVAL: Save interval in seconds for periodic mode (default: 300)

@@ -109,6 +109,21 @@ TOOL_INDEX = [
         "description": "Trigger index maintenance via API operations; returns job id + status.",
         "example": {}
     },
+    {
+        "name": "job_status",
+        "description": "Fetch status of a previously triggered operation job by id.",
+        "example": {"job_id": "<uuid>"}
+    },
+    {
+        "name": "cancel_job",
+        "description": "Cancel a running or queued operation job by id.",
+        "example": {"job_id": "<uuid>"}
+    },
+    {
+        "name": "list_jobs",
+        "description": "List recent operation jobs (limit 1-100).",
+        "example": {"limit": 10}
+    },
 ]
 
 WORKFLOW_MODE_PAYLOAD = {
@@ -139,7 +154,11 @@ def _parse_http_mode_override() -> Optional[str]:
 
 CLI_HTTP_MODE = _parse_http_mode_override()
 HTTP_MODE = "http"
-CATEGORIES_CACHE_TTL = 30.0
+# Allow TTL to be configured for faster responsiveness after settings changes
+try:
+    CATEGORIES_CACHE_TTL = float(os.getenv("CHL_CATEGORIES_CACHE_TTL", "30.0"))
+except (TypeError, ValueError):
+    CATEGORIES_CACHE_TTL = 30.0
 _categories_cache: Dict[str, Any] = {"payload": None, "expires": 0.0}
 _categories_cache_lock = threading.Lock()
 _direct_handlers: Dict[str, Callable] = {}
@@ -459,6 +478,9 @@ def init_server():
     mcp.tool()(run_import)
     mcp.tool()(run_export)
     mcp.tool()(rebuild_index)
+    mcp.tool()(job_status)
+    mcp.tool()(cancel_job)
+    mcp.tool()(list_jobs)
 
     try:
         mcp.instructions = json.dumps(_build_handshake_payload())
@@ -759,6 +781,60 @@ def rebuild_index(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise
     except Exception as e:  # pragma: no cover - defensive
         logger.exception(f"Unexpected error in rebuild_index: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def job_status(job_id: str) -> Dict[str, Any]:
+    """Fetch status of a previously triggered operation job by id."""
+    try:
+        response, _ = _request_with_fallback(
+            "GET",
+            f"/api/v1/operations/jobs/{job_id}",
+            headers=_actor_header(),
+        )
+        return response
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in job_status: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def cancel_job(job_id: str) -> Dict[str, Any]:
+    """Cancel a running or queued operation job by id."""
+    try:
+        response, _ = _request_with_fallback(
+            "POST",
+            f"/api/v1/operations/jobs/{job_id}/cancel",
+            headers=_actor_header(),
+        )
+        return response
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in cancel_job: {e}")
+        raise MCPError(f"Unexpected error: {e}")
+
+
+def list_jobs(limit: int = 10) -> Dict[str, Any]:
+    """List recent operation jobs."""
+    try:
+        try:
+            l = int(limit)
+        except (TypeError, ValueError):
+            l = 10
+        l = max(1, min(l, 100))
+        response, _ = _request_with_fallback(
+            "GET",
+            f"/api/v1/operations/jobs?limit={l}",
+            headers=_actor_header(),
+        )
+        # Wrap in an object for consistency with MCP tool conventions
+        return {"jobs": response, "limit": l}
+    except MCPError:
+        raise
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception(f"Unexpected error in list_jobs: {e}")
         raise MCPError(f"Unexpected error: {e}")
 
 

@@ -383,9 +383,9 @@ class SettingsService:
         if perms is not None and perms & 0o077:
             return DiagnosticStatus(
                 name="credentials",
-                state="warn",
-                headline="Credential readable by other users",
-                detail=f"Permissions are {oct(perms)}; recommend 0o600.",
+                state="error",
+                headline="Insecure credential permissions",
+                detail=f"File permissions {oct(perms)} allow other users to read credentials. Run: chmod 600 {path}",
                 validated_at=data.get("validated_at"),
             )
 

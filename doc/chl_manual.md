@@ -179,6 +179,12 @@ python scripts/rebuild_index.py
    - **Upload** a new snapshot (ZIP, ≤512 MiB). The server validates the archive, writes it under `CHL_FAISS_INDEX_PATH`, logs the action, and hot-reloads the vectors when possible.
 4. Queue telemetry + audit log entries confirm who performed each snapshot swap.
 
+Security and limits:
+- Allowed file extensions in the snapshot: `.index`, `.json`, `.backup` (case-insensitive)
+- Per-file size limit: 512 MiB (uploads larger than this are rejected)
+- Archive size limit: 512 MiB
+- The server validates all ZIP entries before extraction and performs secure, file-by-file writes.
+
 > Tip: run `uv run python scripts/rebuild_index.py` on a machine with the ML extras when you need to regenerate embeddings, then upload the resulting snapshot through the Operations dashboard.
 
 ---
@@ -669,3 +675,10 @@ When using `scripts/export.py` and `scripts/import.py`, prefer configuring
 
 These variables remain available for legacy tooling, but the preferred
 configuration path is `scripts/scripts_config.yaml` for export/import scripts.
+
+### Operations & Caching
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CHL_OPERATIONS_MODE` | `scripts` | Use built-in scripts or `noop` for dry-run |
+| `CHL_OPERATIONS_TIMEOUT_SEC` | `900` (min `60`) | Max seconds per import/export/index operation |
+| `CHL_CATEGORIES_CACHE_TTL` | `30.0` | MCP categories/tool index cache TTL (seconds) |

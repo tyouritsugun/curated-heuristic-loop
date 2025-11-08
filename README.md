@@ -86,6 +86,7 @@ The same `uvicorn` process exposes REST APIs plus the `/settings` and `/operatio
 Need raw API access? Hit the documented routes under `/api/v1/` (settings, workers, operations, telemetry). Health checks live at `/health` and `/metrics` (Prometheus). Worker controls (`/ui/workers/*`) remain for deployments that wire up an external embedding pool; by default they return `503 Worker pool not initialized`, so the UI nudges you toward the manual FAISS snapshot workflow.
 
 Import/export/index buttons call the same Python scripts you would run via the CLI. To keep them inert (for CI or local testing), set `CHL_OPERATIONS_MODE=noop` before starting the server. The default `scripts` mode executes the helpers with advisory locks and records stdout/stderr snippets in the job history.
+Set `CHL_OPERATIONS_TIMEOUT_SEC` (default 900, minimum 60) to cap script runtime; jobs exceeding the limit are marked failed with tail logs captured. For faster MCP category/tool updates after settings changes, you can tune `CHL_CATEGORIES_CACHE_TTL` (seconds, default 30).
 
 ### System requirements
 

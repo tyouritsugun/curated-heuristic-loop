@@ -12,6 +12,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+import logging
 
 from fastapi import (
     APIRouter,
@@ -51,6 +52,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 MAX_UPLOAD_BYTES = 512 * 1024  # 512 KiB upper bound for credential JSON
 MAX_INDEX_ARCHIVE_BYTES = 512 * 1024 * 1024  # 512 MiB cap for FAISS snapshots
 WEB_ACTOR = "web-ui"
+ALLOWED_INDEX_FILE_SUFFIXES = frozenset([".index", ".json", ".backup"])  # case-insensitive
+
+logger = logging.getLogger(__name__)
 
 
 class CredentialUploadError(Exception):
@@ -66,6 +70,16 @@ router = APIRouter(tags=["ui"])
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("hx-request", "").lower() == "true"
+
+
+def _invalidate_categories_cache_safe() -> None:
+    """Best-effort MCP categories cache invalidation (may run out-of-process)."""
+    try:
+        from src import server as mcp_server
+        mcp_server.invalidate_categories_cache()
+    except Exception:
+        # MCP server may not be in-process; ignore
+        pass
 
 
 def _recent_audit_entries(session: Session, limit: int = 8):
@@ -854,6 +868,9 @@ async def submit_credentials_path(
             error=str(exc),
         )
 
+    # Invalidate MCP categories cache
+    _invalidate_categories_cache_safe()
+
     return _respond(
         "partials/credentials_card.html",
         request,
@@ -893,6 +910,9 @@ async def upload_credentials(
             settings_service,
             error=str(exc),
         )
+
+    # Invalidate MCP categories cache
+    _invalidate_categories_cache_safe()
 
     return _respond(
         "partials/credentials_card.html",
@@ -934,6 +954,9 @@ async def update_sheets_settings(
             error=str(exc),
         )
 
+    # Invalidate MCP categories cache
+    _invalidate_categories_cache_safe()
+
     return _respond(
         "partials/sheets_card.html",
         request,
@@ -964,6 +987,9 @@ async def update_model_preferences(
         reranker_quant=reranker_quant,
         actor=actor,
     )
+
+    # Invalidate MCP categories cache
+    _invalidate_categories_cache_safe()
 
     return _respond(
         "partials/models_card.html",
@@ -1151,6 +1177,8 @@ async def restore_settings_backup(
         )
 
     applied_msg = ", ".join(applied)
+    # Invalidate MCP categories cache (settings changed)
+    _invalidate_categories_cache_safe()
     return _respond(
         "partials/backup_card.html",
         request,
@@ -1418,8 +1446,31 @@ def _reload_index_from_disk(search_service) -> bool:
         else:
             _reload()
         return True
-    except Exception:  # pragma: no cover - defensive
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to hot-reload index: %s", exc, exc_info=True)
         return False
+
+
+def _validate_index_member(member: zipfile.ZipInfo) -> str:
+    """Validate a single ZIP member. Returns sanitized filename (basename)."""
+    rel_name = Path(member.filename).name
+    if not rel_name:
+        raise IndexUploadError("Archive contains empty filename.")
+
+    # Normalize and check extension (case-insensitive)
+    rel_lower = rel_name.lower()
+    if not any(rel_lower.endswith(s) for s in ALLOWED_INDEX_FILE_SUFFIXES):
+        raise IndexUploadError(f"Unsupported file '{rel_name}'.")
+
+    # Per-file size limit (archive already limited, but double-check)
+    if member.file_size > MAX_INDEX_ARCHIVE_BYTES:
+        raise IndexUploadError(f"File too large: {rel_name}")
+
+    # Basic path traversal checks on original name
+    if ".." in member.filename or member.filename.startswith("/"):
+        raise IndexUploadError(f"Invalid path in archive: {member.filename}")
+
+    return rel_name
 
 
 def _restore_index_archive(archive_path: Path, config, search_service) -> dict:
@@ -1433,20 +1484,15 @@ def _restore_index_archive(archive_path: Path, config, search_service) -> dict:
             members = [m for m in archive.infolist() if not m.is_dir()]
             if not members:
                 raise IndexUploadError("Archive did not contain any files.")
+            # Validate all members before any extraction
+            validated_names = [_validate_index_member(m) for m in members]
             temp_dir = Path(tempfile.mkdtemp())
-            # Secure, file-by-file extraction with validation
-            for member in members:
-                rel_name = Path(member.filename).name
-                if not rel_name:
-                    continue
-                # Only allow expected FAISS artifacts
-                if not any(rel_name.endswith(s) for s in (".index", ".json", ".backup")):
-                    raise IndexUploadError(f"Unsupported file '{rel_name}'.")
-                # Enforce size limit per file (~512 MiB total is already enforced on upload)
-                if member.file_size > (512 * 1024 * 1024):
-                    raise IndexUploadError(f"File too large: {rel_name}")
+            # Secure, file-by-file extraction
+            for member, rel_name in zip(members, validated_names):
                 dest = (temp_dir / rel_name).resolve()
-                # Write the member content without using extractall/extract to avoid Zip Slip
+                # Ensure we only write under temp_dir
+                if dest.parent != temp_dir.resolve():
+                    raise IndexUploadError("Path resolution failed.")
                 with archive.open(member, "r") as src, open(dest, "wb") as out:
                     shutil.copyfileobj(src, out)
     except zipfile.BadZipFile as exc:
@@ -1454,16 +1500,11 @@ def _restore_index_archive(archive_path: Path, config, search_service) -> dict:
 
     copied = []
     backup_dir = None
-    allowed_suffixes = {".index", ".json", ".backup"}
     base_temp = temp_dir.resolve()
 
     try:
-        for member in members:
-            rel_name = Path(member.filename).name
-            if not rel_name:
-                continue
-            if not any(rel_name.endswith(suffix) for suffix in allowed_suffixes):
-                raise IndexUploadError(f"Unsupported file '{rel_name}'.")
+        # Use the previously validated list of filenames
+        for rel_name in validated_names:
             src_path = (temp_dir / rel_name).resolve()
             if not str(src_path).startswith(str(base_temp)):
                 raise IndexUploadError("Archive attempted path traversal.")

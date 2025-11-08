@@ -55,10 +55,7 @@ class OperationsService:
         self._scripts_dir = self._project_root / "scripts"
         self._handlers: Dict[str, OperationHandler] = {}
         # Hard cap duration for external scripts (seconds)
-        try:
-            self._timeout_seconds = int(os.getenv("CHL_OPERATIONS_TIMEOUT_SEC", "900"))
-        except ValueError:
-            self._timeout_seconds = 900
+        self._timeout_seconds = self._load_timeout_config()
         self._register_builtin_handlers()
 
     # ------------------------------------------------------------------
@@ -200,6 +197,39 @@ class OperationsService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _load_timeout_config(self) -> int:
+        """Load and validate timeout configuration.
+
+        Default timeout is 900s. Enforce minimum 60s and log on invalid values.
+        """
+        default_timeout = 900
+        min_timeout = 60
+        raw = os.getenv("CHL_OPERATIONS_TIMEOUT_SEC", str(default_timeout))
+        try:
+            configured = int(raw)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Invalid CHL_OPERATIONS_TIMEOUT_SEC value (%s), using default %ds",
+                raw,
+                default_timeout,
+            )
+            return default_timeout
+
+        if configured <= 0:
+            logger.warning(
+                "CHL_OPERATIONS_TIMEOUT_SEC=%d is invalid (must be positive), using default %ds",
+                configured,
+                default_timeout,
+            )
+            return default_timeout
+        if configured < min_timeout:
+            logger.warning(
+                "CHL_OPERATIONS_TIMEOUT_SEC=%d below minimum %ds, using minimum",
+                configured,
+                min_timeout,
+            )
+            return min_timeout
+        return configured
     def _run_job(self, job_id: str, job_type: str, payload: Dict[str, Any]):
         logger.info("Starting job %s (%s)", job_id, job_type)
         session = self._session_factory()

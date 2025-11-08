@@ -39,6 +39,13 @@ async def update_credentials(
         )
     except SettingValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    # Invalidate MCP categories cache so tool index reflects new settings
+    try:  # Lazy import to avoid circular dependencies in some runtimes
+        from src import server as mcp_server
+        mcp_server.invalidate_categories_cache()
+    except Exception:
+        # Best effort only; MCP may run out-of-process
+        pass
     return settings_service.snapshot(session)
 
 
@@ -61,6 +68,12 @@ async def update_sheets(
         )
     except SettingValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    # Invalidate MCP categories cache so tool index reflects new settings
+    try:
+        from src import server as mcp_server
+        mcp_server.invalidate_categories_cache()
+    except Exception:
+        pass
     return settings_service.snapshot(session)
 
 
@@ -80,4 +93,10 @@ async def update_models(
         reranker_quant=request_payload.reranker_quant,
         actor=actor,
     )
+    # Invalidate MCP categories cache for completeness (models may change index hints)
+    try:
+        from src import server as mcp_server
+        mcp_server.invalidate_categories_cache()
+    except Exception:
+        pass
     return settings_service.snapshot(session)
