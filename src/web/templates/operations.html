@@ -7,6 +7,7 @@
     </div>
     <div class="actions">
       <a class="secondary" href="/settings">View Settings</a>
+      <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
     </div>
   </header>
 
@@ -30,4 +31,29 @@
       {% include "partials/ops_jobs_card.html" %}
     </div>
   </div>
+  <script>
+    (function() {
+      function setSseState(cls, text) {
+        var el = document.getElementById('sse-conn-indicator');
+        if (!el) return;
+        el.classList.remove('ok','warn','error','info');
+        el.classList.add(cls);
+        el.textContent = text;
+      }
+
+      // Prefer events from the SSE extension if available
+      document.body.addEventListener('htmx:sseOpen', function () {
+        setSseState('ok', 'Live');
+      });
+      document.body.addEventListener('htmx:sseReconnect', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseError', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseClose', function () {
+        setSseState('error', 'Disconnected');
+      });
+    })();
+  </script>
 {% endblock %}

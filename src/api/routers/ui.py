@@ -1320,14 +1320,20 @@ async def upload_index_snapshot(
     if archive_path and archive_path.exists():
         archive_path.unlink(missing_ok=True)
 
-    session.add(
-        AuditLog(
-            event_type="index.snapshot.uploaded",
-            actor=actor,
-            context=json.dumps(restore_result, ensure_ascii=False),
-            created_at=utc_now(),
+    # Best-effort audit log; do not fail the request on logging errors
+    try:
+        session.add(
+            AuditLog(
+                event_type="index.snapshot.uploaded",
+                actor=actor,
+                context=json.dumps(restore_result, ensure_ascii=False),
+                created_at=utc_now(),
+            )
         )
-    )
+        # Force flush now to avoid autoflush surprises during template rendering
+        session.flush()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to record audit log for snapshot upload: %s", exc, exc_info=True)
 
     reload_note = " Reloaded index." if restore_result.get("reloaded") else " Restart service to apply changes."
     message = f"Uploaded snapshot ({len(restore_result.get('copied', []))} files)." + reload_note

@@ -1,7 +1,9 @@
 """FastAPI dependency injection for shared resources."""
 
 from typing import Generator
+import time
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 
 def get_db_session() -> Generator[Session, None, None]:
@@ -16,7 +18,22 @@ def get_db_session() -> Generator[Session, None, None]:
     session = db.get_session()
     try:
         yield session
-        session.commit()
+        # Commit with a short retry loop to mitigate transient SQLite locks
+        # that can occur due to WAL and concurrent background tasks (e.g., telemetry)
+        max_attempts = 3
+        delay = 0.05
+        attempt = 0
+        while True:
+            try:
+                session.commit()
+                break
+            except OperationalError as exc:
+                msg = str(exc).lower()
+                if ("database is locked" in msg or "database is busy" in msg) and attempt < (max_attempts - 1):
+                    time.sleep(delay * (attempt + 1))
+                    attempt += 1
+                    continue
+                raise
     except Exception:
         session.rollback()
         raise
