@@ -1,5 +1,6 @@
 """Smoke tests for the settings UI endpoints."""
 import json
+import textwrap
 from pathlib import Path
 
 from src.storage.schema import Setting
@@ -19,37 +20,45 @@ def _clear_settings_table():
         session.close()
 
 
+def _write_config(tmp_path: Path) -> Path:
+    config_path = tmp_path / "scripts_config.yaml"
+    config_path.write_text(
+        textwrap.dedent(
+            f"""
+            data_path: ../data
+            google_credentials_path: {CREDENTIAL_FILE}
+
+            export:
+              spreadsheet_id: ui-sheet-shared
+              worksheets:
+                categories: Categories
+                experiences:
+                  sheet_id: ui-sheet-exp
+                  worksheet: Experiences
+                manuals: Manuals
+            """
+        ).strip()
+    )
+    return config_path
+
+
 def test_settings_page_renders(client):
     response = client.get("/settings")
     assert response.status_code == 200
     assert "Settings" in response.text
 
 
-def test_settings_path_form_updates_metadata(client):
+def test_sheets_form_updates_metadata(client, tmp_path):
+    config_path = _write_config(tmp_path)
     response = client.post(
-        "/ui/settings/credentials/path",
-        data={"path": str(CREDENTIAL_FILE)},
+        "/ui/settings/sheets",
+        data={"config_path": str(config_path)},
+        headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
     snapshot = client.get("/api/v1/settings/").json()
     assert snapshot["credentials"]["path"] == str(CREDENTIAL_FILE)
-
-
-def test_settings_upload_flow_saves_file(client):
-    payload = CREDENTIAL_FILE.read_bytes()
-    files = {"credential_file": ("ui-creds.json", payload, "application/json")}
-    response = client.post(
-        "/ui/settings/credentials/upload",
-        files=files,
-    )
-    assert response.status_code == 200
-    snapshot = client.get("/api/v1/settings/").json()
-    saved_path = Path(snapshot["credentials"]["path"])
-    assert saved_path.exists()
-    try:
-        assert saved_path.read_bytes() == payload
-    finally:
-        saved_path.unlink(missing_ok=True)
+    assert snapshot["sheets"]["config_path"] == str(config_path.resolve())
 
 
 def test_diagnostics_panel_endpoint(client):
@@ -58,51 +67,50 @@ def test_diagnostics_panel_endpoint(client):
     assert "Connectivity" in response.text
 
 
-def test_diagnostics_probe_requires_credentials(client):
+def test_diagnostics_probe_requires_yaml(client):
     _clear_settings_table()
     response = client.post(
         "/ui/settings/diagnostics",
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    assert "No credentials configured" in response.text
+    assert "Load scripts_config.yaml" in response.text
 
 
-def test_diagnostics_probe_revalidates_when_credentials_present(client):
+def test_diagnostics_probe_reloads_yaml(client, tmp_path):
+    config_path = _write_config(tmp_path)
     client.post(
-        "/ui/settings/credentials/path",
-        data={"path": str(CREDENTIAL_FILE)},
+        "/ui/settings/sheets",
+        data={"config_path": str(config_path)},
+        headers={"HX-Request": "true"},
     )
     response = client.post(
         "/ui/settings/diagnostics",
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    assert "Connectivity check refreshed" in response.text
+    assert "scripts_config.yaml reloaded" in response.text
     assert response.headers.get("HX-Trigger") == "settings-changed"
 
 
-def test_audit_log_panel_renders(client):
-    # Ensure at least one audit entry exists
+def test_audit_log_panel_renders(client, tmp_path):
+    config_path = _write_config(tmp_path)
     client.post(
-        "/ui/settings/credentials/path",
-        data={"path": str(CREDENTIAL_FILE)},
+        "/ui/settings/sheets",
+        data={"config_path": str(config_path)},
+        headers={"HX-Request": "true"},
     )
     response = client.get("/ui/settings/audit-log", headers={"HX-Request": "true"})
     assert response.status_code == 200
     assert "Recent Audit Log" in response.text
 
 
-def test_backup_restore_flow(client):
+def test_backup_restore_flow(client, tmp_path):
     _clear_settings_table()
+    config_path = _write_config(tmp_path)
     backup = {
         "credentials": {"path": str(CREDENTIAL_FILE)},
-        "sheets": {
-            "spreadsheet_id": "sheet-123",
-            "experiences_tab": "Exp",
-            "manuals_tab": "Manuals",
-            "categories_tab": "Cats",
-        },
+        "sheets": {"config_path": str(config_path)},
         "models": {
             "embedding_repo": "qwen",
             "embedding_quant": "Q8",
@@ -120,5 +128,5 @@ def test_backup_restore_flow(client):
 
     snapshot = client.get("/api/v1/settings/").json()
     assert snapshot["credentials"]["path"] == str(CREDENTIAL_FILE)
-    assert snapshot["sheets"]["spreadsheet_id"] == "sheet-123"
+    assert snapshot["sheets"]["config_path"] == str(config_path.resolve())
     assert snapshot["models"]["embedding_repo"] == "qwen"

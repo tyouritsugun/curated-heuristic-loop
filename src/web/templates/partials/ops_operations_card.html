@@ -2,7 +2,7 @@
   id="ops-controls-card"
   class="card ops-card"
   hx-get="/ui/operations/controls"
-  hx-trigger="load, ops-refresh from:body"
+  hx-trigger="ops-refresh from:body"
   hx-target="this"
   hx-swap="outerHTML"
 >
@@ -24,6 +24,7 @@
     </form>
   </div>
   <small class="muted">Buttons disable automatically if a job already holds the lock.</small>
+  <small class="muted caution-text">Import expects the target Google Sheet to already have <em>Categories</em>, <em>Experiences</em>, and <em>Manuals</em> worksheets. Export clears those worksheets before writing fresh rows from <code>data/chl.db</code>.</small>
   <div class="ops-last-run">
     {% set ordered = ['import', 'export', 'index'] %}
     {% for job_type in ordered %}

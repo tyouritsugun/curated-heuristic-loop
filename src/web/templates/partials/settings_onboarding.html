@@ -7,12 +7,12 @@
   </header>
   <ol>
     <li>
-      <strong>Place credentials.</strong> Upload the Google service-account JSON into <code>{{ managed_credentials_dir }}</code>
-      or, if the file already exists on this machine, choose “Use existing file”. Browser paths are not readable by the server.
+      <strong>Prepare <code>scripts_config.yaml</code>.</strong> Copy <code>scripts/scripts_config.yaml.sample</code>, set <code>data_path</code>,
+      <code>google_credentials_path</code>, and the sheet IDs/worksheet names.
     </li>
     <li>
-      <strong>Copy your sheet IDs.</strong> Enter the Spreadsheet ID and tab names from your team’s <code>scripts/scripts_config.yaml</code>
-      (or whatever source of truth you track). The UI never edits that YAML file, so CLI scripts keep working.
+      <strong>Load &amp; verify.</strong> Use the “Load &amp; Verify” button to register the YAML. The UI reads metadata only;
+      it never edits your config file.
     </li>
     <li>
       <strong>Select models.</strong> Pick the embedding and reranker repos/quantization that match the hardware you have available.

@@ -1,60 +1,45 @@
 # Configuration template for CHL maintenance scripts.
 # Fill in the values that match your environment. CLI flags can still override
-# these defaults when necessary.
+# these defaults when necessary. The Settings UI now reads Google credentials
+# and sheet metadata directly from this file—nothing else to configure.
 
-# Global defaults shared by export/import scripts (optional)
+# Relative paths resolve from the directory containing this YAML.
+# data_path → where SQLite, FAISS, and logs live. Keep the default unless your
+# repo clones data elsewhere.
 data_path: ../data
-google_credentials_path: ../credentials/your_google_service_account.json
+# google_credentials_path → point to the service-account JSON you created in the
+# Google Cloud console (IAM & Admin → Service Accounts → Keys). Copy that file
+# into <experience_root>/credentials (the Settings page explains this) and
+# reference it here.
+google_credentials_path: ../data/credentials/your-service-account.json
+
+# Optional override for the SQLite database filename (relative to data_path).
+database_filename: chl.db
 
 export:
-  # Optional override for the SQLite database filename (relative to data_path)
-  database_filename: chl.db
+  # Spreadsheet ID that receives exports (Categories/Experiences/Manuals tabs
+  # are cleared before new rows are written).
+  spreadsheet_id: your-review-sheet-id
 
-  # Absolute or relative path to the Google credentials JSON (falls back to
-  # top-level google_credentials_path if omitted).
-  google_credentials_path: ../credentials/your_google_service_account.json
-
-  # Base sheet ID used when categories/experiences/manuals do not specify their
-  # own IDs.
-  # sheet_id: your-review-sheet-id
-
-  category_sheet:
-    id: your-export-category-sheet-id
-    worksheet: Categories
-
-  experiences_sheet:
-    # Optional dedicated sheet ID (defaults to export.sheet_id when omitted)
-    id: your-export-experience-sheet-id
-    worksheet: Experiences
-
-  manuals_sheet:
-    id: your-export-manual-sheet-id
-    worksheet: Manuals
+  # Rename sheets only if your Google Sheet uses non-default tab names. To split
+  # a worksheet into a different spreadsheet, replace the value with a mapping:
+  # experiences: {sheet_id: your-alt-sheet, worksheet: CustomName}
+  worksheets:
+    categories: Categories
+    experiences: Experiences
+    manuals: Manuals
 
   # Set to true to preview counts without writing to Google Sheets.
   dry_run: false
   verbose: false
 
 import:
-  # Optional override for the SQLite database filename (relative to data_path)
-  # database_filename: chl.db
+  # Spreadsheet ID that imports pull from (must already have the tabs below).
+  spreadsheet_id: your-published-sheet-id
 
-  google_credentials_path: ../credentials/your_google_service_account.json
-
-  # Base sheet ID used when categories/experiences/manuals do not specify their
-  # own IDs.
-  # sheet_id: your-published-sheet-id
-
-  category_sheet:
-    id: your-import-category-sheet-id
-    worksheet: Categories
-
-  experiences_sheet:
-    id: your-import-experience-sheet-id
-    worksheet: Experiences
-
-  manuals_sheet:
-    id: your-import-manual-sheet-id
-    worksheet: Manuals
+  worksheets:
+    categories: Categories
+    experiences: Experiences
+    manuals: Manuals
 
   verbose: false

@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from typing import List
+from typing import List, Optional
 
 from _config_loader import (
     DEFAULT_CONFIG_PATH,
@@ -21,6 +21,7 @@ from _config_loader import (
 from src.storage.database import Database
 from src.storage.schema import Category, Experience, CategoryManual
 from src.storage.sheets_client import SheetsClient
+from src.services.settings_service import SettingsService
 
 # Column definitions (order matters for round-tripping via Sheets)
 EXPERIENCE_COLUMNS = [
@@ -109,6 +110,18 @@ def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
     return logger
 
 
+def _credentials_path_from_settings(db: Database, data_path: Path) -> Optional[Path]:
+    settings_service = SettingsService(db.get_session, str(data_path))
+    with db.session_scope() as session:
+        snapshot = settings_service.snapshot(session)
+        credentials = snapshot.get("credentials") if snapshot else None
+        if credentials and credentials.get("path"):
+            candidate = Path(credentials["path"]).expanduser()
+            if candidate.exists():
+                return candidate.resolve()
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export local SQLite entries to Google Sheets.",
@@ -155,74 +168,57 @@ def main() -> None:
         if data_path_value
         else default_data_path
     )
-    database_filename = export_cfg.get("database_filename", "chl.db")
+    database_filename = export_cfg.get("database_filename") or config_dict.get("database_filename") or "chl.db"
     if Path(database_filename).is_absolute():
         database_path = Path(database_filename)
     else:
         database_path = (data_path / database_filename).resolve()
 
+    db = Database(str(database_path), echo=False)
+    db.init_database()
+
     credentials_value = export_cfg.get(
         "google_credentials_path", config_dict.get("google_credentials_path")
     )
-    if not credentials_value:
-        print(
-            "\nConfiguration error: google_credentials_path is required under "
-            "'export' (or top-level) section.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    credentials_path = _resolve_path(credentials_value, config_path.parent)
+    credentials_source = "config" if credentials_value else "settings"
+    if credentials_value:
+        credentials_path = _resolve_path(credentials_value, config_path.parent)
+    else:
+        credentials_path = _credentials_path_from_settings(db, data_path)
+        if credentials_path is None:
+            print(
+                "\nConfiguration error: provide google_credentials_path in scripts_config.yaml "
+                "or upload credentials via the Settings UI.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    common_sheet_id = export_cfg.get("sheet_id")
+    spreadsheet_id = (export_cfg.get("spreadsheet_id") or export_cfg.get("sheet_id") or "").strip()
 
-    category_cfg = export_cfg.get("category_sheet", {}) or {}
-    if not isinstance(category_cfg, dict):
-        print(
-            "\nConfiguration error: 'category_sheet' must be a mapping in the export section.",
-            file=sys.stderr,
+    try:
+        category_sheet_id, category_worksheet = _worksheet_config(
+            export_cfg,
+            key="categories",
+            legacy_key="category_sheet",
+            default_name=DEFAULT_WORKSHEET_CATEGORIES,
+            fallback_sheet_id=spreadsheet_id,
         )
-        sys.exit(1)
-    category_sheet_id = category_cfg.get("id", common_sheet_id)
-    category_worksheet = category_cfg.get("worksheet", DEFAULT_WORKSHEET_CATEGORIES)
-    if not category_sheet_id:
-        print(
-            "\nConfiguration error: provide a sheet ID via export.sheet_id or export.category_sheet.id.",
-            file=sys.stderr,
+        experiences_sheet_id, experiences_worksheet = _worksheet_config(
+            export_cfg,
+            key="experiences",
+            legacy_key="experiences_sheet",
+            default_name=DEFAULT_WORKSHEET_EXPERIENCES,
+            fallback_sheet_id=spreadsheet_id,
         )
-        sys.exit(1)
-
-    experiences_cfg = export_cfg.get("experiences_sheet", {}) or {}
-    if not isinstance(experiences_cfg, dict):
-        print(
-            "\nConfiguration error: 'experiences_sheet' must be a mapping in the export section.",
-            file=sys.stderr,
+        manuals_sheet_id, manuals_worksheet = _worksheet_config(
+            export_cfg,
+            key="manuals",
+            legacy_key="manuals_sheet",
+            default_name=DEFAULT_WORKSHEET_MANUALS,
+            fallback_sheet_id=spreadsheet_id,
         )
-        sys.exit(1)
-    experiences_sheet_id = experiences_cfg.get("id", common_sheet_id)
-    experiences_worksheet = experiences_cfg.get(
-        "worksheet", DEFAULT_WORKSHEET_EXPERIENCES
-    )
-    if not experiences_sheet_id:
-        print(
-            "\nConfiguration error: provide a sheet ID via export.sheet_id or export.experiences_sheet.id.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    manuals_cfg = export_cfg.get("manuals_sheet", {}) or {}
-    if not isinstance(manuals_cfg, dict):
-        print(
-            "\nConfiguration error: 'manuals_sheet' must be a mapping in the export section.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    manuals_sheet_id = manuals_cfg.get("id", common_sheet_id)
-    manuals_worksheet = manuals_cfg.get("worksheet", DEFAULT_WORKSHEET_MANUALS)
-    if not manuals_sheet_id:
-        print(
-            "\nConfiguration error: provide a sheet ID via export.sheet_id or export.manuals_sheet.id.",
-            file=sys.stderr,
-        )
+    except ScriptConfigError as exc:
+        print(f"\nConfiguration error: {exc}", file=sys.stderr)
         sys.exit(1)
 
     verbose = args.verbose or bool(export_cfg.get("verbose", False))
@@ -249,9 +245,6 @@ def main() -> None:
     )
 
     # Initialise database
-    db = Database(str(database_path), echo=False)
-    db.init_database()
-
     with db.session_scope() as session:
         categories = (
             session.query(Category)
@@ -353,6 +346,7 @@ def main() -> None:
         return
 
     sheets = SheetsClient(str(credentials_path))
+    logger.info("Using Google credentials from %s (%s)", credentials_path, credentials_source)
 
     logger.info(
         "Writing categories to sheet %s (worksheet %s)",
@@ -391,6 +385,61 @@ def main() -> None:
     )
 
     logger.info("Export completed successfully.")
+
+def _worksheet_config(
+    scope: dict,
+    *,
+    key: str,
+    legacy_key: str,
+    default_name: str,
+    fallback_sheet_id: Optional[str],
+) -> tuple[str, str]:
+    """Return (sheet_id, worksheet_name) for a section with legacy/backcompat support."""
+
+    worksheet_name: Optional[str] = None
+    sheet_id: Optional[str] = None
+
+    worksheets_cfg = scope.get("worksheets")
+    if isinstance(worksheets_cfg, dict):
+        entry = worksheets_cfg.get(key)
+        if entry is None and key.endswith("ies"):
+            entry = worksheets_cfg.get(key[:-3] + "y")
+        if entry is None and key.endswith("s"):
+            entry = worksheets_cfg.get(key[:-1])
+        if isinstance(entry, str):
+            worksheet_name = entry.strip() or default_name
+        elif isinstance(entry, dict):
+            worksheet_name = (entry.get("worksheet") or entry.get("name") or default_name).strip() or default_name
+            sheet_override = (entry.get("sheet_id") or entry.get("id") or "").strip()
+            if sheet_override:
+                sheet_id = sheet_override
+            else:
+                inherit = (entry.get("spreadsheet_id") or entry.get("spreadsheet") or "").strip()
+                if inherit:
+                    sheet_id = inherit
+
+    legacy_cfg = scope.get(legacy_key) or {}
+    if worksheet_name is None:
+        if isinstance(legacy_cfg, dict):
+            worksheet_name = (legacy_cfg.get("worksheet") or default_name).strip() or default_name
+        else:
+            worksheet_name = default_name
+
+    if sheet_id is None and isinstance(legacy_cfg, dict):
+        legacy_id = (legacy_cfg.get("id") or "").strip()
+        if legacy_id:
+            sheet_id = legacy_id
+
+    if sheet_id is None:
+        if fallback_sheet_id and fallback_sheet_id.strip():
+            sheet_id = fallback_sheet_id.strip()
+
+    if not sheet_id:
+        raise ScriptConfigError(
+            f"Missing sheet ID for '{key}'. Provide export.spreadsheet_id or set worksheets.{key}.sheet_id."
+        )
+
+    return sheet_id, worksheet_name
 
 
 if __name__ == "__main__":

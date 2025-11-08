@@ -127,10 +127,7 @@ class CredentialsSettingsRequest(BaseModel):
 
 
 class SheetsSettingsRequest(BaseModel):
-    spreadsheet_id: str
-    experiences_tab: str = "Experiences"
-    manuals_tab: str = "Manuals"
-    categories_tab: str = "Categories"
+    config_path: str = Field(..., description="Absolute or relative path to scripts_config.yaml")
 
 
 class ModelSettingsRequest(BaseModel):

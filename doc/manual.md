@@ -226,15 +226,12 @@ python scripts/search_health.py
 
 ## 2: Export & Import
 
-The export/import scripts read their settings from `scripts/scripts_config.yaml`.
+The export/import scripts read their sheet IDs from `scripts/scripts_config.yaml`.
 Populate that file once and re-run the scripts with a single command. A minimal
 example:
 
 ```yaml
 # scripts/scripts_config.yaml
-data_path: ../data
-google_credentials_path: ../credentials/service_account.json
-
 export:
   # sheet_id: your-review-sheet-id
   experiences_sheet:
@@ -243,6 +240,8 @@ export:
   manuals_sheet:
     # id: your-review-sheet-id
     worksheet: Manuals
+  dry_run: false
+  verbose: false
 
 import:
   # sheet_id: your-published-sheet-id
@@ -252,11 +251,12 @@ import:
   manuals_sheet:
     # id: your-published-sheet-id
     worksheet: Manuals
+  verbose: false
 ```
 
 Uncomment and replace the `sheet_id`/`id` placeholders with your actual Google
-Sheet identifiers. Adjust paths as needed; relative values are resolved relative
-to the config file.
+Sheet identifiers. The same YAML should also define `data_path` and
+`google_credentials_path`, giving both the CLI scripts and the web UI a single source of truth for storage locations and sheet metadata.
 
 ### Check Export Status (optional)
 ```bash
@@ -292,15 +292,13 @@ This section describes the end-to-end workflow for team curation using Google Sh
    - Published Sheet: Curated, approved entries for team sync
 
 2. **Set up Service Account**
-   - Create service account in Google Cloud Console
-   - Download credentials JSON
-   - Share both sheets with service account email
-   - (Optional) Set `CHL_GOOGLE_CREDENTIALS_PATH` environment variable if you prefer managing credentials outside `scripts/scripts_config.yaml`
+   - Create a service account in Google Cloud Console.
+   - Download the credentials JSON, copy it into `<experience_root>/credentials` (defaults to `<project_root>/data/credentials`), and reference that absolute path in `scripts/scripts_config.yaml` (`google_credentials_path`).
+   - Share both sheets with the service-account email.
 
 3. **Configure script settings**
-   - Edit `scripts/scripts_config.yaml` and populate the `export` and `import`
-     sections with your Google Sheet IDs, worksheet names, credentials path,
-     and any custom data directory overrides.
+   - Edit `scripts/scripts_config.yaml`: set `data_path`, `google_credentials_path`, and populate the `export`/`import`
+     sections with your Google Sheet IDs plus worksheet names. The CLI and UI both read this file, so you only set the paths once.
 
 ### Regular Workflow
 
@@ -309,7 +307,7 @@ This section describes the end-to-end workflow for team curation using Google Sh
 uv run python scripts/export.py
 ```
 Write the full SQLite dataset—categories, experiences, and manuals—to the configured Google Sheets worksheets.
-You can also create `scripts/scripts_config.yaml` to store defaults (credentials, sheet IDs, data path, etc.) and simply run `uv run python scripts/export.py`; CLI flags still override the YAML values.
+You can also create `scripts/scripts_config.yaml` to store the sheet IDs/worksheet names and simply run `uv run python scripts/export.py`; CLI flags still override the YAML values.
 
 #### 2. Manual Curation (Google Sheets)
 Curators work directly in the exported worksheets:
@@ -512,13 +510,13 @@ curl -X POST http://localhost:8000/admin/index/rebuild
 
 ### Web UI (Settings & Operations)
 
-When the FastAPI server is running you can manage CHL entirely from the browser on the same machine. The topmost card on `/settings` is a first-time checklist that walks new operators through credential placement, sheet IDs, model selection, diagnostics, and jumping over to `/operations`—no README digging required.
+When the FastAPI server is running you can manage CHL entirely from the browser on the same machine. The topmost card on `/settings` now reminds operators to edit `scripts/scripts_config.yaml`, load it, pick models, validate diagnostics, and then jump to `/operations`—no README digging required.
 
 - **Settings Dashboard** – `http://127.0.0.1:8000/settings`
-  - Credentials: upload the Google service-account JSON (copied into `<experience_root>/credentials` with `0600` perms) *or* point to an existing local path. SQLite stores only the path/checksum/validated timestamp; the JSON bytes never enter the database.
-  - Sheets: configure the Review/Published sheet IDs and tab names without touching `scripts/scripts_config.yaml`. The UI writes these values to SQLite for API/UI flows; keep the YAML file in sync manually until the export/import scripts migrate.
+  - Checklist: links the one‑time steps (prepare YAML, load it, pick models, validate, head to Ops).
+  - Google Sheets: load or refresh `scripts_config.yaml`. The UI reads `data_path`, `google_credentials_path`, and the export/import sheet IDs, verifies permissions, and stores only the metadata/validation timestamp in SQLite.
   - Models: choose embedding/reranker repos + quantization; changes update `data/model_selection.json` so workers pick them up.
-  - Diagnostics & backups: validate credentials/Sheets connectivity, view the latest audit events, and download/restore a JSON snapshot of non-secret metadata.
+  - Diagnostics & backups: re-run the YAML validation, view the latest audit events, and download/restore a JSON snapshot of non-secret metadata (the YAML and credentials stay on disk).
 
 - **Operations Dashboard** – `http://127.0.0.1:8000/operations`
   - Import/export/index buttons call the same CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) with advisory locks and surface stdout/stderr snippets inline; results trigger an `ops-refresh` event so queue/worker/job cards update immediately.

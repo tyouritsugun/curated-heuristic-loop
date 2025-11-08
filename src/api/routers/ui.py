@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import shutil
 import tempfile
 import time
@@ -49,7 +48,6 @@ from src.storage.schema import AuditLog, utc_now
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "web" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-MAX_UPLOAD_BYTES = 512 * 1024  # 512 KiB upper bound for credential JSON
 MAX_INDEX_ARCHIVE_BYTES = 512 * 1024 * 1024  # 512 MiB cap for FAISS snapshots
 WEB_ACTOR = "web-ui"
 ALLOWED_INDEX_FILE_SUFFIXES = frozenset([".index", ".json", ".backup"])  # case-insensitive
@@ -57,8 +55,74 @@ ALLOWED_INDEX_FILE_SUFFIXES = frozenset([".index", ".json", ".backup"])  # case-
 logger = logging.getLogger(__name__)
 
 
-class CredentialUploadError(Exception):
-    """Raised when a credential upload fails validation."""
+EMBEDDING_CHOICES = [
+    {
+        "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+        "quant": "Q8_0",
+        "label": "0.6B · Q8_0 · ~600 MB",
+        "tag": "minimum",
+        "notes": "CPU friendly; fastest to rebuild",
+    },
+    {
+        "repo": "Qwen/Qwen3-Embedding-4B-GGUF",
+        "quant": "Q4_K_M",
+        "label": "4B · Q4_K_M · ~2.5 GB",
+        "tag": "recommended",
+        "notes": "Best balance of speed vs quality",
+    },
+    {
+        "repo": "Qwen/Qwen3-Embedding-4B-GGUF",
+        "quant": "Q5_K_M",
+        "label": "4B · Q5_K_M · ~2.9 GB",
+        "tag": None,
+        "notes": "Sharper vectors; needs more RAM",
+    },
+    {
+        "repo": "Qwen/Qwen3-Embedding-4B-GGUF",
+        "quant": "Q8_0",
+        "label": "4B · Q8_0 · ~4.3 GB",
+        "tag": None,
+        "notes": "Near-FP16 quality",
+    },
+    {
+        "repo": "Qwen/Qwen3-Embedding-8B-GGUF",
+        "quant": "Q4_K_M",
+        "label": "8B · Q4_K_M · ~5 GB",
+        "tag": None,
+        "notes": "Best quality if you have VRAM",
+    },
+]
+
+RERANKER_CHOICES = [
+    {
+        "repo": "Mungert/Qwen3-Reranker-0.6B-GGUF",
+        "quant": "Q4_K_M",
+        "label": "0.6B · Q4_K_M · ~300 MB",
+        "tag": "recommended",
+        "notes": "Great accuracy on CPU",
+    },
+    {
+        "repo": "Mungert/Qwen3-Reranker-0.6B-GGUF",
+        "quant": "Q8_0",
+        "label": "0.6B · Q8_0 · ~600 MB",
+        "tag": None,
+        "notes": "Highest quality without GPU",
+    },
+    {
+        "repo": "Mungert/Qwen3-Reranker-4B-GGUF",
+        "quant": "Q4_K_M",
+        "label": "4B · Q4_K_M · ~2.5 GB",
+        "tag": None,
+        "notes": "Use when you have GPU VRAM",
+    },
+    {
+        "repo": "Mungert/Qwen3-Reranker-4B-GGUF",
+        "quant": "Q8_0",
+        "label": "4B · Q8_0 · ~4.3 GB",
+        "tag": None,
+        "notes": "Highest fidelity (GPU)",
+    },
+]
 
 
 class IndexUploadError(Exception):
@@ -74,12 +138,25 @@ def _is_htmx(request: Request) -> bool:
 
 def _invalidate_categories_cache_safe() -> None:
     """Best-effort MCP categories cache invalidation (may run out-of-process)."""
+    import sys
+
+    mcp_server = sys.modules.get("src.server")
+    if not mcp_server:
+        # Don't import lazily here; importing would try to auto-start the MCP server and
+        # block the current FastAPI request. Skipping this keeps the UI responsive when
+        # the MCP stack isn't co-hosted.
+        logger.debug("MCP server not loaded; skipping cache invalidation.")
+        return
+
+    invalidate = getattr(mcp_server, "invalidate_categories_cache", None)
+    if not invalidate:
+        return
+
     try:
-        from src import server as mcp_server
-        mcp_server.invalidate_categories_cache()
+        invalidate()
     except Exception:
-        # MCP server may not be in-process; ignore
-        pass
+        # Best effort only
+        logger.debug("MCP cache invalidation failed", exc_info=True)
 
 
 def _recent_audit_entries(session: Session, limit: int = 8):
@@ -328,11 +405,13 @@ def _build_settings_context(
         "message": message,
         "message_level": message_level,
         "error": error,
-        "managed_credentials_dir": str(_managed_credentials_dir(settings_service)),
         "secrets_root": str(settings_service.secrets_root),
         "diagnostics": {name: status.to_dict() for name, status in diagnostics.items()},
         "audit_entries": _recent_audit_entries(session),
         "active_page": "settings",
+        "default_scripts_config_path": str(_default_scripts_config_path()),
+        "embedding_choices": EMBEDDING_CHOICES,
+        "reranker_choices": RERANKER_CHOICES,
     }
     return context
 
@@ -517,20 +596,21 @@ def _operations_partial_response(
     return response
 
 
-def _managed_credentials_dir(settings_service: SettingsService) -> Path:
-    return settings_service.secrets_root / "credentials"
-
-
-def _safe_filename(original: Optional[str]) -> str:
-    stem = Path(original or "credentials").stem or "credentials"
-    suffix = Path(original or "credentials.json").suffix or ".json"
-    clean_stem = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-") or "credentials"
-    timestamp = int(time.time())
-    return f"{clean_stem}-{timestamp}{suffix if suffix else '.json'}"
+def _default_scripts_config_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "scripts" / "scripts_config.yaml"
 
 
 def _actor_from_request(request: Request) -> str:
     return request.headers.get("x-actor") or WEB_ACTOR
+
+
+def _parse_model_choice(choice: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    if not choice:
+        return None, None
+    parts = choice.split("|", 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return parts[0], None
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -843,106 +923,18 @@ async def worker_action_from_ui(
         message_level="success",
         trigger_event="ops-refresh",
     )
-@router.post("/ui/settings/credentials/path", response_class=HTMLResponse)
-async def submit_credentials_path(
-    request: Request,
-    path: str = Form(...),
-    notes: Optional[str] = Form(None),
-    session: Session = Depends(get_db_session),
-    settings_service: SettingsService = Depends(get_settings_service),
-):
-    actor = _actor_from_request(request)
-    try:
-        settings_service.update_credentials(
-            session,
-            path=path.strip(),
-            notes=notes,
-            actor=actor,
-        )
-    except SettingValidationError as exc:
-        return _respond(
-            "partials/credentials_card.html",
-            request,
-            session,
-            settings_service,
-            error=str(exc),
-        )
-
-    # Invalidate MCP categories cache
-    _invalidate_categories_cache_safe()
-
-    return _respond(
-        "partials/credentials_card.html",
-        request,
-        session,
-        settings_service,
-        message="Credentials path saved and validated.",
-        message_level="success",
-        trigger_event="settings-changed",
-    )
-
-
-@router.post("/ui/settings/credentials/upload", response_class=HTMLResponse)
-async def upload_credentials(
-    request: Request,
-    credential_file: UploadFile = File(...),
-    notes: Optional[str] = Form(None),
-    session: Session = Depends(get_db_session),
-    settings_service: SettingsService = Depends(get_settings_service),
-):
-    actor = _actor_from_request(request)
-    saved_path: Optional[Path] = None
-    try:
-        saved_path = await _persist_upload(credential_file, settings_service)
-        settings_service.update_credentials(
-            session,
-            path=str(saved_path),
-            notes=notes,
-            actor=actor,
-        )
-    except (CredentialUploadError, SettingValidationError) as exc:
-        if saved_path and saved_path.exists():
-            saved_path.unlink(missing_ok=True)
-        return _respond(
-            "partials/credentials_card.html",
-            request,
-            session,
-            settings_service,
-            error=str(exc),
-        )
-
-    # Invalidate MCP categories cache
-    _invalidate_categories_cache_safe()
-
-    return _respond(
-        "partials/credentials_card.html",
-        request,
-        session,
-        settings_service,
-        message=f"Credential uploaded to {saved_path}.",
-        message_level="success",
-        trigger_event="settings-changed",
-    )
-
-
 @router.post("/ui/settings/sheets", response_class=HTMLResponse)
-async def update_sheets_settings(
+async def load_sheets_config(
     request: Request,
-    spreadsheet_id: str = Form(...),
-    experiences_tab: str = Form("Experiences"),
-    manuals_tab: str = Form("Manuals"),
-    categories_tab: str = Form("Categories"),
+    config_path: str = Form(...),
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
 ):
     actor = _actor_from_request(request)
     try:
-        settings_service.update_sheets(
+        settings_service.load_sheet_config(
             session,
-            spreadsheet_id=spreadsheet_id,
-            experiences_tab=experiences_tab,
-            manuals_tab=manuals_tab,
-            categories_tab=categories_tab,
+            config_path=config_path,
             actor=actor,
         )
     except SettingValidationError as exc:
@@ -962,7 +954,7 @@ async def update_sheets_settings(
         request,
         session,
         settings_service,
-        message="Sheet configuration saved.",
+        message="scripts_config.yaml loaded and verified.",
         message_level="success",
         trigger_event="settings-changed",
     )
@@ -971,20 +963,45 @@ async def update_sheets_settings(
 @router.post("/ui/settings/models", response_class=HTMLResponse)
 async def update_model_preferences(
     request: Request,
+    embedding_choice: Optional[str] = Form(None),
     embedding_repo: Optional[str] = Form(None),
     embedding_quant: Optional[str] = Form(None),
+    reranker_choice: Optional[str] = Form(None),
     reranker_repo: Optional[str] = Form(None),
     reranker_quant: Optional[str] = Form(None),
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
 ):
     actor = _actor_from_request(request)
+
+    selected_embedding_repo, selected_embedding_quant = _parse_model_choice(embedding_choice)
+    selected_reranker_repo, selected_reranker_quant = _parse_model_choice(reranker_choice)
+
+    if not selected_embedding_repo:
+        selected_embedding_repo = embedding_repo
+    if not selected_embedding_quant:
+        selected_embedding_quant = embedding_quant
+    if not selected_reranker_repo:
+        selected_reranker_repo = reranker_repo
+    if not selected_reranker_quant:
+        selected_reranker_quant = reranker_quant
+
+    if not selected_embedding_repo or not selected_embedding_quant:
+        default_embed = EMBEDDING_CHOICES[0]
+        selected_embedding_repo = default_embed["repo"]
+        selected_embedding_quant = default_embed["quant"]
+
+    if not selected_reranker_repo or not selected_reranker_quant:
+        default_reranker = RERANKER_CHOICES[0]
+        selected_reranker_repo = default_reranker["repo"]
+        selected_reranker_quant = default_reranker["quant"]
+
     settings_service.update_models(
         session,
-        embedding_repo=embedding_repo,
-        embedding_quant=embedding_quant,
-        reranker_repo=reranker_repo,
-        reranker_quant=reranker_quant,
+        embedding_repo=selected_embedding_repo,
+        embedding_quant=selected_embedding_quant,
+        reranker_repo=selected_reranker_repo,
+        reranker_quant=selected_reranker_quant,
         actor=actor,
     )
 
@@ -1019,21 +1036,21 @@ async def diagnostics_probe(
 ):
     actor = _actor_from_request(request)
     snapshot = settings_service.snapshot(session)
-    credentials = snapshot.get("credentials") if snapshot else None
-    if not credentials or not credentials.get("path"):
+    sheets = snapshot.get("sheets") if snapshot else None
+    config_path = sheets.get("config_path") if sheets else None
+    if not config_path:
         return _respond(
             "partials/diagnostics_panel.html",
             request,
             session,
             settings_service,
-            error="No credentials configured to validate.",
+            error="Load scripts_config.yaml before running diagnostics.",
         )
 
     try:
-        settings_service.update_credentials(
+        settings_service.load_sheet_config(
             session,
-            path=credentials["path"],
-            notes=None,
+            config_path=config_path,
             actor=actor,
         )
     except SettingValidationError as exc:
@@ -1050,7 +1067,7 @@ async def diagnostics_probe(
         request,
         session,
         settings_service,
-        message="Connectivity check refreshed.",
+        message="scripts_config.yaml reloaded and connectivity refreshed.",
         message_level="success",
         trigger_event="settings-changed",
     )
@@ -1135,24 +1152,31 @@ async def restore_settings_backup(
             )
 
     sheets = payload.get("sheets")
-    if isinstance(sheets, dict) and sheets.get("spreadsheet_id"):
-        try:
-            settings_service.update_sheets(
-                session,
-                spreadsheet_id=sheets.get("spreadsheet_id", ""),
-                experiences_tab=sheets.get("experiences_tab", "Experiences"),
-                manuals_tab=sheets.get("manuals_tab", "Manuals"),
-                categories_tab=sheets.get("categories_tab", "Categories"),
-                actor=actor,
-            )
-            applied.append("sheets")
-        except SettingValidationError as exc:
+    if isinstance(sheets, dict):
+        config_path = sheets.get("config_path")
+        if config_path:
+            try:
+                settings_service.load_sheet_config(
+                    session,
+                    config_path=config_path,
+                    actor=actor,
+                )
+                applied.append("sheets")
+            except SettingValidationError as exc:
+                return _respond(
+                    "partials/backup_card.html",
+                    request,
+                    session,
+                    settings_service,
+                    error=f"Sheet config restore failed: {exc}",
+                )
+        elif any(key in sheets for key in ("spreadsheet_id", "experiences_tab", "manuals_tab", "categories_tab")):
             return _respond(
                 "partials/backup_card.html",
                 request,
                 session,
                 settings_service,
-                error=f"Sheets restore failed: {exc}",
+                error="Backup was created before scripts_config.yaml support. Reload the YAML via Settings instead.",
             )
 
     models = payload.get("models")
@@ -1351,36 +1375,6 @@ async def upload_index_snapshot(
         message_level="success",
         trigger_event="ops-refresh",
     )
-
-
-async def _persist_upload(credential_file: UploadFile, settings_service: SettingsService) -> Path:
-    """Validate and persist an uploaded credential file."""
-    raw = await credential_file.read(MAX_UPLOAD_BYTES + 1)
-    if not raw:
-        raise CredentialUploadError("Uploaded credential is empty.")
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise CredentialUploadError("Credential file exceeds 512 KiB limit.")
-
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise CredentialUploadError("Credential file must be UTF-8 encoded JSON.") from None
-
-    try:
-        json.loads(decoded)
-    except json.JSONDecodeError as exc:
-        raise CredentialUploadError(f"Credential JSON invalid: {exc.msg}.") from exc
-
-    managed_dir = _managed_credentials_dir(settings_service)
-    managed_dir.mkdir(parents=True, exist_ok=True)
-    dest_name = _safe_filename(credential_file.filename)
-    dest_path = managed_dir / dest_name
-
-    with dest_path.open("w", encoding="utf-8") as fh:
-        fh.write(decoded)
-
-    os.chmod(dest_path, 0o600)
-    return dest_path
 
 
 def _create_index_archive(config) -> Path:

@@ -1,5 +1,6 @@
 """Settings API regression tests."""
 from pathlib import Path
+import textwrap
 
 CREDENTIAL_FILE = Path("credentials/curated-heuristic-loop-2c8a35dde6e9.json").resolve()
 
@@ -25,20 +26,40 @@ def test_update_credentials_stores_metadata(client):
     assert payload["credentials"]["checksum"].isalnum()
 
 
-def test_update_sheets_overrides_tabs(client):
+def test_load_scripts_config_registers_paths(client, tmp_path):
+    config_path = tmp_path / "scripts_config.yaml"
+    config_path.write_text(
+        textwrap.dedent(
+            f"""
+            data_path: ../data
+            google_credentials_path: {CREDENTIAL_FILE}
+
+            export:
+              spreadsheet_id: sheet-shared
+              worksheets:
+                categories:
+                  worksheet: Cats
+                experiences:
+                  sheet_id: sheet-exp
+                  worksheet: Exps
+                manuals: Mans
+            """
+        ).strip()
+    )
+
     response = client.put(
         "/api/v1/settings/sheets",
-        json={
-            "spreadsheet_id": "abc123",
-            "experiences_tab": "Exp",
-            "manuals_tab": "Docs",
-            "categories_tab": "Cats",
-        },
+        json={"config_path": str(config_path)},
     )
     assert response.status_code == 200
     data = response.json()
     sheets = data["sheets"]
-    assert sheets["spreadsheet_id"] == "abc123"
-    assert sheets["experiences_tab"] == "Exp"
-    assert sheets["manuals_tab"] == "Docs"
-    assert sheets["categories_tab"] == "Cats"
+    assert sheets["config_path"] == str(config_path.resolve())
+    assert sheets["google_credentials_path"] == str(CREDENTIAL_FILE)
+    assert sheets["category_sheet_id"] == "sheet-shared"
+    assert sheets["category_worksheet"] == "Cats"
+    assert sheets["experiences_sheet_id"] == "sheet-exp"
+    assert sheets["manuals_sheet_id"] == "sheet-shared"
+    assert sheets["manuals_worksheet"] == "Mans"
+    # credentials entry should auto-populate from the same YAML
+    assert data["credentials"]["path"] == str(CREDENTIAL_FILE)

@@ -3,7 +3,7 @@
   id="ops-jobs-card"
   class="card ops-card"
   hx-get="/ui/operations/jobs"
-  hx-trigger="load, ops-refresh from:body"
+  hx-trigger="ops-refresh from:body"
   hx-target="this"
   hx-swap="outerHTML"
   sse-swap="jobs"
@@ -30,6 +30,8 @@
       {% if job_rows %}
         {% for job in job_rows %}
           {% set status_class = 'job-status-' ~ job.status %}
+          {% set result = job.result if job.result is mapping else None %}
+          {% set stdout_tail = result.stdout_tail if result and result.stdout_tail else '' %}
           <tr>
             <td>{{ job.job_id }}</td>
             <td>{{ job.job_type }}</td>
@@ -42,6 +44,16 @@
                 <form hx-post="/ui/operations/jobs/{{ job.job_id }}/cancel" hx-target="#ops-jobs-card" hx-swap="outerHTML">
                   <button type="submit" class="secondary">Cancel</button>
                 </form>
+              {% elif stdout_tail or job.error %}
+                <details class="job-log">
+                  <summary>Log</summary>
+                  {% if stdout_tail %}
+                    <pre>{{ stdout_tail }}</pre>
+                  {% endif %}
+                  {% if job.error %}
+                    <pre class="job-error">{{ job.error }}</pre>
+                  {% endif %}
+                </details>
               {% endif %}
             </td>
           </tr>

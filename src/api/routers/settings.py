@@ -58,12 +58,9 @@ async def update_sheets(
 ):
     actor = request.headers.get("x-actor")
     try:
-        settings_service.update_sheets(
+        settings_service.load_sheet_config(
             session,
-            spreadsheet_id=request_payload.spreadsheet_id,
-            experiences_tab=request_payload.experiences_tab,
-            manuals_tab=request_payload.manuals_tab,
-            categories_tab=request_payload.categories_tab,
+            config_path=request_payload.config_path,
             actor=actor,
         )
     except SettingValidationError as exc:

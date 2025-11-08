@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from src.storage.schema import Setting, AuditLog, utc_now
+import yaml
 
 
 class SettingValidationError(Exception):
@@ -30,12 +31,18 @@ class CredentialSettings:
 
 @dataclass
 class SheetSettings:
-    """Structured view of sheet configuration."""
+    """Structured view of sheet configuration loaded from YAML."""
 
-    spreadsheet_id: str
-    experiences_tab: str
-    manuals_tab: str
-    categories_tab: str
+    config_path: str
+    config_checksum: Optional[str]
+    data_path: Optional[str]
+    google_credentials_path: Optional[str]
+    category_sheet_id: str
+    category_worksheet: str
+    experiences_sheet_id: str
+    experiences_worksheet: str
+    manuals_sheet_id: str
+    manuals_worksheet: str
     validated_at: Optional[str]
 
 
@@ -113,6 +120,14 @@ class SettingsService:
         if not resolved.exists() or not resolved.is_file():
             raise SettingValidationError(f"Credentials file does not exist: {resolved}")
 
+        managed_dir = self._managed_credentials_dir()
+        try:
+            resolved.relative_to(managed_dir)
+        except ValueError:
+            raise SettingValidationError(
+                f"Credentials must live under {managed_dir}. Move the file there before registering it."
+            )
+
         # Enforce strict permissions: reject world/group-readable credentials
         try:
             import stat as _stat
@@ -141,35 +156,153 @@ class SettingsService:
         self._append_audit(session, event_type="settings.credentials.updated", actor=actor, context=metadata)
         return self._deserialize_credentials(record)
 
-    def update_sheets(
+    def load_sheet_config(
         self,
         session: Session,
         *,
-        spreadsheet_id: str,
-        experiences_tab: str,
-        manuals_tab: str,
-        categories_tab: str,
+        config_path: str,
         actor: Optional[str],
     ) -> SheetSettings:
-        """Persist Google Sheets metadata after lightweight validation."""
-        if not spreadsheet_id.strip():
-            raise SettingValidationError("spreadsheet_id is required")
+        """Load Google Sheets metadata from a YAML config file."""
+        resolved = Path(config_path).expanduser().resolve()
+        if not resolved.exists() or not resolved.is_file():
+            raise SettingValidationError(f"Config file does not exist: {resolved}")
 
-        payload = {
-            "spreadsheet_id": spreadsheet_id.strip(),
-            "experiences_tab": experiences_tab.strip() or "Experiences",
-            "manuals_tab": manuals_tab.strip() or "Manuals",
-            "categories_tab": categories_tab.strip() or "Categories",
+        def _resolve_relative(value: str | Path) -> Path:
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                candidate = (resolved.parent / candidate).resolve()
+            else:
+                candidate = candidate.resolve()
+            return candidate
+
+        try:
+            raw = resolved.read_text("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SettingValidationError(f"Unable to read config file: {exc}") from exc
+
+        try:
+            data = yaml.safe_load(raw) or {}
+        except yaml.YAMLError as exc:
+            raise SettingValidationError(f"Config file contains invalid YAML: {exc}") from exc
+
+        if not isinstance(data, dict):
+            raise SettingValidationError("Config file must define a mapping at the top level.")
+
+        export_cfg = data.get("export")
+        if not isinstance(export_cfg, dict):
+            raise SettingValidationError("Config file missing 'export' section with sheet IDs.")
+
+        import_cfg = data.get("import") if isinstance(data.get("import"), dict) else None
+
+        data_path_value = data.get("data_path")
+        if data_path_value:
+            data_path = _resolve_relative(data_path_value)
+        else:
+            data_path = (resolved.parent.parent / "data").resolve()
+
+        credential_path_value = (
+            data.get("google_credentials_path")
+            or export_cfg.get("google_credentials_path")
+            or (import_cfg.get("google_credentials_path") if import_cfg else None)
+        )
+        if not credential_path_value:
+            raise SettingValidationError(
+                "scripts_config.yaml must define google_credentials_path (top-level or under export/import)."
+            )
+        google_credentials_path = _resolve_relative(credential_path_value)
+        managed_dir = self._managed_credentials_dir()
+        try:
+            google_credentials_path.relative_to(managed_dir)
+        except ValueError:
+            raise SettingValidationError(
+                "scripts_config.yaml points to credentials at "
+                f"{google_credentials_path}, but managed credentials must live under {managed_dir}. "
+                "Move or copy the JSON into that directory (or set CHL_EXPERIENCE_ROOT to match) "
+                "before running Load & Verify."
+            )
+
+        spreadsheet_id = (export_cfg.get("spreadsheet_id") or export_cfg.get("sheet_id") or "").strip()
+        worksheets_cfg = export_cfg.get("worksheets") if isinstance(export_cfg.get("worksheets"), dict) else None
+
+        def _extract(section_key: str, legacy_key: str, default_ws: str) -> Dict[str, str]:
+            worksheet = None
+            sheet_id = None
+
+            entry = None
+            if worksheets_cfg:
+                entry = worksheets_cfg.get(section_key)
+                if entry is None and section_key.endswith("ies"):
+                    entry = worksheets_cfg.get(section_key[:-3] + "y")
+                if entry is None and section_key.endswith("s"):
+                    entry = worksheets_cfg.get(section_key[:-1])
+
+            if isinstance(entry, str):
+                worksheet = entry.strip() or default_ws
+            elif isinstance(entry, dict):
+                worksheet = (entry.get("worksheet") or entry.get("name") or default_ws).strip() or default_ws
+                override = (entry.get("sheet_id") or entry.get("id") or "").strip()
+                sheet_id = override or None
+
+            legacy_cfg = export_cfg.get(legacy_key) or {}
+            if worksheet is None:
+                if isinstance(legacy_cfg, dict):
+                    worksheet = (legacy_cfg.get("worksheet") or default_ws).strip() or default_ws
+                else:
+                    worksheet = default_ws
+
+            if sheet_id is None and isinstance(legacy_cfg, dict):
+                legacy_id = (legacy_cfg.get("id") or "").strip()
+                if legacy_id:
+                    sheet_id = legacy_id
+
+            if sheet_id is None:
+                if spreadsheet_id:
+                    sheet_id = spreadsheet_id
+
+            if not sheet_id:
+                raise SettingValidationError(
+                    f"Config file missing a sheet ID for {section_key}. Provide export.spreadsheet_id or set worksheets.{section_key}.sheet_id."
+                )
+
+            return {"id": sheet_id, "worksheet": worksheet}
+
+        category_sheet = _extract("categories", "category_sheet", "Categories")
+        experiences_sheet = _extract("experiences", "experiences_sheet", "Experiences")
+        manuals_sheet = _extract("manuals", "manuals_sheet", "Manuals")
+
+        metadata = {
+            "config_path": str(resolved),
+            "data_path": str(data_path),
+            "google_credentials_path": str(google_credentials_path),
+            "category_sheet": category_sheet,
+            "experiences_sheet": experiences_sheet,
+            "manuals_sheet": manuals_sheet,
         }
 
+        checksum = self._sha256(resolved)
         record = self._upsert_setting(
             session,
             key=self.SHEETS_KEY,
-            value=payload,
-            checksum=None,
+            value=metadata,
+            checksum=checksum,
             notes=None,
         )
-        self._append_audit(session, event_type="settings.sheets.updated", actor=actor, context=payload)
+        self._append_audit(
+            session,
+            event_type="settings.sheets.config_loaded",
+            actor=actor,
+            context=metadata,
+        )
+
+        # Automatically register credential metadata based on the YAML reference.
+        self.update_credentials(
+            session,
+            path=str(google_credentials_path),
+            notes="Registered via scripts_config.yaml",
+            actor=actor,
+        )
+
         return self._deserialize_sheets(record)
 
     def update_models(
@@ -236,10 +369,15 @@ class SettingsService:
     def _resolve_secret_path(self, candidate: str) -> Path:
         candidate_path = Path(candidate).expanduser()
         if not candidate_path.is_absolute():
-            candidate_path = (self._secrets_root / candidate_path).resolve()
+            candidate_path = (self._managed_credentials_dir() / candidate_path).resolve()
         else:
             candidate_path = candidate_path.resolve()
         return candidate_path
+
+    def _managed_credentials_dir(self) -> Path:
+        path = self._secrets_root / "credentials"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def _sha256(self, file_path: Path) -> str:
         digest = hashlib.sha256()
@@ -304,11 +442,20 @@ class SettingsService:
         if not record:
             return None
         data = json.loads(record.value_json)
+        category_sheet = data.get("category_sheet") or {}
+        experiences_sheet = data.get("experiences_sheet") or {}
+        manuals_sheet = data.get("manuals_sheet") or {}
         return SheetSettings(
-            spreadsheet_id=data.get("spreadsheet_id", ""),
-            experiences_tab=data.get("experiences_tab", ""),
-            manuals_tab=data.get("manuals_tab", ""),
-            categories_tab=data.get("categories_tab", ""),
+            config_path=data.get("config_path", ""),
+            config_checksum=record.checksum,
+             data_path=data.get("data_path"),
+             google_credentials_path=data.get("google_credentials_path"),
+            category_sheet_id=category_sheet.get("id", ""),
+            category_worksheet=category_sheet.get("worksheet", ""),
+            experiences_sheet_id=experiences_sheet.get("id", ""),
+            experiences_worksheet=experiences_sheet.get("worksheet", ""),
+            manuals_sheet_id=manuals_sheet.get("id", ""),
+            manuals_worksheet=manuals_sheet.get("worksheet", ""),
             validated_at=record.validated_at,
         )
 
@@ -330,7 +477,7 @@ class SettingsService:
                 name="credentials",
                 state="error",
                 headline="Missing credentials",
-                detail="Upload the Google service-account JSON or point to an existing readable file.",
+                detail="Load scripts_config.yaml with google_credentials_path set to a readable JSON file.",
             )
 
         path = Path(data.get("path", "")).expanduser()
@@ -403,33 +550,62 @@ class SettingsService:
                 name="sheets",
                 state="warn",
                 headline="Sheets configuration missing",
-                detail="Add spreadsheet ID and worksheet names to sync content.",
+                detail="Load scripts_config.yaml so the server knows your sheet IDs.",
             )
 
-        spreadsheet_id = (data.get("spreadsheet_id") or "").strip()
-        if not spreadsheet_id:
+        config_path = Path(data.get("config_path", "")).expanduser()
+        if not config_path.exists():
             return DiagnosticStatus(
                 name="sheets",
                 state="error",
-                headline="Spreadsheet ID required",
-                detail="Paste the ID from the Google Sheets URL.",
+                headline="Config file not found",
+                detail=str(config_path),
                 validated_at=data.get("validated_at"),
             )
 
-        detail = f"Tabs: {data.get('experiences_tab')}, {data.get('manuals_tab')}, {data.get('categories_tab')}"
+        def _extract(prefix: str) -> tuple[str, str]:
+            sheet_id = (data.get(f"{prefix}_sheet_id") or "").strip()
+            worksheet = (data.get(f"{prefix}_worksheet") or "").strip()
+            if not sheet_id:
+                raise SettingValidationError(f"Missing sheet ID for {prefix} sheet")
+            if not worksheet:
+                raise SettingValidationError(f"Missing worksheet name for {prefix} sheet")
+            return sheet_id, worksheet
+
+        try:
+            cat_sheet_id, cat_ws = _extract("category")
+            exp_sheet_id, exp_ws = _extract("experiences")
+            man_sheet_id, man_ws = _extract("manuals")
+        except SettingValidationError as exc:
+            return DiagnosticStatus(
+                name="sheets",
+                state="error",
+                headline=str(exc),
+                detail=f"Source: {config_path}",
+                validated_at=data.get("validated_at"),
+            )
+
+        summary = (
+            "Categories → {cat}\nExperiences → {exp}\nManuals → {man}".format(
+                cat=f"{cat_sheet_id}/{cat_ws}",
+                exp=f"{exp_sheet_id}/{exp_ws}",
+                man=f"{man_sheet_id}/{man_ws}",
+            )
+        )
+
         state = "ok"
-        headline = "Sheet metadata saved"
+        headline = "Sheet config loaded"
 
         if cred_status.state != "ok":
             state = "warn"
             headline = "Credentials not ready"
-            detail = "Sheets will fail until credentials validate."
+            summary = "Sheets will fail until credentials validate."
 
         return DiagnosticStatus(
             name="sheets",
             state=state,
             headline=headline,
-            detail=detail,
+            detail=summary,
             validated_at=data.get("validated_at"),
         )
 

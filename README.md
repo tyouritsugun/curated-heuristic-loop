@@ -15,13 +15,19 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    git clone https://github.com/<your-org>/curated-heuristic-loop.git
    cd curated-heuristic-loop
    ```
-3. **Start the bundled FastAPI server** (first run downloads every dependency automatically):
+3. **Sync dependencies (includes FAISS + embedding clients)**:
+   ```bash
+   uv sync --python 3.11 --extra ml
+   ```
+   > Skip only if you plan to run in text-search mode. The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., so vector search and reranking work on day one.
+
+4. **Start the bundled FastAPI server** (after syncing, this command keeps dependencies up to date automatically):
    ```bash
    uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
    ```
-4. **Open http://127.0.0.1:8000/settings**. The page walks you through:
-   - Uploading (or pointing at) your Google service-account JSON. Secrets stay on disk under `<experience_root>/credentials` with `0600` perms; SQLite only stores path/checksum/validation time.
-   - Entering the Spreadsheet ID + tab names for the review/published sheets. If you already have `scripts/scripts_config.yaml`, copy the IDs from there (UI never edits that file).
+5. **Open http://127.0.0.1:8000/settings**. The page walks you through:
+   - Preparing `scripts/scripts_config.yaml` (copy the `.sample` file) and setting `data_path`, `google_credentials_path`, and the review/published sheet IDs. The credential JSON must live under `<experience_root>/credentials` (by default `./data/credentials`), so the YAML should point inside that folder.
+   - Clicking **Load & Verify** on the Google Sheets card so the UI validates the YAML, records the sheet IDs, and registers the credential path automatically.
    - Picking embedding/reranker models and running the built-in diagnostics check.
    - Downloading a JSON backup once things look good.
 
@@ -98,7 +104,7 @@ Set `CHL_OPERATIONS_TIMEOUT_SEC` (default 900, minimum 60) to cap script runtime
 
 ## Web dashboards (Phases 0–3)
 
-- **Settings** – Credential helper (upload or managed path), Sheets configuration, model picker, diagnostics, audit log, and JSON backup/restore. All instructions render inline so a non-technical operator can complete setup without referencing this README.
+- **Settings** – First-time checklist, `scripts_config.yaml` loader (reads sheet IDs + credential/data paths), model picker, diagnostics, audit log, and JSON backup/restore. Everything is explained inline so non-technical operators can finish setup without digging into docs.
 - **Operations** – Import/export/index triggers with last-run summaries, live queue depth, job history, and FAISS snapshot upload/download. Worker controls stay hidden unless you attach an external pool. Updates stream over SSE; fall back to manual refresh if SSE is blocked.
 
 Both dashboards share the same process as the MCP/API stack, so every change is logged and subject to the same safety constraints (locks, validation, audit trail).
