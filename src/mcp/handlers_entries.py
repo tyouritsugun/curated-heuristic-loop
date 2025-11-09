@@ -14,7 +14,7 @@ import logging
 
 from pydantic import ValidationError
 
-from src.mcp.models import ExperienceWritePayload, format_validation_error
+from src.mcp.models import ExperienceWritePayload, ManualWritePayload, format_validation_error
 from src.mcp.utils import create_error_response, normalize_context
 from src.storage.repository import (
     CategoryRepository,
@@ -253,8 +253,9 @@ def make_write_entry_handler(db, config, search_service):
                     except ValidationError as e:
                         return create_error_response("INVALID_REQUEST", format_validation_error(e))
 
-                    # Duplicate suggestions
+                    # Duplicate suggestions with decision hints
                     duplicates_payload: List[Dict[str, Any]] = []
+                    recommendation = None
                     try:
                         if search_service is not None:
                             dup_candidates = search_service.find_duplicates(
@@ -265,6 +266,8 @@ def make_write_entry_handler(db, config, search_service):
                                 exclude_id=None,
                                 threshold=(config.duplicate_threshold_insert if config else 0.60),
                             )
+
+                            # Build duplicate suggestions
                             for c in dup_candidates:
                                 duplicates_payload.append({
                                     "entity_id": c.entity_id,
@@ -274,8 +277,26 @@ def make_write_entry_handler(db, config, search_service):
                                     "provider": c.provider,
                                     "title": c.title,
                                     "summary": c.summary,
-                                    "guidance": "Potential duplicate - compare before finalizing."
                                 })
+
+                            # Decision recommendation based on similarity
+                            if dup_candidates:
+                                highest_score = max(c.score for c in dup_candidates)
+                                if highest_score >= 0.90:
+                                    recommendation = (
+                                        "MERGE_RECOMMENDED: Very high similarity detected. "
+                                        "Consider updating the existing entry instead of creating a new one."
+                                    )
+                                elif highest_score >= 0.75:
+                                    recommendation = (
+                                        "REVIEW_SUGGESTED: High similarity detected. "
+                                        "Review the similar entries and consider refactoring for clarity."
+                                    )
+                                else:
+                                    recommendation = (
+                                        "PROCEED_WITH_CAUTION: Moderate similarity detected. "
+                                        "Review similar entries to avoid content duplication."
+                                    )
                     except Exception:
                         pass
 
@@ -293,61 +314,164 @@ def make_write_entry_handler(db, config, search_service):
                         "playbook": validated.playbook,
                         "context": validated.context,
                     })
-                    entry_id = new_obj.id
+
+                    # Build full entry object for response
+                    entry_dict = {
+                        "id": new_obj.id,
+                        "title": new_obj.title,
+                        "playbook": new_obj.playbook,
+                        "context": normalize_context(new_obj.context),
+                        "section": new_obj.section,
+                        "updated_at": new_obj.updated_at,
+                        "author": new_obj.author,
+                        "source": new_obj.source,
+                        "sync_status": new_obj.sync_status,
+                    }
 
                     # Best-effort embedding after commit
                     response: Dict[str, Any] = {
                         "meta": {"code": meta_code, "name": meta_name},
-                        "entry_id": entry_id,
+                        "entry_id": new_obj.id,
+                        "entry": entry_dict,
                         "duplicates": duplicates_payload,
+                        "message": (
+                            "Experience created successfully. Indexing is in progress and may take up to 15 seconds. "
+                            "Semantic search will not reflect this change until indexing is complete."
+                        ),
                     }
+                    if recommendation:
+                        response["recommendation"] = recommendation
                     if warnings:
                         response["warnings"] = warnings
                     return response
 
                 else:  # manual
-                    # Basic validation
-                    title = (data or {}).get("title")
-                    content = (data or {}).get("content")
-                    summary = (data or {}).get("summary")
-                    if not title or len(title) > 120:
+                    # Validate manual data
+                    try:
+                        validated = ManualWritePayload.model_validate({**data})
+                    except ValidationError as e:
                         return create_error_response(
                             "INVALID_REQUEST",
-                            "Title must be 1-120 characters",
-                            hint="Shorten the title so it stays within 120 characters.",
+                            format_validation_error(e),
+                            hint="Ensure 'title' (1-120 chars) and 'content' (non-empty) are provided.",
                             retryable=True,
                         )
-                    if not content:
-                        return create_error_response(
-                            "INVALID_REQUEST",
-                            "Content cannot be empty",
-                            hint="Provide Markdown content before creating the manual.",
-                            retryable=True,
-                        )
+
+                    # Duplicate detection for manuals with decision hints
+                    duplicates_payload: List[Dict[str, Any]] = []
+                    recommendation = None
+                    try:
+                        if search_service is not None:
+                            dup_candidates = search_service.find_duplicates(
+                                title=validated.title,
+                                content=validated.content,
+                                entity_type='manual',
+                                category_code=category_code,
+                                exclude_id=None,
+                                threshold=(config.duplicate_threshold_insert if config else 0.60),
+                            )
+
+                            # Build duplicate suggestions
+                            for c in dup_candidates:
+                                duplicates_payload.append({
+                                    "entity_id": c.entity_id,
+                                    "entity_type": c.entity_type,
+                                    "score": c.score,
+                                    "reason": getattr(c.reason, 'value', str(c.reason)),
+                                    "provider": c.provider,
+                                    "title": c.title,
+                                    "summary": c.summary,
+                                })
+
+                            # Decision recommendation based on similarity
+                            if dup_candidates:
+                                highest_score = max(c.score for c in dup_candidates)
+                                if highest_score >= 0.90:
+                                    recommendation = (
+                                        "MERGE_RECOMMENDED: Very high similarity detected. "
+                                        "Consider updating the existing manual instead of creating a new one."
+                                    )
+                                elif highest_score >= 0.75:
+                                    recommendation = (
+                                        "REVIEW_SUGGESTED: High similarity detected. "
+                                        "Review the similar manuals and consider refactoring for clarity."
+                                    )
+                                else:
+                                    recommendation = (
+                                        "PROCEED_WITH_CAUTION: Moderate similarity detected. "
+                                        "Review similar manuals to avoid content duplication."
+                                    )
+                    except Exception:
+                        pass
 
                     man_repo = CategoryManualRepository(session)
                     new_manual = man_repo.create({
                         "category_code": category_code,
-                        "title": title,
-                        "content": content,
-                        "summary": summary,
+                        "title": validated.title,
+                        "content": validated.content,
+                        "summary": validated.summary,
                     })
 
-                    manual_id = new_manual.id
+                    # Build full entry object for response
+                    manual_dict = {
+                        "id": new_manual.id,
+                        "title": new_manual.title,
+                        "content": new_manual.content,
+                        "summary": new_manual.summary,
+                        "updated_at": new_manual.updated_at,
+                        "author": new_manual.author,
+                    }
 
-                    return {"meta": {"code": meta_code, "name": meta_name}, "entry_id": manual_id}
+                    response = {
+                        "meta": {"code": meta_code, "name": meta_name},
+                        "entry_id": new_manual.id,
+                        "entry": manual_dict,
+                        "duplicates": duplicates_payload,
+                        "message": (
+                            "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
+                            "Semantic search will not reflect this change until indexing is complete."
+                        ),
+                    }
+                    if recommendation:
+                        response["recommendation"] = recommendation
+                    return response
 
         except Exception as e:
             return create_error_response("SERVER_ERROR", str(e), retryable=False)
 
     write_entry.__doc__ = (
         "Create a new experience or manual entry in the requested category.\n\n"
+        "Args:\n"
+        "    entity_type: Either 'experience' or 'manual'\n"
+        "    category_code: Category shelf code (e.g., 'PGS', 'GLN')\n"
+        "    data: Entry data dictionary with entity-specific fields:\n\n"
+        "For entity_type='experience':\n"
+        "    Required fields:\n"
+        "        - section (str): One of 'useful', 'harmful', or 'contextual'\n"
+        "        - title (str): Brief title (1-120 characters)\n"
+        "        - playbook (str): Actionable guidance (1-2000 characters)\n"
+        "    Optional fields:\n"
+        "        - context (dict): Additional metadata (required for contextual section)\n\n"
+        "For entity_type='manual':\n"
+        "    Required fields:\n"
+        "        - title (str): Manual title (1-120 characters)\n"
+        "        - content (str): Full markdown content\n"
+        "    Optional fields:\n"
+        "        - summary (str): Brief summary\n\n"
+        "Returns:\n"
+        "    Dictionary with:\n"
+        "        - meta: Category info (code, name)\n"
+        "        - entry_id: ID of the created entry\n"
+        "        - entry: Full entry object with all fields\n"
+        "        - duplicates: List of similar existing entries with scores\n"
+        "        - recommendation: Decision hint (e.g., MERGE_RECOMMENDED, REVIEW_SUGGESTED)\n"
+        "        - message: Status message with indexing warning\n"
+        "        - warnings: Optional list of validation warnings\n\n"
         "Example:\n"
         "    write_entry('experience', 'PGS', {\n"
         "        'section': 'useful',\n"
         "        'title': 'Checklist the spec handoff',\n"
-        "        'playbook': 'Review the Figma comments before handoff.',\n"
-        "        'context': {'note': 'Only used when section is contextual.'}\n"
+        "        'playbook': 'Review the Figma comments before handoff.'\n"
         "    })"
     )
     write_entry.__name__ = "write_entry"
@@ -445,7 +569,14 @@ def make_update_entry_handler(db, config, search_service):
                         "sync_status": updated.sync_status,
                     }
 
-                    return {"meta": {"code": meta_code, "name": meta_name}, "entry": entry_dict}
+                    return {
+                        "meta": {"code": meta_code, "name": meta_name},
+                        "entry": entry_dict,
+                        "message": (
+                            "Experience updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                            "Semantic search will not reflect this change until indexing is complete."
+                        ),
+                    }
 
                 else:  # manual
                     allowed_fields = {"title", "content", "summary"}
@@ -479,7 +610,14 @@ def make_update_entry_handler(db, config, search_service):
                         "author": updated.author,
                     }
 
-                    return {"meta": {"code": meta_code, "name": meta_name}, "entry": manual_dict}
+                    return {
+                        "meta": {"code": meta_code, "name": meta_name},
+                        "entry": manual_dict,
+                        "message": (
+                            "Manual updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                            "Semantic search will not reflect this change until indexing is complete."
+                        ),
+                    }
 
         except Exception as e:
             return create_error_response("SERVER_ERROR", str(e), retryable=False)
@@ -546,7 +684,14 @@ def make_delete_entry_handler(db, _config, _search_service):
                         retryable=False,
                     )
                 man_repo.delete(entry_id)
-                return {"status": "deleted", "entry_id": entry_id}
+                return {
+                    "status": "deleted",
+                    "entry_id": entry_id,
+                    "message": (
+                        "Manual deleted successfully. Index update is in progress and may take up to 15 seconds. "
+                        "Semantic search will not reflect this change until indexing is complete."
+                    ),
+                }
 
         except Exception as e:
             return create_error_response("SERVER_ERROR", str(e), retryable=False)

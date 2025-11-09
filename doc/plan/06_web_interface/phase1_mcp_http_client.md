@@ -1,13 +1,13 @@
 # Phase 1: MCP HTTP Client Migration
 
+> **Note**: This document describes the historical planning for MCP HTTP client migration. The MCP server now operates exclusively in HTTP mode. Direct database mode has been removed.
+
 ## Goals
 - Replace direct-database MCP server interactions with HTTP calls to the Phase 0 API while keeping feature parity.
-- Provide a kill switch/feature flag to fall back to the legacy code path if regressions occur.
 - Ensure MCP latencies remain acceptable by batching or caching where needed.
 
 ## Success Criteria
-- All MCP tools (list categories, read/write entries, run imports, etc.) call HTTP endpoints exclusively when `CHL_MCP_HTTP_MODE=1`.
-- Feature flag `CHL_MCP_HTTP_MODE` defaults to on for new installs but can be disabled via env var or CLI flag, restoring legacy behavior without redeploy.
+- All MCP tools (list categories, read/write entries, run imports, etc.) call HTTP endpoints exclusively.
 - Performance baseline: MCP operations over HTTP add <10% latency compared to local DB access for common workflows (list categories, read entries, write entry).
 - Error handling translates HTTP errors into MCP-compliant responses with actionable messages.
 

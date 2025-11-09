@@ -1,11 +1,12 @@
 # Phase 2: MCP Integration
 
+> **Note**: This document describes the historical planning for MCP HTTP integration. The direct database mode mentioned in this document has been removed. The MCP server now operates exclusively in HTTP mode, connecting to the FastAPI server.
+
 ## Goals
 - Convert stdio MCP server into a thin HTTP client shim
 - Maintain backward compatibility with existing MCP client integrations
 - Implement health gating and circuit breaker patterns for reliability
 - Ensure transparent migration (MCP clients see no behavioral changes)
-- Provide fallback mechanism if API is unavailable
 
 ## Success Criteria
 - Existing MCP clients work without configuration changes
@@ -13,7 +14,6 @@
 - Health checks prevent MCP server startup if API is unavailable
 - Error messages are properly translated from HTTP responses to MCP errors
 - Performance overhead of HTTP layer is negligible (<50ms p95)
-- Fallback to direct database mode is available for emergency rollback
 
 ## Prerequisites
 - Phase 1 completed: HTTP API is stable and tested
@@ -24,21 +24,8 @@
 
 ### Components to Modify
 
-#### 1. Rename Current MCP Server
-**Action**: Preserve existing direct-database implementation as fallback
-
-```bash
-# Rename files
-mv src/server.py src/mcp_server_direct.py
-```
-
-**Purpose**: Keep current implementation for:
-- Emergency rollback if API has issues
-- Local development/testing without API
-- Reference implementation for behavior validation
-
-#### 2. New MCP Server Shim
-**File**: `src/server.py` (rewrite)
+#### 1. MCP Server HTTP Client
+**File**: `src/server.py`
 
 The new server becomes a lightweight HTTP client that:
 - Initializes HTTP client to API server

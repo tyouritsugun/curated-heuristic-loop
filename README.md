@@ -100,7 +100,7 @@ args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "pytho
 # CHL_READ_DETAILS_LIMIT = "20"
 ```
 
-`CHL_MCP_HTTP_MODE` controls whether MCP tools talk to the HTTP API (`http`), fall back to direct handlers (`auto`, the default), or stay fully local (`direct`). Use `--chl-http-mode` on the CLI to override per run. Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to prevent the auto HTTP bootstrap.
+Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to prevent the auto HTTP bootstrap.
 
 ### Background workers & API endpoints
 

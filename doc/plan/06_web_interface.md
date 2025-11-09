@@ -58,7 +58,7 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 
 ## Implementation Status (November 2025)
 - **Phase 0** – API endpoints for settings, workers, operations, telemetry, audit logging, and advisory locks are live; SQLite stores only metadata while credential/index bytes stay on disk.
-- **Phase 1** – MCP server speaks HTTP (`CHL_MCP_HTTP_MODE=http|auto|direct`), caches hot data, and falls back to direct handlers when the API is unreachable.
+- **Phase 1** – MCP server speaks HTTP exclusively, caches hot data for performance.
 - **Phase 2** – `/settings` shipped with credential upload/path helpers, sheet/model forms, diagnostics, audit feed, and metadata backup/restore; secrets remain filesystem-only.
 - **Phase 3 (current)** – `/operations` dashboard streams queue/worker/job cards via SSE, shows per-job-type summaries (actor/timestamp/duration), exposes worker pause/resume/drain, and adds an index snapshot card that downloads or uploads FAISS artifacts (ZIP, 512 MiB cap) with audit logging and hot-reload attempts. Triggered actions emit `ops-refresh` so htmx/SSE keep the UI in sync without reloads.
 - `/operations` buttons call the same CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) whenever `CHL_OPERATIONS_MODE=scripts` (default). Set the env var to `noop` for CI/tests if you want the buttons to stay inert.
@@ -119,15 +119,13 @@ Code Assistant → MCP (thin HTTP client) → FastAPI (same API endpoints)
 
 ## Delivery Plan
 - **Phase 0 - API Foundations**: Introduce settings/import/export/worker-control endpoints plus locking/validation so both CLI and UI clients can rely on the HTTP surface.
-- **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs, guarded by a feature flag fallback to direct database mode until parity is confirmed.
+- **Phase 1 - MCP HTTP Client**: Refactor MCP server to call the new APIs exclusively.
 - **Phase 2 - Settings & Configuration UI**: Interactive settings page with credential placement helper (upload into managed directory or point at an existing local file), sheet/model forms, diagnostics panel, audit log feed, and metadata backup/restore. Store metadata in SQLite while secrets stay on disk; secrets remain files under the managed root.
 - **Phase 3 - Core Operations & UX**: Import/export pages, worker control dashboard, queue monitoring backed by the telemetry pipeline, and user-experience polish such as real-time visualizations, progress indicators, validation feedback, and initial mobile responsiveness.
 
-## MCP HTTP Rollout Controls
-- `CHL_MCP_HTTP_MODE` governs transport: `http` (force API), `auto` (API with direct fallback), or `direct` (legacy SQLite). Legacy `CHL_USE_API=0` maps to `direct`.
-- `--chl-http-mode` CLI flag temporarily overrides the environment, making it easy to test a mode without editing config files.
-- HTTP startup waits for `/health` and uses `CHL_API_CIRCUIT_BREAKER_*` thresholds so outages trip a circuit breaker instead of hanging MCP calls. Auto mode transparently drops to direct handlers when transport errors occur.
-- Categories payloads fetched over HTTP are cached for 30 seconds; handshake responses include the currently active transport so clients can display status.
+## MCP HTTP Configuration
+- HTTP startup waits for `/health` and uses `CHL_API_CIRCUIT_BREAKER_*` thresholds so outages trip a circuit breaker instead of hanging MCP calls.
+- Categories payloads fetched over HTTP are cached for 30 seconds to minimize round-trips.
 - Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to import `src.server` without immediately starting the HTTP client, enabling deterministic injection of fake API clients.
 
 

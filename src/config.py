@@ -41,8 +41,6 @@ Thresholds:
 - CHL_TOPK_RERANK: Reranker candidates (default: 40)
 
 API Client (Phase 2):
-- CHL_MCP_HTTP_MODE: `http` (default), `auto`, or `direct` (legacy). `CHL_USE_API` remains as a backward-compatible alias.
-- CHL_USE_API: Legacy alias; set to 0 for direct database mode when CHL_MCP_HTTP_MODE unset.
 - CHL_API_BASE_URL: API server base URL (default: http://localhost:8000)
 - CHL_API_TIMEOUT: HTTP request timeout in seconds (default: 30.0)
 - CHL_API_HEALTH_CHECK_MAX_WAIT: Max seconds to wait for API health on startup (default: 30)
@@ -74,35 +72,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
 logger = logging.getLogger(__name__)
-
-
-def _normalize_http_mode(value: str | None) -> str:
-    """Normalize env/CLI HTTP mode values."""
-    if value is None:
-        return "http"
-
-    normalized = str(value).strip().lower()
-    alias_map = {
-        "1": "http",
-        "true": "http",
-        "on": "http",
-        "http": "http",
-        "default": "http",
-        "experimental": "http",
-        "0": "direct",
-        "false": "direct",
-        "off": "direct",
-        "direct": "direct",
-        "legacy": "direct",
-        "auto": "auto",
-        "hybrid": "auto",
-    }
-
-    if normalized in alias_map:
-        return alias_map[normalized]
-
-    logger.warning("Unknown CHL_MCP_HTTP_MODE value '%s'; defaulting to 'http'", value)
-    return "http"
 
 
 def _load_model_selection() -> dict:
@@ -192,12 +161,6 @@ class Config:
         self.faiss_index_path = str(faiss_path)
 
         # API client configuration (Phase 2)
-        http_mode_env = os.getenv("CHL_MCP_HTTP_MODE")
-        if http_mode_env is None:
-            http_mode_env = "http" if os.getenv("CHL_USE_API", "1") != "0" else "direct"
-
-        self.mcp_http_mode = _normalize_http_mode(http_mode_env)
-        self.use_api = self.mcp_http_mode != "direct"  # Legacy compatibility
         self.api_base_url = os.getenv("CHL_API_BASE_URL", "http://localhost:8000")
         self.api_timeout = float(os.getenv("CHL_API_TIMEOUT", "30.0"))
         self.api_health_check_max_wait = int(os.getenv("CHL_API_HEALTH_CHECK_MAX_WAIT", "30"))

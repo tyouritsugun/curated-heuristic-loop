@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CHL MCP Server - HTTP API Client Shim (Phase 2)
+"""CHL MCP Server - HTTP API Client
 
 This server acts as a thin HTTP client that forwards MCP tool calls to the
 HTTP API server. It provides backward compatibility with existing MCP client
@@ -9,9 +9,6 @@ Features:
 - Circuit breaker pattern to prevent cascading failures
 - Automatic retry with exponential backoff
 - Health gating on startup
-- Fallback to direct database mode via CHL_MCP_HTTP_MODE=direct (legacy path)
-
-For direct database mode (Phase 1), set CHL_MCP_HTTP_MODE=direct to use mcp_server_direct.py
 """
 import argparse
 import json
@@ -109,20 +106,7 @@ WORKFLOW_MODE_PAYLOAD = {
 }
 
 
-def _parse_http_mode_override() -> Optional[str]:
-    """Parse optional CLI flag for MCP HTTP mode."""
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "--chl-http-mode",
-        choices=["http", "auto", "direct"],
-        dest="chl_http_mode",
-        help="Override CHL_MCP_HTTP_MODE for this process",
-    )
-    args, _ = parser.parse_known_args()
-    return args.chl_http_mode
-
-
-CLI_HTTP_MODE = _parse_http_mode_override()
+# HTTP mode is always enabled - no CLI override needed
 HTTP_MODE = "http"
 # Allow TTL to be configured for faster responsiveness after settings changes
 try:
@@ -131,7 +115,6 @@ except (TypeError, ValueError):
     CATEGORIES_CACHE_TTL = 30.0
 _categories_cache: Dict[str, Any] = {"payload": None, "expires": 0.0}
 _categories_cache_lock = threading.Lock()
-_direct_handlers: Dict[str, Callable] = {}
 
 # Global state
 config = None
@@ -189,17 +172,7 @@ def _workflow_mode_payload() -> Dict[str, Any]:
     return deepcopy(WORKFLOW_MODE_PAYLOAD)
 
 
-def _http_enabled() -> bool:
-    return HTTP_MODE in ("http", "auto")
-
-
-def _auto_mode_enabled() -> bool:
-    return HTTP_MODE == "auto"
-
-
 def _get_cached_categories() -> Optional[Dict[str, Any]]:
-    if not _http_enabled():
-        return None
     with _categories_cache_lock:
         payload = _categories_cache.get("payload")
         expires = _categories_cache.get("expires", 0.0)
@@ -208,9 +181,7 @@ def _get_cached_categories() -> Optional[Dict[str, Any]]:
         return payload
 
 
-def _set_categories_cache(payload: Dict[str, Any], source: str) -> None:
-    if source != "http":
-        return
+def _set_categories_cache(payload: Dict[str, Any]) -> None:
     with _categories_cache_lock:
         _categories_cache["payload"] = payload
         _categories_cache["expires"] = time.time() + CATEGORIES_CACHE_TTL
@@ -223,110 +194,36 @@ def invalidate_categories_cache() -> None:
         _categories_cache["expires"] = 0.0
 
 
-def _ensure_direct_handlers() -> Dict[str, Callable]:
-    """Load direct MCP handlers for fallback or auto mode."""
-    global _direct_handlers
-
-    if _direct_handlers:
-        return _direct_handlers
-
-    from src import mcp_server_direct as direct_server  # Lazy import to avoid recursion
-    handler_names = [
-        "list_categories",
-        "read_entries",
-        "write_entry",
-        "update_entry",
-        "delete_entry",
-        "get_guidelines",
-    ]
-    _direct_handlers = {name: getattr(direct_server, name) for name in handler_names}
-    logger.info("Direct MCP handlers loaded for fallback mode.")
-    return _direct_handlers
-
-
-def _call_direct_handler(name: str, **kwargs) -> Dict[str, Any]:
-    handler = _ensure_direct_handlers().get(name)
-    if handler is None:
-        raise MCPError(f"Direct handler '{name}' is unavailable")
-    return handler(**kwargs)
-
-
-def _request_with_fallback(
+def _request_api(
     method: str,
     path: str,
     *,
     payload: Optional[Dict[str, Any]] = None,
-    fallback_name: Optional[str] = None,
-    fallback_kwargs: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
-) -> Tuple[Dict[str, Any], str]:
-    """Call API and optionally fall back to the direct handler."""
-    fallback_kwargs = fallback_kwargs or {}
+) -> Dict[str, Any]:
+    """Call API server."""
+    if api_client is None:
+        raise MCPError("HTTP client not initialized")
 
-    if _http_enabled() and api_client is not None:
-        try:
-            request_kwargs: Dict[str, Any] = {"json": payload} if payload is not None else {}
-            if headers:
-                # Merge/override default headers
-                request_kwargs["headers"] = headers
-            return api_client.request(method, path, **request_kwargs), "http"
-        except MCPTransportError as exc:
-            if _auto_mode_enabled() and fallback_name:
-                logger.warning(
-                    "HTTP %s %s failed (%s); falling back to direct handler '%s'",
-                    method,
-                    path,
-                    exc,
-                    fallback_name,
-                )
-            else:
-                raise
-
-    if fallback_name:
-        return _call_direct_handler(fallback_name, **fallback_kwargs), "direct"
-
-    raise MCPError("HTTP client unavailable and no fallback handler configured.")
-
-
-def _build_direct_handshake_payload(reason: Optional[str] = None) -> Dict[str, Any]:
-    try:
-        categories_response = _call_direct_handler("list_categories")
-        categories = categories_response.get("categories", [])
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Failed to build direct handshake payload: %s", exc)
-        categories = []
-        reason = reason or str(exc)
-
-    search_payload = {
-        "primary_provider": "sqlite_text",
-        "vector_available": False,
-        "fallback_enabled": False,
-        "status": "direct",
-    }
-    if reason:
-        search_payload["hint"] = reason
-
-    return {
-        "version": SERVER_VERSION,
-        "workflow_mode": _workflow_mode_payload(),
-        "tool_index": TOOL_INDEX,
-        "search": search_payload,
-        "categories": categories,
-        "mode": {
-            "transport": "direct",
-            "requested": HTTP_MODE,
-        },
-    }
+    request_kwargs: Dict[str, Any] = {"json": payload} if payload is not None else {}
+    if headers:
+        request_kwargs["headers"] = headers
+    return api_client.request(method, path, **request_kwargs)
 
 
 def _build_handshake_payload() -> Dict[str, Any]:
     """Build startup instructions payload from API server."""
-    if not _http_enabled() or api_client is None:
-        return _build_direct_handshake_payload()
+    if api_client is None:
+        logger.error("API client not initialized")
+        return {
+            "version": SERVER_VERSION,
+            "error": "API client not initialized",
+            "tool_index": TOOL_INDEX,
+        }
 
     try:
         categories_data = api_client.request("GET", "/api/v1/categories/")
-        _set_categories_cache(categories_data, "http")
+        _set_categories_cache(categories_data)
 
         health_data = api_client.check_health()
         faiss_status = health_data.get("components", {}).get("faiss_index", {}).get("status")
@@ -357,9 +254,6 @@ def _build_handshake_payload() -> Dict[str, Any]:
             },
         }
     except MCPTransportError as exc:
-        if _auto_mode_enabled():
-            logger.warning("API unavailable during handshake (%s); using direct fallback.", exc)
-            return _build_direct_handshake_payload(reason=str(exc))
         logger.error("Failed to build handshake payload: %s", exc)
         return {
             "version": SERVER_VERSION,
@@ -377,7 +271,7 @@ def _build_handshake_payload() -> Dict[str, Any]:
 
 def init_server():
     """Initialize server with configuration and API client."""
-    global config, api_client, _initialized, HTTP_MODE
+    global config, api_client, _initialized
 
     if _initialized:
         logger.info("init_server() called after initialization; reusing existing services.")
@@ -389,37 +283,10 @@ def init_server():
 
     config = get_config()
 
-    # Apply CLI override if provided
-    if CLI_HTTP_MODE:
-        logger.info("CLI override detected: --chl-http-mode=%s", CLI_HTTP_MODE)
-        config.mcp_http_mode = CLI_HTTP_MODE
-        config.use_api = CLI_HTTP_MODE != "direct"
-
-    HTTP_MODE = config.mcp_http_mode
-
     try:
         _setup_logging(config)
     except Exception as e:  # pragma: no cover - logging setup best-effort
         print(f"Warning: failed to initialize file logging: {e}")
-
-    # Warn if legacy alias is used to avoid confusion during rollouts
-    if os.getenv("CHL_USE_API") is not None:
-        logger.warning("CHL_USE_API is deprecated. Prefer CHL_MCP_HTTP_MODE={http|auto|direct}.")
-
-    logger.info(
-        "MCP HTTP mode resolved to '%s' (base_url=%s)",
-        HTTP_MODE,
-        config.api_base_url if config.use_api else "n/a",
-    )
-
-    if HTTP_MODE == "direct":
-        logger.warning("MCP HTTP mode set to 'direct'; delegating to legacy MCP server.")
-        from src.mcp_server_direct import mcp as direct_mcp, init_server as direct_init_server
-
-        direct_init_server()
-        globals()['mcp'] = direct_mcp
-        _initialized = True
-        return
 
     logger.info("Initializing HTTP API client: %s", config.api_base_url)
     api_client = APIClient(
@@ -431,13 +298,12 @@ def init_server():
 
     health_ok = startup_health_check(api_client, max_wait=config.api_health_check_max_wait)
     if not health_ok:
-        if HTTP_MODE == "http":
-            logger.error(
-                "Cannot start MCP server: API is unavailable. "
-                "Ensure API server is running or set CHL_MCP_HTTP_MODE=direct for legacy mode."
-            )
-            sys.exit(1)
-        logger.warning("API health check failed; auto mode will fall back to direct handlers as needed.")
+        logger.error(
+            "Cannot start MCP server: API is unavailable. "
+            "Ensure API server is running at %s",
+            config.api_base_url
+        )
+        sys.exit(1)
 
     mcp.tool()(list_categories)
     mcp.tool()(read_entries)
@@ -471,12 +337,8 @@ def list_categories() -> Dict[str, Any]:
         return cached
 
     try:
-        payload, source = _request_with_fallback(
-            "GET",
-            "/api/v1/categories/",
-            fallback_name="list_categories" if _auto_mode_enabled() else None,
-        )
-        _set_categories_cache(payload, source)
+        payload = _request_api("GET", "/api/v1/categories/")
+        _set_categories_cache(payload)
         return payload
     except MCPError:
         raise
@@ -510,20 +372,7 @@ def read_entries(
         if limit is not None:
             payload["limit"] = limit
 
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/entries/read",
-            payload=payload,
-            fallback_name="read_entries" if _auto_mode_enabled() else None,
-            fallback_kwargs={
-                "entity_type": entity_type,
-                "category_code": category_code,
-                "query": query,
-                "ids": ids,
-                "limit": limit,
-            },
-        )
-        return response
+        return _request_api("POST", "/api/v1/entries/read", payload=payload)
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive
@@ -553,18 +402,7 @@ def write_entry(
             "category_code": category_code,
             "data": data,
         }
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/entries/write",
-            payload=payload,
-            fallback_name="write_entry" if _auto_mode_enabled() else None,
-            fallback_kwargs={
-                "entity_type": entity_type,
-                "category_code": category_code,
-                "data": data,
-            },
-        )
-        return response
+        return _request_api("POST", "/api/v1/entries/write", payload=payload)
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive
@@ -595,20 +433,7 @@ def update_entry(
             "updates": updates,
             "force_contextual": force_contextual,
         }
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/entries/update",
-            payload=payload,
-            fallback_name="update_entry" if _auto_mode_enabled() else None,
-            fallback_kwargs={
-                "entity_type": entity_type,
-                "category_code": category_code,
-                "entry_id": entry_id,
-                "updates": updates,
-                "force_contextual": force_contextual,
-            },
-        )
-        return response
+        return _request_api("POST", "/api/v1/entries/update", payload=payload)
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive
@@ -633,18 +458,7 @@ def delete_entry(
             "category_code": category_code,
             "entry_id": entry_id,
         }
-        response, _ = _request_with_fallback(
-            "DELETE",
-            "/api/v1/entries/delete",
-            payload=payload,
-            fallback_name="delete_entry" if _auto_mode_enabled() else None,
-            fallback_kwargs={
-                "entity_type": entity_type,
-                "category_code": category_code,
-                "entry_id": entry_id,
-            },
-        )
-        return response
+        return _request_api("DELETE", "/api/v1/entries/delete", payload=payload)
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive
@@ -670,13 +484,7 @@ def get_guidelines(guide_type: str, version: str = None) -> Dict[str, Any]:
 
             path = f"{path}?{urlencode(params)}"
 
-        response, _ = _request_with_fallback(
-            "GET",
-            path,
-            fallback_name="get_guidelines" if _auto_mode_enabled() else None,
-            fallback_kwargs={"guide_type": guide_type, "version": version},
-        )
-        return response
+        return _request_api("GET", path)
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive
