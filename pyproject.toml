@@ -12,6 +12,7 @@ dependencies = [
     "google-auth-oauthlib>=1.0.0",
     "tqdm>=4.65.0",
     "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
     # Phase 1 - Web API additions
     "fastapi>=0.114.0",
     "uvicorn[standard]>=0.30.0",

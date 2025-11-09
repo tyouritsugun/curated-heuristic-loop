@@ -21,19 +21,39 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    ```
    > Skip only if you plan to run in text-search mode. The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., so vector search and reranking work on day one.
 
-4. **Start the bundled FastAPI server** (after syncing, this command keeps dependencies up to date automatically):
+4. **Configure environment** (new in Phase 1):
+   ```bash
+   cp .env.sample .env
+   # Edit .env and fill in:
+   # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
+   # - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
+   # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
+   ```
+   > The `.env` file is auto-loaded by the FastAPI server, MCP server, and scripts via python-dotenv. No need to duplicate configuration in MCP client settings.
+
+5. **Run first-time setup** (optional but recommended):
+   ```bash
+   uv run python scripts/setup.py
+   ```
+   > This validates your environment, copies credentials, initializes the database, and downloads models. Add `--download-models` for interactive model selection.
+
+6. **Start the bundled FastAPI server**:
    ```bash
    uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
    ```
-5. **Open http://127.0.0.1:8000/settings**. The page walks you through:
-   - Preparing `scripts/scripts_config.yaml` (copy the `.sample` file) and setting `data_path`, `google_credentials_path`, and the review/published sheet IDs. The credential JSON must live under `<experience_root>/credentials` (by default `./data/credentials`), so the YAML should point inside that folder.
-   - Clicking **Load & Verify** on the Google Sheets card so the UI validates the YAML, records the sheet IDs, and registers the credential path automatically.
-   - Picking embedding/reranker models and running the built-in diagnostics check.
-   - Downloading a JSON backup once things look good.
 
-As soon as the Settings checklist is green, click **Operations** in the nav bar or visit `http://127.0.0.1:8000/operations` to trigger imports/exports/index rebuilds, pause or drain workers, and monitor queue/job telemetry via SSE without touching the CLI.
+7. **Open http://127.0.0.1:8000/settings** to verify configuration:
+   - Configuration status shows your credential path and spreadsheet IDs (from `.env`)
+   - Test connection to validate Google Sheets access
+   - Review model selection and system diagnostics
+   - Download JSON backup once everything looks good
 
-> ✅ That’s it for most users: run one command to start the server, then use the in-app instructions. No Python, MCP, or database knowledge required.
+8. **Open http://127.0.0.1:8000/operations** to run import:
+   - Click **Run Import** to pull data from Google Sheets
+   - Import automatically generates embeddings (no manual rebuild needed in future phases)
+   - Currently: After import completes, click **Rebuild Index** or upload a FAISS snapshot
+
+> ✅ That's it! All secrets live in `.env` file. Changes to credentials or sheet IDs take effect on next import/export (no restart needed).
 
 ## When you also need the CLI/MCP layers
 
@@ -53,16 +73,13 @@ Add CHL to `~/.cursor/mcp.json` or another MCP-aware client if you want the assi
   "mcpServers": {
     "chl": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"],
-      "env": {
-        // Optional overrides; see doc/manual.md for all keys
-        // "CHL_GOOGLE_CREDENTIALS_PATH": "/path/to/credentials.json",
-        // "CHL_EXPERIENCE_ROOT": "/path/to/data"
-      }
+      "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
     }
   }
 }
 ```
+
+> **Note:** The MCP server auto-loads configuration from `.env` file via python-dotenv. No `env` section needed in MCP client configuration unless you want to override specific values.
 
 For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
 
@@ -71,16 +88,10 @@ For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
 command = "uv"
 args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
 
-[mcp_servers.chl.env]
-# Optional overrides; prefer scripts/scripts_config.yaml for defaults
-# CHL_GOOGLE_CREDENTIALS_PATH = "/absolute/path/to/credentials/service_account.json"
-# CHL_EXPERIENCE_ROOT = "/absolute/path/to/curated_heuristic_loop/data"
-# CHL_DATABASE_PATH = "/absolute/path/to/curated_heuristic_loop/data/chl.db"
-# CHL_FAISS_INDEX_PATH = "/absolute/path/to/curated_heuristic_loop/data/faiss_index"
-# CHL_READ_DETAILS_LIMIT = "10"
-# Export pipeline (configure after preparing Google Sheets)
-# CHL_REVIEW_SHEET_ID = "your-review-sheet-id"
-# CHL_PUBLISHED_SHEET_ID = "your-published-sheet-id"
+# Optional: Override .env values with explicit environment variables
+# [mcp_servers.chl.env]
+# CHL_EXPERIENCE_ROOT = "/custom/path/to/data"
+# CHL_READ_DETAILS_LIMIT = "20"
 ```
 
 `CHL_MCP_HTTP_MODE` controls whether MCP tools talk to the HTTP API (`http`), fall back to direct handlers (`auto`, the default), or stay fully local (`direct`). Use `--chl-http-mode` on the CLI to override per run. Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to prevent the auto HTTP bootstrap.

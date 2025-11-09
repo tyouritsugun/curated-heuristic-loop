@@ -1,5 +1,8 @@
 """Configuration management for CHL MCP Server
 
+This module automatically loads environment variables from .env file using python-dotenv.
+All configuration can be set via environment variables or .env file.
+
 Example MCP configuration in ~/.cursor/mcp.json (using project venv):
 
 {
@@ -63,8 +66,13 @@ import json
 import logging
 from pathlib import Path
 import re
+from dotenv import load_dotenv
 
-MODEL_SELECTION_PATH = Path(__file__).parent.parent / "data" / "model_selection.json"
+# Auto-load .env from project root (before Config class initialization)
+PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
 logger = logging.getLogger(__name__)
 
 

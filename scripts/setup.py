@@ -247,6 +247,86 @@ def check_create_directories(config) -> bool:
         return False
 
 
+def setup_credentials(config) -> bool:
+    """Setup Google credentials from GOOGLE_CREDENTIAL_PATH environment variable
+
+    Reads GOOGLE_CREDENTIAL_PATH from environment, copies to data/credentials/,
+    sets permissions, and validates JSON structure.
+
+    Returns:
+        bool: True if credentials are set up successfully
+    """
+    logger.info("Setting up Google credentials...")
+
+    # Check if GOOGLE_CREDENTIAL_PATH is set
+    credential_env_path = os.getenv("GOOGLE_CREDENTIAL_PATH")
+    if not credential_env_path:
+        print("⚠ GOOGLE_CREDENTIAL_PATH not set in environment")
+        print("  Google Sheets operations will require manual credential setup")
+        print("  See .env.sample for configuration")
+        return True  # Not fatal - user may configure later
+
+    try:
+        source_path = Path(credential_env_path)
+
+        # Handle relative paths from project root
+        if not source_path.is_absolute():
+            source_path = PROJECT_ROOT / source_path
+
+        # Check if source file exists
+        if not source_path.exists():
+            print(f"⚠ Credential file not found: {source_path}")
+            print("  Create the file or update GOOGLE_CREDENTIAL_PATH in .env")
+            return True  # Not fatal - user may add file later
+
+        # Create credentials directory
+        cred_dir = Path(config.experience_root) / "credentials"
+        cred_dir.mkdir(parents=True, exist_ok=True)
+
+        # Target path for credentials
+        target_path = cred_dir / "service-account.json"
+
+        # Copy credential file
+        import shutil
+        shutil.copy2(source_path, target_path)
+
+        # Set chmod 600 on copied credential file (owner read/write only)
+        target_path.chmod(0o600)
+
+        # Validate JSON structure
+        with target_path.open("r", encoding="utf-8") as f:
+            cred_data = json.load(f)
+
+        # Basic validation of service account JSON
+        required_fields = ["type", "project_id", "private_key", "client_email"]
+        missing = [f for f in required_fields if f not in cred_data]
+
+        if missing:
+            print(f"⚠ Credential file missing required fields: {', '.join(missing)}")
+            print("  Please verify your service account JSON is valid")
+            return True  # Not fatal - file exists but may need fixing
+
+        if cred_data.get("type") != "service_account":
+            print("⚠ Credential file type is not 'service_account'")
+            print("  Please verify you're using a service account JSON key")
+            return True  # Not fatal
+
+        print(f"✓ Google credentials configured: {target_path}")
+        print(f"  Service account: {cred_data.get('client_email', 'unknown')}")
+        print(f"  Project: {cred_data.get('project_id', 'unknown')}")
+
+        return True
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in credential file: {e}")
+        print(f"✗ Credential file is not valid JSON: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to setup credentials: {e}")
+        print(f"✗ Failed to setup credentials: {e}")
+        return False
+
+
 def initialize_database(config) -> tuple[bool, dict]:
     """Initialize database and create tables"""
     logger.info("Initializing database...")
@@ -783,12 +863,16 @@ def main():
         if not check_create_directories(config):
             sys.exit(1)
 
-        # 2. Initialize database
+        # 2. Setup credentials (optional, from GOOGLE_CREDENTIAL_PATH env)
+        if not setup_credentials(config):
+            sys.exit(1)
+
+        # 3. Initialize database
         success, db_stats = initialize_database(config)
         if not success:
             sys.exit(1)
 
-        # 3. Determine active model selection (optionally reconfigure)
+        # 4. Determine active model selection (optionally reconfigure)
         active_selection = {
             "embedding_repo": config.embedding_repo,
             "embedding_quant": config.embedding_quant,
@@ -816,7 +900,7 @@ def main():
             print(f"  Embedding: {format_model_display(embedding_repo, embedding_quant)}")
             print(f"  Reranker: {format_model_display(reranker_repo, reranker_quant)}")
 
-        # 4. Download models (auto-detects if already cached)
+        # 5. Download models (auto-detects if already cached)
         models_downloaded = download_models(
             config,
             force_models=args.force_models,
@@ -839,11 +923,11 @@ def main():
         config.embedding_model = f"{embedding_repo}:{embedding_quant}"
         config.reranker_model = f"{reranker_repo}:{reranker_quant}"
 
-        # 5. Validate setup
+        # 6. Validate setup
         if not validate_setup(config):
             sys.exit(1)
 
-        # 6. Print next steps
+        # 7. Print next steps
         print_next_steps()
 
     except KeyboardInterrupt:

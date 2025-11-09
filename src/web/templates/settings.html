@@ -9,14 +9,11 @@
 
   {% include "partials/flash.html" %}
 
-  <div id="checklist" class="w3-container settings-section">
+  <div id="overview" class="w3-container settings-section">
     {% include "partials/settings_onboarding.html" %}
   </div>
-  <div id="sheets" class="w3-container settings-section">
-    {% include "partials/sheets_card.html" %}
-  </div>
-  <div id="models" class="w3-container settings-section">
-    {% include "partials/models_card.html" %}
+  <div id="config" class="w3-container settings-section">
+    {% include "partials/config_status_card.html" %}
   </div>
   <div id="diagnostics" class="w3-container settings-section">
     {% include "partials/diagnostics_panel.html" %}
@@ -43,7 +40,7 @@
         if (hash) {
           showSection(hash);
         } else {
-          showSection('checklist');
+          showSection('overview');
         }
       }
 

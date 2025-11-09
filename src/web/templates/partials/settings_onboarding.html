@@ -1,28 +1,27 @@
 <section class="card onboarding-card" id="settings-onboarding-card">
   <header>
     <div>
-      <h2>First-time checklist</h2>
-      <p class="muted">Follow these steps in order; this page keeps the secrets on disk and stores only metadata in SQLite.</p>
+      <h2>Settings &amp; Diagnostics</h2>
+      <p class="muted">This page displays system status and provides diagnostic tools. Configuration is managed via <code>.env</code> file.</p>
     </div>
   </header>
-  <ol>
-    <li>
-      <strong>Prepare <code>scripts_config.yaml</code>.</strong> Copy <code>scripts/scripts_config.yaml.sample</code>, set <code>data_path</code>,
-      <code>google_credentials_path</code>, and the sheet IDs/worksheet names.
-    </li>
-    <li>
-      <strong>Load &amp; verify.</strong> Use the “Load &amp; Verify” button to register the YAML. The UI reads metadata only;
-      it never edits your config file.
-    </li>
-    <li>
-      <strong>Select models.</strong> Pick the embedding and reranker repos/quantization that match the hardware you have available.
-      The worker pool will reuse these settings automatically.
-    </li>
-    <li>
-      <strong>Validate connectivity.</strong> Use the diagnostics panel to re-check credentials + sheet access, then download a JSON backup.
-    </li>
-    <li>
-      <strong>Head to Operations.</strong> Once every section shows a green status pill, open the Operations dashboard to run imports, exports, or index rebuilds.
-    </li>
-  </ol>
+  <div class="info-box">
+    <h3>New User Setup</h3>
+    <p>If you haven't set up the system yet, follow these steps:</p>
+    <ol>
+      <li>Copy <code>.env.sample</code> to <code>.env</code> and fill in your credentials and sheet IDs</li>
+      <li>Run <code>python scripts/setup.py</code> to initialize the database and download models</li>
+      <li>Start the server and begin using the Operations dashboard</li>
+    </ol>
+    <p class="muted">See README.md for detailed setup instructions.</p>
+  </div>
+  <div class="info-box">
+    <h3>What's on this page</h3>
+    <ul>
+      <li><strong>Configuration Status:</strong> View current .env settings (read-only)</li>
+      <li><strong>System Diagnostics:</strong> Check database, models, and FAISS index health</li>
+      <li><strong>Audit Log:</strong> Review recent configuration and operation changes</li>
+      <li><strong>Backup/Restore:</strong> Export or import database contents as JSON</li>
+    </ul>
+  </div>
 </section>

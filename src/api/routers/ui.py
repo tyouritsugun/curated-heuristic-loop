@@ -412,6 +412,7 @@ def _build_settings_context(
         "default_scripts_config_path": str(_default_scripts_config_path()),
         "embedding_choices": EMBEDDING_CHOICES,
         "reranker_choices": RERANKER_CHOICES,
+        "env_config_status": _get_env_config_status(),
     }
     return context
 
@@ -602,6 +603,93 @@ def _default_scripts_config_path() -> Path:
 
 def _actor_from_request(request: Request) -> str:
     return request.headers.get("x-actor") or WEB_ACTOR
+
+
+def _get_env_config_status() -> dict:
+    """Read configuration from environment variables for display.
+
+    Returns a dict with configuration status suitable for template rendering.
+    """
+    import os
+    from pathlib import Path
+
+    credentials_path = os.getenv("GOOGLE_CREDENTIAL_PATH", "")
+    import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "")
+    export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "")
+
+    # Worksheet names with defaults
+    import_worksheets = ", ".join([
+        os.getenv("IMPORT_WORKSHEET_CATEGORIES", "Categories"),
+        os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences"),
+        os.getenv("IMPORT_WORKSHEET_MANUALS", "Manuals"),
+    ])
+
+    export_worksheets = ", ".join([
+        os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories"),
+        os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences"),
+        os.getenv("EXPORT_WORKSHEET_MANUALS", "Manuals"),
+    ])
+
+    # Check credential file status
+    credentials_state = "error"
+    credentials_status = "Not configured"
+    credentials_detail = None
+
+    if credentials_path:
+        cred_file = Path(credentials_path)
+        if not cred_file.is_absolute():
+            # Resolve relative paths from project root
+            project_root = Path(__file__).resolve().parents[3]
+            cred_file = (project_root / cred_file).resolve()
+
+        if cred_file.exists():
+            if cred_file.is_file():
+                try:
+                    # Check permissions
+                    import stat
+                    perms = stat.S_IMODE(cred_file.stat().st_mode)
+                    if perms & 0o077:
+                        credentials_state = "warn"
+                        credentials_status = "Insecure permissions"
+                        credentials_detail = f"Run: chmod 600 {cred_file}"
+                    else:
+                        credentials_state = "ok"
+                        credentials_status = "Ready"
+                        credentials_detail = None
+                except OSError:
+                    credentials_state = "warn"
+                    credentials_status = "Cannot check permissions"
+            else:
+                credentials_state = "error"
+                credentials_status = "Path is not a file"
+        else:
+            credentials_state = "error"
+            credentials_status = "File not found"
+            credentials_detail = str(cred_file)
+
+    # Overall state
+    if credentials_state == "ok" and import_sheet_id and export_sheet_id:
+        overall_state = "ok"
+        overall_headline = "Configuration ready"
+    elif not credentials_path or not import_sheet_id or not export_sheet_id:
+        overall_state = "error"
+        overall_headline = "Missing configuration"
+    else:
+        overall_state = "warn"
+        overall_headline = "Configuration incomplete"
+
+    return {
+        "state": overall_state,
+        "headline": overall_headline,
+        "credentials_path": str(cred_file) if credentials_path else None,
+        "credentials_state": credentials_state,
+        "credentials_status": credentials_status,
+        "credentials_detail": credentials_detail,
+        "import_sheet_id": import_sheet_id if import_sheet_id else None,
+        "import_worksheets": import_worksheets,
+        "export_sheet_id": export_sheet_id if export_sheet_id else None,
+        "export_worksheets": export_worksheets,
+    }
 
 
 def _parse_model_choice(choice: Optional[str]) -> tuple[Optional[str], Optional[str]]:
@@ -923,6 +1011,8 @@ async def worker_action_from_ui(
         message_level="success",
         trigger_event="ops-refresh",
     )
+# DEPRECATED (Phase 2): Sheet configuration now read-only via .env
+# Keeping endpoint for backward compatibility but it returns an error message
 @router.post("/ui/settings/sheets", response_class=HTMLResponse)
 async def load_sheets_config(
     request: Request,
@@ -930,36 +1020,17 @@ async def load_sheets_config(
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
 ):
-    actor = _actor_from_request(request)
-    try:
-        settings_service.load_sheet_config(
-            session,
-            config_path=config_path,
-            actor=actor,
-        )
-    except SettingValidationError as exc:
-        return _respond(
-            "partials/sheets_card.html",
-            request,
-            session,
-            settings_service,
-            error=str(exc),
-        )
-
-    # Invalidate MCP categories cache
-    _invalidate_categories_cache_safe()
-
     return _respond(
-        "partials/sheets_card.html",
+        None,
         request,
         session,
         settings_service,
-        message="scripts_config.yaml loaded and verified.",
-        message_level="success",
-        trigger_event="settings-changed",
+        error="Sheet configuration is now managed via .env file. Please edit .env and restart if needed.",
     )
 
 
+# DEPRECATED (Phase 2): Model selection will be moved to Operations page in Phase 3
+# Keeping endpoint functional for now as model management is being redesigned
 @router.post("/ui/settings/models", response_class=HTMLResponse)
 async def update_model_preferences(
     request: Request,
@@ -1009,14 +1080,71 @@ async def update_model_preferences(
     _invalidate_categories_cache_safe()
 
     return _respond(
-        "partials/models_card.html",
+        None,
         request,
         session,
         settings_service,
-        message="Model preferences updated.",
+        message="Model preferences updated. (Model selection will move to Operations page in Phase 3)",
         message_level="success",
         trigger_event="settings-changed",
     )
+
+
+@router.post("/ui/settings/test-connection", response_class=HTMLResponse)
+async def test_connection(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+):
+    """Test Google Sheets connection using credentials from .env."""
+    import os
+    from pathlib import Path
+
+    credentials_path = os.getenv("GOOGLE_CREDENTIAL_PATH", "")
+    if not credentials_path:
+        return _respond(
+            "partials/config_status_card.html",
+            request,
+            session,
+            settings_service,
+            error="GOOGLE_CREDENTIAL_PATH not set in .env file",
+        )
+
+    cred_file = Path(credentials_path)
+    if not cred_file.is_absolute():
+        project_root = Path(__file__).resolve().parents[3]
+        cred_file = (project_root / cred_file).resolve()
+
+    if not cred_file.exists():
+        return _respond(
+            "partials/config_status_card.html",
+            request,
+            session,
+            settings_service,
+            error=f"Credential file not found: {cred_file}",
+        )
+
+    # Test connection by attempting to create sheets client
+    try:
+        from src.storage.sheets_client import SheetsClient
+        sheets = SheetsClient(str(cred_file))
+        # If we got this far, credentials are valid
+        return _respond(
+            "partials/config_status_card.html",
+            request,
+            session,
+            settings_service,
+            message="Connection test successful. Credentials are valid.",
+            message_level="success",
+        )
+    except Exception as exc:
+        return _respond(
+            "partials/config_status_card.html",
+            request,
+            session,
+            settings_service,
+            error=f"Connection test failed: {str(exc)}",
+        )
 
 
 @router.get("/ui/settings/diagnostics", response_class=HTMLResponse)

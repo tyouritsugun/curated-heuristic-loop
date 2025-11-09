@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -110,18 +111,6 @@ def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
     return logger
 
 
-def _credentials_path_from_settings(db: Database, data_path: Path) -> Optional[Path]:
-    settings_service = SettingsService(db.get_session, str(data_path))
-    with db.session_scope() as session:
-        snapshot = settings_service.snapshot(session)
-        credentials = snapshot.get("credentials") if snapshot else None
-        if credentials and credentials.get("path"):
-            candidate = Path(credentials["path"]).expanduser()
-            if candidate.exists():
-                return candidate.resolve()
-    return None
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export local SQLite entries to Google Sheets.",
@@ -177,44 +166,62 @@ def main() -> None:
     db = Database(str(database_path), echo=False)
     db.init_database()
 
-    credentials_value = export_cfg.get(
-        "google_credentials_path", config_dict.get("google_credentials_path")
-    )
-    credentials_source = "config" if credentials_value else "settings"
-    if credentials_value:
-        credentials_path = _resolve_path(credentials_value, config_path.parent)
-    else:
-        credentials_path = _credentials_path_from_settings(db, data_path)
-        if credentials_path is None:
-            print(
-                "\nConfiguration error: provide google_credentials_path in scripts_config.yaml "
-                "or upload credentials via the Settings UI.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+    # Read credentials path from environment (required)
+    credentials_env = os.getenv("GOOGLE_CREDENTIAL_PATH")
+    if not credentials_env:
+        print(
+            "\nConfiguration error: GOOGLE_CREDENTIAL_PATH not set in .env file.\n"
+            "Copy .env.sample to .env and set your credentials path.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    spreadsheet_id = (export_cfg.get("spreadsheet_id") or export_cfg.get("sheet_id") or "").strip()
+    credentials_path = _resolve_path(credentials_env, root_dir)
+    if not credentials_path.exists():
+        print(
+            f"\nConfiguration error: Credential file not found: {credentials_path}\n"
+            f"Check GOOGLE_CREDENTIAL_PATH in .env file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    credentials_source = "environment"
+
+    # Read spreadsheet ID from environment (required)
+    spreadsheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "").strip()
+    if not spreadsheet_id:
+        print(
+            "\nConfiguration error: EXPORT_SPREADSHEET_ID not set in .env file.\n"
+            "Copy .env.sample to .env and set your export spreadsheet ID.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     try:
+        # Check environment variables for worksheet names (optional overrides)
+        env_category_worksheet = os.getenv("EXPORT_WORKSHEET_CATEGORIES")
+        env_experience_worksheet = os.getenv("EXPORT_WORKSHEET_EXPERIENCES")
+        env_manual_worksheet = os.getenv("EXPORT_WORKSHEET_MANUALS")
+
         category_sheet_id, category_worksheet = _worksheet_config(
             export_cfg,
             key="categories",
             legacy_key="category_sheet",
-            default_name=DEFAULT_WORKSHEET_CATEGORIES,
+            default_name=env_category_worksheet or DEFAULT_WORKSHEET_CATEGORIES,
             fallback_sheet_id=spreadsheet_id,
         )
         experiences_sheet_id, experiences_worksheet = _worksheet_config(
             export_cfg,
             key="experiences",
             legacy_key="experiences_sheet",
-            default_name=DEFAULT_WORKSHEET_EXPERIENCES,
+            default_name=env_experience_worksheet or DEFAULT_WORKSHEET_EXPERIENCES,
             fallback_sheet_id=spreadsheet_id,
         )
         manuals_sheet_id, manuals_worksheet = _worksheet_config(
             export_cfg,
             key="manuals",
             legacy_key="manuals_sheet",
-            default_name=DEFAULT_WORKSHEET_MANUALS,
+            default_name=env_manual_worksheet or DEFAULT_WORKSHEET_MANUALS,
             fallback_sheet_id=spreadsheet_id,
         )
     except ScriptConfigError as exc:

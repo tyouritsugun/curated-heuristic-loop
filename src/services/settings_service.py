@@ -115,7 +115,11 @@ class SettingsService:
         }
 
     def update_credentials(self, session: Session, *, path: str, notes: Optional[str], actor: Optional[str]) -> CredentialSettings:
-        """Persist credential metadata after validating the file path."""
+        """Persist credential metadata after validating the file path.
+
+        DEPRECATED: Credentials should be configured via .env file (GOOGLE_CREDENTIAL_PATH).
+        This method is retained for backward compatibility with backup/restore functionality.
+        """
         resolved = self._resolve_secret_path(path)
         if not resolved.exists() or not resolved.is_file():
             raise SettingValidationError(f"Credentials file does not exist: {resolved}")
@@ -163,7 +167,16 @@ class SettingsService:
         config_path: str,
         actor: Optional[str],
     ) -> SheetSettings:
-        """Load Google Sheets metadata from a YAML config file."""
+        """Load Google Sheets metadata from a YAML config file.
+
+        DEPRECATED: Sheet configuration should be managed via .env file:
+        - GOOGLE_CREDENTIAL_PATH for credentials
+        - IMPORT_SPREADSHEET_ID and EXPORT_SPREADSHEET_ID for sheet IDs
+        - IMPORT_WORKSHEET_* and EXPORT_WORKSHEET_* for worksheet names (optional)
+
+        This method is retained for backward compatibility with existing deployments
+        and the diagnostics probe functionality.
+        """
         resolved = Path(config_path).expanduser().resolve()
         if not resolved.exists() or not resolved.is_file():
             raise SettingValidationError(f"Config file does not exist: {resolved}")
