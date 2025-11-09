@@ -81,7 +81,6 @@ def main():
 
             # Initialize vector provider (has rebuild logic)
             provider = VectorFAISSProvider(
-                session=session,
                 index_manager=index_manager,
                 embedding_client=embedding_client,
                 reranker_client=None,  # Not needed for rebuild
@@ -91,7 +90,7 @@ def main():
 
             # Rebuild index
             logger.info("Starting FAISS index rebuild...")
-            provider.rebuild_index()
+            provider.rebuild_index(session)
 
             logger.info("✓ FAISS index rebuild completed successfully!")
 

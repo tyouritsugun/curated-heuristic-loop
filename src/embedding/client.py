@@ -85,6 +85,16 @@ class EmbeddingClient:
                 f"Failed to load GGUF embedding model '{model_repo}': {e}"
             ) from e
 
+    @property
+    def model_name(self) -> str:
+        """Get model name in legacy format (repo:quant) for backward compatibility"""
+        return f"{self.model_repo}:{self.quantization}"
+
+    @property
+    def embedding_dimension(self) -> int:
+        """Alias for dimension property for backward compatibility"""
+        return self.dimension
+
     def _find_cached_gguf(self, repo_id: str, quantization: str) -> Path:
         """Find cached GGUF file in HuggingFace cache
 
