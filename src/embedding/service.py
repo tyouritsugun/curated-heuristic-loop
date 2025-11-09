@@ -98,7 +98,16 @@ class EmbeddingService:
             exp.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Commit transaction BEFORE updating FAISS (decouples transactions)
+            # FAISS will use its own session for metadata operations
+            try:
+                self.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to commit embedding for {experience_id}: {e}")
+                self.session.rollback()
+                return False
+
+            # Update FAISS index AFTER commit (uses separate session)
             if self.faiss_index_manager:
                 try:
                     self.faiss_index_manager.add(
@@ -107,7 +116,9 @@ class EmbeddingService:
                         embeddings=embedding.reshape(1, -1)
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                    # FAISS update failed, but embedding is already committed
+                    # This is okay - FAISS can be rebuilt later
+                    logger.warning(f"Failed to update FAISS index (embedding saved): {e}")
 
             logger.info(f"Generated embedding for experience: {experience_id}")
             return True
@@ -175,7 +186,15 @@ class EmbeddingService:
             manual.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Commit transaction BEFORE updating FAISS (decouples transactions)
+            try:
+                self.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to commit embedding for {manual_id}: {e}")
+                self.session.rollback()
+                return False
+
+            # Update FAISS index AFTER commit (uses separate session)
             if self.faiss_index_manager:
                 try:
                     self.faiss_index_manager.add(
@@ -184,7 +203,9 @@ class EmbeddingService:
                         embeddings=embedding.reshape(1, -1)
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                    # FAISS update failed, but embedding is already committed
+                    # This is okay - FAISS can be rebuilt later
+                    logger.warning(f"Failed to update FAISS index (embedding saved): {e}")
 
             logger.info(f"Generated embedding for manual: {manual_id}")
             return True
@@ -242,7 +263,15 @@ class EmbeddingService:
             exp.embedding_status = 'embedded'
             self.session.flush()
 
-            # Update FAISS index if available
+            # Commit transaction BEFORE updating FAISS (decouples transactions)
+            try:
+                self.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to commit embedding for {experience_id}: {e}")
+                self.session.rollback()
+                return False
+
+            # Update FAISS index AFTER commit (uses separate session)
             if self.faiss_index_manager:
                 try:
                     if existing is not None:
@@ -258,7 +287,8 @@ class EmbeddingService:
                             embeddings=embedding.reshape(1, -1),
                         )
                 except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                    # FAISS update failed, but embedding is already committed
+                    logger.warning(f"Failed to update FAISS index (embedding saved): {e}")
 
             logger.info(f"Upserted embedding for experience: {experience_id}")
             return True
@@ -312,6 +342,15 @@ class EmbeddingService:
             manual.embedding_status = 'embedded'
             self.session.flush()
 
+            # Commit transaction BEFORE updating FAISS (decouples transactions)
+            try:
+                self.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to commit embedding for {manual_id}: {e}")
+                self.session.rollback()
+                return False
+
+            # Update FAISS index AFTER commit (uses separate session)
             if self.faiss_index_manager:
                 try:
                     if existing is not None:
@@ -327,9 +366,10 @@ class EmbeddingService:
                             embeddings=embedding.reshape(1, -1),
                         )
                 except Exception as e:
-                    logger.warning(f"Failed to update FAISS index: {e}")
+                    # FAISS update failed, but embedding is already committed
+                    logger.warning(f"Failed to update FAISS index (embedding saved): {e}")
 
-            logger.info(f"Generated embedding for manual: {manual_id}")
+            logger.info(f"Upserted embedding for manual: {manual_id}")
             return True
 
         except Exception as e:
@@ -435,12 +475,8 @@ class EmbeddingService:
             else:
                 stats['failed'] += 1
 
-            # Commit after each entity to avoid long-running transactions
-            try:
-                self.session.commit()
-            except Exception as e:
-                logger.warning(f"Failed to commit after processing {entity_id}: {e}")
-                self.session.rollback()
+            # NOTE: Commit is now done inside generate_for_* methods
+            # before FAISS update, so no need to commit here
 
         logger.info(
             f"Processed {stats['processed']} pending embeddings: "

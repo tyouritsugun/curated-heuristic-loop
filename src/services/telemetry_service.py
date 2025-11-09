@@ -114,15 +114,64 @@ class TelemetryService:
             return None
 
     def _insert_sample(self, session: Session, metric: str, value: Dict[str, Any]):
-        session.add(
-            TelemetrySample(
-                metric=metric,
-                value_json=json.dumps(value, ensure_ascii=False),
-                recorded_at=utc_now(),
-            )
-        )
-        session.flush()
-        self._prune_samples(session, metric)
+        """Insert telemetry sample with retry logic for database lock contention."""
+        import time
+        from sqlalchemy.exc import OperationalError
+
+        max_retries = 3
+        base_delay = 0.1  # 100ms
+
+        for attempt in range(max_retries):
+            try:
+                session.add(
+                    TelemetrySample(
+                        metric=metric,
+                        value_json=json.dumps(value, ensure_ascii=False),
+                        recorded_at=utc_now(),
+                    )
+                )
+                session.flush()
+                self._prune_samples(session, metric)
+                return  # Success - exit retry loop
+
+            except OperationalError as e:
+                # Check if it's a database lock error
+                if "database is locked" in str(e):
+                    if attempt < max_retries - 1:
+                        # Exponential backoff: 100ms, 200ms, 400ms
+                        delay = base_delay * (2 ** attempt)
+                        logger.debug(
+                            f"Database locked when inserting telemetry sample, "
+                            f"retrying in {delay:.3f}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        try:
+                            session.rollback()
+                        except Exception:
+                            pass
+                        time.sleep(delay)
+                        continue
+                    else:
+                        # Final attempt failed - log but don't raise (telemetry is non-critical)
+                        logger.warning(
+                            f"Failed to insert telemetry sample after {max_retries} retries: {e}"
+                        )
+                        try:
+                            session.rollback()
+                        except Exception:
+                            pass
+                        return
+                else:
+                    # Different operational error - don't retry
+                    raise
+
+            except Exception as e:
+                # Non-operational error - don't retry
+                logger.warning(f"Failed to insert telemetry sample: {e}")
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+                raise
 
     def _prune_samples(self, session: Session, metric: str):
         # Delete samples beyond retention window per metric

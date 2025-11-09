@@ -31,7 +31,8 @@ class FAISSIndexManager:
         index_dir: str,
         model_name: str,
         dimension: int,
-        session=None  # SQLAlchemy session for metadata access
+        session=None,  # DEPRECATED: Use session_factory instead
+        session_factory=None  # Callable that returns a new SQLAlchemy session
     ):
         """Initialize FAISS index manager
 
@@ -39,12 +40,21 @@ class FAISSIndexManager:
             index_dir: Directory for index files (e.g., data/faiss_index)
             model_name: HuggingFace model identifier (e.g., Qwen/Qwen3-Embedding-0.6B)
             dimension: Embedding dimension (e.g., 768)
-            session: SQLAlchemy session for metadata table access
+            session: DEPRECATED - Single session (for backward compatibility)
+            session_factory: Callable that returns a new session (preferred)
         """
         self.index_dir = Path(index_dir)
         self.model_name = model_name
         self.dimension = dimension
-        self.session = session
+
+        # Support both old (session) and new (session_factory) patterns
+        if session_factory:
+            self.session_factory = session_factory
+            self.session = None  # Don't use shared session
+        else:
+            # Backward compatibility: wrap single session in a factory
+            self.session = session
+            self.session_factory = None
 
         # Create index directory if needed
         self.index_dir.mkdir(parents=True, exist_ok=True)
@@ -445,49 +455,115 @@ class FAISSIndexManager:
         entity_types: List[str],
         internal_ids: List[int]
     ) -> None:
-        """Save metadata mappings to database"""
-        if not self.session:
+        """Save metadata mappings to database with retry logic
+
+        Uses separate session (from session_factory) to avoid blocking
+        the main transaction. This allows the caller to commit their
+        transaction before this method completes.
+        """
+        # If using session_factory, create a new session for this operation
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            # Backward compatibility: use shared session
+            session = self.session
+            owns_session = False
+        else:
+            # No session available, skip metadata save
+            logger.warning("No session available for FAISS metadata save")
             return
 
+        import time
+        from sqlalchemy.exc import OperationalError
+
+        max_retries = 3
+        base_delay = 0.1  # 100ms
+
         try:
-            from src.storage.schema import FAISSMetadata, utc_now
+            for attempt in range(max_retries):
+                try:
+                    from src.storage.schema import FAISSMetadata, utc_now
 
-            for entity_id, entity_type, internal_id in zip(
-                entity_ids, entity_types, internal_ids
-            ):
-                # Check if mapping already exists
-                existing = self.session.query(FAISSMetadata).filter(
-                    FAISSMetadata.entity_id == entity_id,
-                    FAISSMetadata.entity_type == entity_type
-                ).first()
+                    for entity_id, entity_type, internal_id in zip(
+                        entity_ids, entity_types, internal_ids
+                    ):
+                        # Check if mapping already exists
+                        existing = session.query(FAISSMetadata).filter(
+                            FAISSMetadata.entity_id == entity_id,
+                            FAISSMetadata.entity_type == entity_type
+                        ).first()
 
-                if existing:
-                    # Update existing mapping
-                    existing.faiss_internal_id = internal_id
-                    existing.deleted = False
-                else:
-                    # Create new mapping
-                    mapping = FAISSMetadata(
-                        entity_id=entity_id,
-                        entity_type=entity_type,
-                        faiss_internal_id=internal_id,
-                        created_at=utc_now(),
-                        deleted=False
-                    )
-                    self.session.add(mapping)
+                        if existing:
+                            # Update existing mapping
+                            existing.faiss_internal_id = internal_id
+                            existing.deleted = False
+                        else:
+                            # Create new mapping
+                            mapping = FAISSMetadata(
+                                entity_id=entity_id,
+                                entity_type=entity_type,
+                                faiss_internal_id=internal_id,
+                                created_at=utc_now(),
+                                deleted=False
+                            )
+                            session.add(mapping)
 
-            self.session.flush()
+                    # Commit if we own the session, otherwise just flush
+                    if owns_session:
+                        session.commit()
+                    else:
+                        session.flush()
+                    return  # Success - exit retry loop
 
-        except Exception as e:
-            try:
-                if self.session:
-                    self.session.rollback()
-            except Exception as rollback_error:
-                logger.warning(
-                    f"Failed to rollback session after metadata save error: {rollback_error}"
-                )
-            logger.error(f"Failed to save metadata mappings: {e}")
-            raise
+                except OperationalError as e:
+                    # Check if it's a database lock error
+                    if "database is locked" in str(e):
+                        if attempt < max_retries - 1:
+                            # Exponential backoff: 100ms, 200ms, 400ms
+                            delay = base_delay * (2 ** attempt)
+                            logger.debug(
+                                f"Database locked when saving FAISS metadata, "
+                                f"retrying in {delay:.3f}s (attempt {attempt + 1}/{max_retries})"
+                            )
+                            try:
+                                session.rollback()
+                            except Exception:
+                                pass
+                            time.sleep(delay)
+                            continue
+                        else:
+                            # Final attempt failed
+                            logger.error(f"Failed to save metadata mappings after {max_retries} retries: {e}")
+                            try:
+                                session.rollback()
+                            except Exception as rollback_error:
+                                logger.warning(
+                                    f"Failed to rollback session after metadata save error: {rollback_error}"
+                                )
+                            raise
+                    else:
+                        # Different operational error - don't retry
+                        raise
+
+                except Exception as e:
+                    # Non-operational error - don't retry
+                    try:
+                        session.rollback()
+                    except Exception as rollback_error:
+                        logger.warning(
+                            f"Failed to rollback session after metadata save error: {rollback_error}"
+                        )
+                    logger.error(f"Failed to save metadata mappings: {e}")
+                    raise
+
+        finally:
+            # Close session if we created it
+            if owns_session:
+                try:
+                    session.close()
+                except Exception as e:
+                    logger.warning(f"Error closing FAISS metadata session: {e}")
 
     def _get_metadata_by_internal_id(self, internal_id: int) -> Optional[Dict[str, str]]:
         """Get entity metadata by FAISS internal ID"""

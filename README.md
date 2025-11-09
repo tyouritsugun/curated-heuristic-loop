@@ -56,8 +56,8 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
 
 8. **Open http://127.0.0.1:8000/operations** to run import:
    - Click **Run Import** to pull data from Google Sheets
-   - Import automatically generates embeddings (no manual rebuild needed in future phases)
-   - Currently: After import completes, click **Rebuild Index** or upload a FAISS snapshot
+   - Background worker automatically processes pending embeddings and updates FAISS index
+   - No manual intervention needed - embeddings are generated within seconds of creating/updating entries
 
 > ✅ That's it! All secrets live in `.env` file. Changes to credentials or sheet IDs take effect on next import/export (no restart needed).
 
@@ -106,7 +106,14 @@ Set `CHL_SKIP_MCP_AUTOSTART=1` in tests to prevent the auto HTTP bootstrap.
 
 The same `uvicorn` process exposes REST APIs plus the `/settings` and `/operations` dashboards. By default it binds to `127.0.0.1`; if you proxy it anywhere else, provide your own authentication layer.
 
-Need raw API access? Hit the documented routes under `/api/v1/` (settings, workers, operations, telemetry). Health checks live at `/health` and `/metrics` (Prometheus). Worker controls (`/ui/workers/*`) remain for deployments that wire up an external embedding pool; by default they return `503 Worker pool not initialized`, so the UI nudges you toward the manual FAISS snapshot workflow.
+**Background Embedding Worker**: The API server automatically starts a background thread that polls for pending embeddings every 5 seconds and processes them incrementally. This means entries created or updated via MCP, API, or import are automatically embedded without manual intervention. The worker status is visible at http://127.0.0.1:8000/operations#ops-workers-card.
+
+Configuration options:
+- `CHL_WORKER_POLL_INTERVAL` - Seconds between polls (default: 5.0)
+- `CHL_WORKER_BATCH_SIZE` - Max entries to process per batch (default: 10)
+- `CHL_WORKER_AUTO_START` - Auto-start worker on server startup (default: 1, set to 0 to disable)
+
+Need raw API access? Hit the documented routes under `/api/v1/` (settings, workers, operations, telemetry). Health checks live at `/health` and `/metrics` (Prometheus).
 
 Import/export/index buttons call the same Python scripts you would run via the CLI. To keep them inert (for CI or local testing), set `CHL_OPERATIONS_MODE=noop` before starting the server. The default `scripts` mode executes the helpers with advisory locks and records stdout/stderr snippets in the job history.
 Set `CHL_OPERATIONS_TIMEOUT_SEC` (default 900, minimum 60) to cap script runtime; jobs exceeding the limit are marked failed with tail logs captured. For faster MCP category/tool updates after settings changes, you can tune `CHL_CATEGORIES_CACHE_TTL` (seconds, default 30).

@@ -47,6 +47,8 @@ settings_service = None
 operations_service = None
 worker_control_service = None
 telemetry_service = None
+background_worker = None  # BackgroundEmbeddingWorker instance
+worker_pool = None  # WorkerPool wrapper
 
 
 class JSONFormatter(logging.Formatter):
@@ -79,6 +81,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     global config, db, search_service, thread_safe_faiss
     global settings_service, operations_service, worker_control_service, telemetry_service
+    global background_worker, worker_pool
 
     logger.info("Starting CHL API server...")
 
@@ -106,7 +109,13 @@ async def lifespan(app: FastAPI):
             finally:
                 session.close()
 
+        # Initialize background embedding worker (will be set up after FAISS loads)
+        background_worker = None
+        worker_pool = None
+
         def worker_probe():
+            if worker_pool:
+                return worker_pool.get_status()
             return None
 
         # Initialize search service (sessionless for thread-safety)
@@ -137,7 +146,8 @@ async def lifespan(app: FastAPI):
                     # Use recovery logic to load FAISS index with automatic fallback
                     with db.session_scope() as temp_session:
                         faiss_manager = initialize_faiss_with_recovery(
-                            config, temp_session, embedding_client
+                            config, temp_session, embedding_client,
+                            session_factory=db.get_session  # For ongoing metadata operations
                         )
 
                     if faiss_manager:
@@ -191,6 +201,49 @@ async def lifespan(app: FastAPI):
             )
             logger.info(f"Search service initialized with primary provider: {primary_provider}")
 
+            # Initialize background embedding worker if we have embedding client
+            if embedding_client:
+                try:
+                    from src.services.background_worker import BackgroundEmbeddingWorker, WorkerPool
+
+                    # Get configuration for worker
+                    poll_interval = float(os.getenv("CHL_WORKER_POLL_INTERVAL", "5.0"))
+                    batch_size = int(os.getenv("CHL_WORKER_BATCH_SIZE", "10"))
+                    auto_start = os.getenv("CHL_WORKER_AUTO_START", "1") != "0"
+
+                    background_worker = BackgroundEmbeddingWorker(
+                        session_factory=db.get_session,
+                        embedding_client=embedding_client,
+                        faiss_manager=thread_safe_faiss,  # May be None, worker handles this
+                        poll_interval=poll_interval,
+                        batch_size=batch_size,
+                        max_tokens=8000,  # Default max tokens for manual content
+                    )
+
+                    # Wrap in WorkerPool for compatibility with existing code
+                    worker_pool = WorkerPool(background_worker)
+
+                    # Update worker_control_service to use our worker pool
+                    worker_control_service.set_pool_getter(lambda: worker_pool)
+
+                    # Auto-start worker if enabled
+                    if auto_start:
+                        background_worker.start()
+                        logger.info(
+                            f"Background embedding worker started "
+                            f"(poll_interval={poll_interval}s, batch_size={batch_size})"
+                        )
+                    else:
+                        logger.info(
+                            "Background embedding worker initialized but not started "
+                            "(CHL_WORKER_AUTO_START=0)"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"Background worker initialization failed: {e}")
+                    background_worker = None
+                    worker_pool = None
+
         except Exception as e:
             logger.warning(f"Search service initialization failed: {e}")
             search_service = None
@@ -221,6 +274,14 @@ async def lifespan(app: FastAPI):
                 await telemetry_service.stop()
             except Exception as e:
                 logger.warning(f"Error stopping telemetry service: {e}")
+
+        # Stop background worker before operations service
+        if background_worker and background_worker.is_running():
+            try:
+                background_worker.stop(timeout=10.0)
+                logger.info("Background embedding worker stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping background worker: {e}")
 
         if operations_service:
             try:
