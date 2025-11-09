@@ -9,6 +9,12 @@ import logging
 import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+from contextlib import contextmanager
+
+try:
+    import fcntl  # POSIX file locking
+except Exception:  # pragma: no cover - platform without fcntl (e.g., Windows)
+    fcntl = None  # type: ignore
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -71,6 +77,9 @@ class FAISSIndexManager:
         # FAISS index (lazy loaded)
         self._index = None
         self._faiss = None  # faiss module (lazy import)
+
+        # Lock file path for cross-process serialization of FAISS ops
+        self._lock_path = self.index_dir / "faiss_index.lock"
 
     @property
     def index(self):
@@ -151,6 +160,36 @@ class FAISSIndexManager:
         # IndexFlatIP for cosine similarity (requires normalized embeddings)
         self._index = self.faiss.IndexFlatIP(self.dimension)
 
+    @contextmanager
+    def _exclusive_lock(self):
+        """Cross-process exclusive lock around critical FAISS operations.
+
+        Uses fcntl.flock on a lock file within the index directory. On
+        non-POSIX platforms where fcntl is unavailable, acts as a no-op
+        to preserve functionality (but concurrency guarantees are reduced).
+        """
+        if fcntl is None:
+            # No-op lock on unsupported platforms
+            yield
+            return
+        # Ensure directory exists
+        self.index_dir.mkdir(parents=True, exist_ok=True)
+        # Open lock file for the duration of the critical section
+        with open(self._lock_path, "a+") as fp:
+            try:
+                fcntl.flock(fp.fileno(), fcntl.LOCK_EX)
+            except Exception:
+                # If we cannot lock, proceed without to avoid deadlock
+                yield
+                return
+            try:
+                yield
+            finally:
+                try:
+                    fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+
     def add(
         self,
         entity_ids: List[str],
@@ -183,24 +222,25 @@ class FAISSIndexManager:
             )
 
         try:
-            # Get starting internal ID (next sequential ID)
-            start_id = self.index.ntotal
+            with self._exclusive_lock():
+                # Get starting internal ID (next sequential ID)
+                start_id = self.index.ntotal
 
-            # Add vectors to FAISS
-            self.index.add(embeddings)
+                # Add vectors to FAISS
+                self.index.add(embeddings)
 
-            # Generate internal IDs
-            internal_ids = list(range(start_id, start_id + len(entity_ids)))
+                # Generate internal IDs
+                internal_ids = list(range(start_id, start_id + len(entity_ids)))
 
-            # Store metadata mappings
-            self._save_metadata_mappings(entity_ids, entity_types, internal_ids)
+                # Store metadata mappings (while lock is held)
+                self._save_metadata_mappings(entity_ids, entity_types, internal_ids)
 
-            logger.info(
-                f"Added {len(entity_ids)} vectors to FAISS index "
-                f"(total: {self.index.ntotal})"
-            )
+                logger.info(
+                    f"Added {len(entity_ids)} vectors to FAISS index "
+                    f"(total: {self.index.ntotal})"
+                )
 
-            return internal_ids
+                return internal_ids
 
         except Exception as e:
             if self.session:
@@ -310,10 +350,11 @@ class FAISSIndexManager:
             FAISSIndexError: If delete fails
         """
         try:
-            # Mark as deleted in metadata
-            self._mark_deleted(entity_id, entity_type)
+            with self._exclusive_lock():
+                # Mark as deleted in metadata
+                self._mark_deleted(entity_id, entity_type)
 
-            logger.info(f"Marked {entity_type} {entity_id} as deleted in metadata")
+                logger.info(f"Marked {entity_type} {entity_id} as deleted in metadata")
 
         except Exception as e:
             raise FAISSIndexError(f"Failed to delete from index: {e}") from e
@@ -340,16 +381,17 @@ class FAISSIndexManager:
             FAISSIndexError: If update fails
         """
         try:
-            # Delete old entry
-            self.delete(entity_id, entity_type)
+            with self._exclusive_lock():
+                # Delete old entry
+                self.delete(entity_id, entity_type)
 
-            # Add new entry
-            new_embedding_2d = new_embedding.reshape(1, -1)
-            new_ids = self.add([entity_id], [entity_type], new_embedding_2d)
+                # Add new entry
+                new_embedding_2d = new_embedding.reshape(1, -1)
+                new_ids = self.add([entity_id], [entity_type], new_embedding_2d)
 
-            logger.info(f"Updated {entity_type} {entity_id} in FAISS index")
+                logger.info(f"Updated {entity_type} {entity_id} in FAISS index")
 
-            return new_ids[0]
+                return new_ids[0]
 
         except Exception as e:
             raise FAISSIndexError(f"Failed to update vector: {e}") from e
@@ -357,24 +399,25 @@ class FAISSIndexManager:
     def save(self) -> None:
         """Persist index to disk"""
         try:
-            # Write FAISS index
-            self.faiss.write_index(self.index, str(self.index_path))
+            with self._exclusive_lock():
+                # Write FAISS index
+                self.faiss.write_index(self.index, str(self.index_path))
 
-            # Write metadata
-            metadata = {
-                "model_name": self.model_name,
-                "dimension": self.dimension,
-                "count": self.index.ntotal,
-                "checksum": self._compute_checksum()
-            }
+                # Write metadata
+                metadata = {
+                    "model_name": self.model_name,
+                    "dimension": self.dimension,
+                    "count": self.index.ntotal,
+                    "checksum": self._compute_checksum()
+                }
 
-            with open(self.meta_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                with open(self.meta_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
 
-            logger.info(
-                f"FAISS index saved: {self.index_path} "
-                f"({self.index.ntotal} vectors)"
-            )
+                logger.info(
+                    f"FAISS index saved: {self.index_path} "
+                    f"({self.index.ntotal} vectors)"
+                )
 
         except Exception as e:
             raise FAISSIndexError(f"Failed to save index: {e}") from e

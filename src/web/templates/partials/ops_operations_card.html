@@ -5,6 +5,7 @@
   hx-trigger="ops-refresh from:body, every 3s"
   hx-target="this"
   hx-swap="outerHTML"
+  sse-swap="controls"
 >
   <header>
     <div>
@@ -13,8 +14,11 @@
     </div>
   </header>
   <div class="ops-actions">
-    {% set import_active = (job_summaries or {}).get('import', {}).get('is_active', False) %}
-    {% set export_active = (job_summaries or {}).get('export', {}).get('is_active', False) %}
+    {# Guard against None summaries to avoid calling .get on None #}
+    {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
+    {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
+    {% set import_active = import_summary.get('is_active', False) %}
+    {% set export_active = export_summary.get('is_active', False) %}
     <form hx-post="/ui/operations/run/import" hx-target="#ops-controls-card" hx-swap="outerHTML">
       <button type="submit" {% if import_active %}disabled{% endif %}>Run Import</button>
     </form>

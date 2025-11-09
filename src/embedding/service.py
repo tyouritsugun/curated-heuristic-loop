@@ -8,10 +8,12 @@ Handles async embedding generation workflow:
 5. Updates FAISS index incrementally
 """
 import logging
+import time
 from typing import List, Dict, Optional
 import numpy as np
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from ..storage.schema import Experience, CategoryManual
 from ..storage.repository import EmbeddingRepository, ExperienceRepository, CategoryManualRepository
@@ -57,6 +59,45 @@ class EmbeddingService:
         self.exp_repo = ExperienceRepository(session)
         self.manual_repo = CategoryManualRepository(session)
 
+    # ----------------------------
+    # Internal helpers
+    # ----------------------------
+    def _is_sqlite_lock_error(self, exc: Exception) -> bool:
+        """Return True if the exception corresponds to a SQLite lock/busy error."""
+        msg = str(getattr(exc, "orig", exc)).lower()
+        return (
+            "database is locked" in msg
+            or "database is busy" in msg
+            or "database table is locked" in msg
+        )
+
+    def _with_lock_retry(self, func, desc: str, retries: int = 8, base_delay: float = 0.1):
+        """Execute `func()` with retry/backoff on SQLite locking errors.
+
+        Rolls back the session before retrying to clear the failed transaction.
+        """
+        attempt = 0
+        while True:
+            try:
+                return func()
+            except SAOperationalError as e:  # SQLAlchemy wraps sqlite3.OperationalError
+                if self._is_sqlite_lock_error(e) and attempt < retries:
+                    try:
+                        self.session.rollback()
+                    except Exception:
+                        # Ignore rollback errors; we'll retry fresh
+                        pass
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"SQLite locked during {desc}; retrying in {delay:.2f}s "
+                        f"(attempt {attempt + 1}/{retries})"
+                    )
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                # Not a lock error or out of retries
+                raise
+
     def generate_for_experience(self, experience_id: str) -> bool:
         """Generate embedding for an experience
 
@@ -73,6 +114,18 @@ class EmbeddingService:
                 logger.error(f"Experience not found: {experience_id}")
                 return False
 
+            # Mark as processing to update queue immediately
+            try:
+                exp.embedding_status = 'processing'
+                self._with_lock_retry(lambda: self.session.flush(), desc="flush experience -> processing")
+                # Commit early so UI counts reflect progress
+                self._with_lock_retry(lambda: self.session.commit(), desc="commit experience -> processing")
+            except Exception:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+
             # Generate embedding content (title + playbook)
             content = f"{exp.title}\n\n{exp.playbook}"
 
@@ -85,26 +138,38 @@ class EmbeddingService:
                 self.session.flush()
                 return False
 
-            # Store in embeddings table
-            self.emb_repo.create(
-                entity_id=experience_id,
-                entity_type='experience',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
-                model_version=self.embedding_client.get_model_version(),
-                embedding=embedding
+            # Store in embeddings table (with retry on lock)
+            self._with_lock_retry(
+                lambda: self.emb_repo.create(
+                    entity_id=experience_id,
+                    entity_type='experience',
+                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_version=self.embedding_client.get_model_version(),
+                    embedding=embedding,
+                ),
+                desc="embedding upsert (experience)",
             )
 
             # Update experience status
             exp.embedding_status = 'embedded'
-            self.session.flush()
+            self._with_lock_retry(
+                lambda: self.session.flush(),
+                desc="flush experience status",
+            )
 
             # Commit transaction BEFORE updating FAISS (decouples transactions)
             # FAISS will use its own session for metadata operations
             try:
-                self.session.commit()
+                self._with_lock_retry(
+                    lambda: self.session.commit(),
+                    desc="commit experience embedding",
+                )
             except Exception as e:
                 logger.error(f"Failed to commit embedding for {experience_id}: {e}")
-                self.session.rollback()
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 return False
 
             # Update FAISS index AFTER commit (uses separate session)
@@ -151,6 +216,17 @@ class EmbeddingService:
                 logger.error(f"Manual not found: {manual_id}")
                 return False
 
+            # Mark as processing to update queue immediately
+            try:
+                manual.embedding_status = 'processing'
+                self._with_lock_retry(lambda: self.session.flush(), desc="flush manual -> processing")
+                self._with_lock_retry(lambda: self.session.commit(), desc="commit manual -> processing")
+            except Exception:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+
             # Get content (truncate if needed)
             content = manual.content or manual.title
 
@@ -173,25 +249,37 @@ class EmbeddingService:
                 self.session.flush()
                 return False
 
-            # Store in embeddings table
-            self.emb_repo.create(
-                entity_id=manual_id,
-                entity_type='manual',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
-                model_version=self.embedding_client.get_model_version(),
-                embedding=embedding
+            # Store in embeddings table (with retry on lock)
+            self._with_lock_retry(
+                lambda: self.emb_repo.create(
+                    entity_id=manual_id,
+                    entity_type='manual',
+                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_version=self.embedding_client.get_model_version(),
+                    embedding=embedding,
+                ),
+                desc="embedding upsert (manual)",
             )
 
             # Update manual status
             manual.embedding_status = 'embedded'
-            self.session.flush()
+            self._with_lock_retry(
+                lambda: self.session.flush(),
+                desc="flush manual status",
+            )
 
             # Commit transaction BEFORE updating FAISS (decouples transactions)
             try:
-                self.session.commit()
+                self._with_lock_retry(
+                    lambda: self.session.commit(),
+                    desc="commit manual embedding",
+                )
             except Exception as e:
                 logger.error(f"Failed to commit embedding for {manual_id}: {e}")
-                self.session.rollback()
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 return False
 
             # Update FAISS index AFTER commit (uses separate session)
@@ -251,24 +339,36 @@ class EmbeddingService:
             )
 
             # Upsert embedding row
-            self.emb_repo.create(
-                entity_id=experience_id,
-                entity_type='experience',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
-                model_version=self.embedding_client.get_model_version(),
-                embedding=embedding,
+            self._with_lock_retry(
+                lambda: self.emb_repo.create(
+                    entity_id=experience_id,
+                    entity_type='experience',
+                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_version=self.embedding_client.get_model_version(),
+                    embedding=embedding,
+                ),
+                desc="embedding upsert (experience)",
             )
 
             # Update status
             exp.embedding_status = 'embedded'
-            self.session.flush()
+            self._with_lock_retry(
+                lambda: self.session.flush(),
+                desc="flush experience status",
+            )
 
             # Commit transaction BEFORE updating FAISS (decouples transactions)
             try:
-                self.session.commit()
+                self._with_lock_retry(
+                    lambda: self.session.commit(),
+                    desc="commit experience embedding",
+                )
             except Exception as e:
                 logger.error(f"Failed to commit embedding for {experience_id}: {e}")
-                self.session.rollback()
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 return False
 
             # Update FAISS index AFTER commit (uses separate session)
@@ -331,23 +431,35 @@ class EmbeddingService:
                 model_name=getattr(self.embedding_client, "model_repo", ""),
             )
 
-            self.emb_repo.create(
-                entity_id=manual_id,
-                entity_type='manual',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
-                model_version=self.embedding_client.get_model_version(),
-                embedding=embedding,
+            self._with_lock_retry(
+                lambda: self.emb_repo.create(
+                    entity_id=manual_id,
+                    entity_type='manual',
+                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_version=self.embedding_client.get_model_version(),
+                    embedding=embedding,
+                ),
+                desc="embedding upsert (manual)",
             )
 
             manual.embedding_status = 'embedded'
-            self.session.flush()
+            self._with_lock_retry(
+                lambda: self.session.flush(),
+                desc="flush manual status",
+            )
 
             # Commit transaction BEFORE updating FAISS (decouples transactions)
             try:
-                self.session.commit()
+                self._with_lock_retry(
+                    lambda: self.session.commit(),
+                    desc="commit manual embedding",
+                )
             except Exception as e:
                 logger.error(f"Failed to commit embedding for {manual_id}: {e}")
-                self.session.rollback()
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 return False
 
             # Update FAISS index AFTER commit (uses separate session)

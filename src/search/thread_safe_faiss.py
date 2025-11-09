@@ -373,33 +373,35 @@ class ThreadSafeFAISSManager:
         temp_path = index_path.with_suffix('.index.tmp')
 
         try:
-            # Write to temp file
-            self._manager.faiss.write_index(self._manager.index, str(temp_path))
+            # Cross-process exclusive lock for consistent save
+            with self._manager._exclusive_lock():
+                # Write to temp file
+                self._manager.faiss.write_index(self._manager.index, str(temp_path))
 
-            # Backup existing index
-            if index_path.exists():
-                shutil.copy2(index_path, backup_path)
+                # Backup existing index
+                if index_path.exists():
+                    shutil.copy2(index_path, backup_path)
 
-            # Atomic rename (on most filesystems)
-            temp_path.rename(index_path)
+                # Atomic rename (on most filesystems)
+                temp_path.rename(index_path)
 
-            # Save metadata (metadata path is adjacent to index_path)
-            # Use the existing save() method's metadata logic
-            meta_path = Path(self._manager.meta_path)
-            import json
-            metadata = {
-                "model_name": self._manager.model_name,
-                "dimension": self._manager.dimension,
-                "count": self._manager.index.ntotal,
-                "checksum": self._manager._compute_checksum()
-            }
-            with open(meta_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                # Save metadata (metadata path is adjacent to index_path)
+                # Use the existing save() method's metadata logic
+                meta_path = Path(self._manager.meta_path)
+                import json
+                metadata = {
+                    "model_name": self._manager.model_name,
+                    "dimension": self._manager.dimension,
+                    "count": self._manager.index.ntotal,
+                    "checksum": self._manager._compute_checksum()
+                }
+                with open(meta_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
 
-            logger.debug(
-                f"FAISS index saved successfully: {index_path} "
-                f"({self._manager.index.ntotal} vectors)"
-            )
+                logger.debug(
+                    f"FAISS index saved successfully: {index_path} "
+                    f"({self._manager.index.ntotal} vectors)"
+                )
 
         except Exception as e:
             logger.error(f"Failed to save FAISS index: {e}")
@@ -433,10 +435,12 @@ class ThreadSafeFAISSManager:
             return
 
         try:
-            # Get all non-deleted metadata
-            metadata_list = session.query(FAISSMetadata).filter(
-                FAISSMetadata.deleted == False
-            ).all()
+            # Cross-process exclusive lock while rebuilding
+            with self._manager._exclusive_lock():
+                # Get all non-deleted metadata
+                metadata_list = session.query(FAISSMetadata).filter(
+                    FAISSMetadata.deleted == False
+                ).all()
 
             if not metadata_list:
                 logger.warning("No non-deleted entries found for rebuild")
@@ -483,19 +487,19 @@ class ThreadSafeFAISSManager:
             # Stack embeddings
             embeddings_array = np.vstack(embedding_vectors).astype(np.float32)
 
-            # Create new index and reset metadata
-            self._manager._create_new_index(reset_metadata=True)
+                # Create new index and reset metadata
+                self._manager._create_new_index(reset_metadata=True)
 
-            # Batch add
-            self._manager.add(entity_ids, entity_types, embeddings_array)
+                # Batch add
+                self._manager.add(entity_ids, entity_types, embeddings_array)
 
-            # Save atomically
-            self._save_safely()
+                # Save atomically
+                self._save_safely()
 
-            logger.info(
-                f"FAISS index rebuild complete: {len(entity_ids)} vectors "
-                f"(removed {len(metadata_list) - len(entity_ids)} tombstones)"
-            )
+                logger.info(
+                    f"FAISS index rebuild complete: {len(entity_ids)} vectors "
+                    f"(removed {len(metadata_list) - len(entity_ids)} tombstones)"
+                )
 
         except Exception as e:
             logger.error(f"FAISS rebuild failed: {e}")

@@ -11,6 +11,7 @@ from sqlalchemy import (
     LargeBinary,
     UniqueConstraint,
     create_engine,
+    Index,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -78,7 +79,7 @@ class Experience(Base):
         CheckConstraint("section IN ('useful', 'harmful', 'contextual')", name="ck_experience_section"),
         CheckConstraint("source IN ('local', 'global')", name="ck_experience_source"),
         CheckConstraint("sync_status IN (0, 1, 2)", name="ck_experience_sync_status"),
-        CheckConstraint("embedding_status IN ('pending', 'embedded', 'failed')", name="ck_experience_embedding_status"),
+        CheckConstraint("embedding_status IN ('pending', 'processing', 'embedded', 'failed')", name="ck_experience_embedding_status"),
         CheckConstraint("length(title) >= 1 AND length(title) <= 120", name="ck_experience_title_length"),
         CheckConstraint("length(playbook) >= 1 AND length(playbook) <= 2000", name="ck_experience_playbook_length"),
     )
@@ -118,7 +119,7 @@ class CategoryManual(Base):
     __table_args__ = (
         CheckConstraint("source IN ('local', 'global')", name="ck_manual_source"),
         CheckConstraint("sync_status IN (0, 1, 2)", name="ck_manual_sync_status"),
-        CheckConstraint("embedding_status IN ('pending', 'embedded', 'failed')", name="ck_manual_embedding_status"),
+        CheckConstraint("embedding_status IN ('pending', 'processing', 'embedded', 'failed')", name="ck_manual_embedding_status"),
         CheckConstraint("length(title) >= 1 AND length(title) <= 120", name="ck_manual_title_length"),
         CheckConstraint("length(content) >= 1", name="ck_manual_content_length"),
     )
@@ -275,3 +276,9 @@ class TelemetrySample(Base):
 
     def __repr__(self):
         return f"<TelemetrySample(metric='{self.metric}', recorded_at='{self.recorded_at}')>"
+
+
+# Performance indexes for frequent status counts and lookups
+Index('ix_experiences_embedding_status', Experience.embedding_status)
+Index('ix_category_manuals_embedding_status', CategoryManual.embedding_status)
+Index('ix_telemetry_metric', TelemetrySample.metric)

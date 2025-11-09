@@ -118,8 +118,8 @@ class TelemetryService:
         import time
         from sqlalchemy.exc import OperationalError
 
-        max_retries = 3
-        base_delay = 0.1  # 100ms
+        max_retries = 6
+        base_delay = 0.2  # 200ms, exponential backoff
 
         for attempt in range(max_retries):
             try:

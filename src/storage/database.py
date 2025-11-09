@@ -36,10 +36,15 @@ class Database:
 
         # Create engine with WAL mode and foreign keys enabled
         connection_string = f"sqlite:///{self.database_path}"
+        # Use a higher SQLite connection timeout and allow cross-thread usage.
+        # busy_timeout PRAGMA is also set below on every new connection.
         self.engine = create_engine(
             connection_string,
             echo=self.echo,
-            connect_args={"check_same_thread": False},  # Allow SQLite in multi-threaded context
+            connect_args={
+                "check_same_thread": False,  # Allow SQLite in multi-threaded context
+                "timeout": 30.0,             # Connection-level timeout for busy database
+            },
         )
 
         # Enable foreign keys and WAL mode for SQLite

@@ -62,8 +62,11 @@ class WorkerControlService:
     # Internal helpers
     # ------------------------------------------------------------------
     def _queue_depth(self, session: Session) -> Dict[str, Any]:
+        # Pending and processing are tracked separately for smoother UI feedback
         pending_exp = session.query(Experience).filter(Experience.embedding_status == "pending").count()
         pending_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "pending").count()
+        processing_exp = session.query(Experience).filter(Experience.embedding_status == "processing").count()
+        processing_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "processing").count()
         failed_exp = session.query(Experience).filter(Experience.embedding_status == "failed").count()
         failed_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "failed").count()
         return {
@@ -71,6 +74,11 @@ class WorkerControlService:
                 "experiences": pending_exp,
                 "manuals": pending_man,
                 "total": pending_exp + pending_man,
+            },
+            "processing": {
+                "experiences": processing_exp,
+                "manuals": processing_man,
+                "total": processing_exp + processing_man,
             },
             "failed": {
                 "experiences": failed_exp,

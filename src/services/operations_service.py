@@ -290,8 +290,10 @@ class OperationsService:
             sys.executable,
             str(self._scripts_dir / "import.py"),
             "--yes",
-            "--skip-api-coordination",
         ]
+        # Allow reverting to legacy behavior via env flag
+        if os.getenv("CHL_SKIP_API_COORDINATION", "0") == "1":
+            command.append("--skip-api-coordination")
         payload = payload or {}
         if config := payload.get("config"):
             command.extend(["--config", str(config)])
@@ -336,7 +338,22 @@ class OperationsService:
         del session
         payload = payload or {}
 
-        # Step 1: Sync embeddings
+        # Step 1: Pause background workers to avoid DB write contention
+        paused = False
+        client = None
+        try:
+            # Import lazily to avoid hard dependency on requests at server import time
+            from src.api_client import CHLAPIClient  # type: ignore
+            client = CHLAPIClient(os.getenv("CHL_API_URL", "http://localhost:8000"))
+            if client.check_health():
+                if client.pause_workers():
+                    paused = True
+                    client.drain_queue(timeout=300)
+        except Exception:
+            # Coordination is best-effort; continue even if it fails
+            client = None
+
+        # Step 2: Sync embeddings
         logger.info("Running embedding sync...")
         sync_command = [
             sys.executable,
@@ -357,13 +374,20 @@ class OperationsService:
                 "message": "Embedding sync failed, skipping index rebuild"
             }
 
-        # Step 2: Rebuild index
+        # Step 3: Rebuild index
         logger.info("Running index rebuild...")
         index_command = [
             sys.executable,
             str(self._scripts_dir / "rebuild_index.py"),
         ]
         index_result = self._run_script(index_command, payload)
+
+        # Step 4: Resume workers
+        try:
+            if paused and client is not None:
+                client.resume_workers()
+        except Exception:
+            pass
 
         return {
             "phase": "complete",

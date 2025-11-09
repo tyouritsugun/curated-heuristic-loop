@@ -54,6 +54,7 @@ ALLOWED_INDEX_FILE_SUFFIXES = frozenset([".index", ".json", ".backup"])  # case-
 
 logger = logging.getLogger(__name__)
 
+SSE_REFRESH_SECONDS = float(os.getenv("CHL_SSE_REFRESH_SECONDS", "2.0"))
 
 EMBEDDING_CHOICES = [
     {
@@ -435,7 +436,7 @@ def _render_full(
         error=error,
     )
     context["is_partial"] = False
-    return templates.TemplateResponse(request, "settings.html", context)
+    return templates.TemplateResponse("settings.html", context)
 
 
 def _render_partial(
@@ -457,7 +458,7 @@ def _render_partial(
         error=error,
     )
     context["is_partial"] = True
-    return templates.TemplateResponse(request, template_name, context)
+    return templates.TemplateResponse(template_name, context)
 
 
 def _respond(
@@ -558,7 +559,7 @@ def _render_operations_template(
             "is_partial": is_partial,
         }
     )
-    return templates.TemplateResponse(request, template_name, context)
+    return templates.TemplateResponse(template_name, context)
 
 
 def _operations_partial_response(
@@ -741,7 +742,7 @@ def operations_page(
             "is_partial": False,
         }
     )
-    return templates.TemplateResponse(request, "operations.html", context)
+    return templates.TemplateResponse("operations.html", context)
 
 
 @router.get("/ui/operations/queue", response_class=HTMLResponse)
@@ -1377,7 +1378,7 @@ async def telemetry_stream(
                 break
 
             try:
-                await asyncio.sleep(5)
+                await asyncio.sleep(SSE_REFRESH_SECONDS)
             except asyncio.CancelledError:  # pragma: no cover - disconnect
                 break
 

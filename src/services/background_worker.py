@@ -7,8 +7,12 @@ import logging
 import threading
 import time
 from typing import Optional, Dict, Any, Callable
-from datetime import datetime
+from datetime import datetime, timezone
+import os
+import socket
+import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.embedding.service import EmbeddingService
@@ -73,6 +77,14 @@ class BackgroundEmbeddingWorker:
         }
         self._stats_lock = threading.Lock()
 
+        # Leader election (single active worker across processes)
+        self._lease_name = "embedding-worker"
+        host = socket.gethostname()
+        self._lease_owner = f"{host}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        self._lease_ttl = float(os.getenv("CHL_WORKER_LEASE_TTL", "30"))  # seconds
+        self._lease_next_refresh: float = 0.0
+        self._lease_held: bool = False
+
     def start(self):
         """Start the background worker thread."""
         if self._thread is not None and self._thread.is_alive():
@@ -116,6 +128,11 @@ class BackgroundEmbeddingWorker:
 
         with self._stats_lock:
             self._stats['is_running'] = False
+        # Best-effort: release leader lease
+        try:
+            self._release_lease()
+        except Exception:
+            pass
 
     def pause(self):
         """Pause the worker (stops processing but keeps thread alive)."""
@@ -161,6 +178,13 @@ class BackgroundEmbeddingWorker:
 
         while not self._stop_event.is_set():
             try:
+                # Leader election: ensure we hold the lease before processing
+                if not self._ensure_lease():
+                    # Not the leader; sleep a bit before trying again
+                    with self._stats_lock:
+                        self._stats['is_paused'] = True
+                    time.sleep(min(2.0, self.poll_interval))
+                    continue
                 # Check if paused
                 with self._pause_lock:
                     if self._paused:
@@ -196,6 +220,11 @@ class BackgroundEmbeddingWorker:
                 time.sleep(0.1)
 
         logger.info("Background worker loop stopped")
+        # Best-effort: release lease on exit
+        try:
+            self._release_lease()
+        except Exception:
+            pass
 
     def _process_batch(self) -> Dict[str, int]:
         """Process one batch of pending embeddings.
@@ -230,6 +259,131 @@ class BackgroundEmbeddingWorker:
                 session.close()
             except Exception as e:
                 logger.warning(f"Error closing session: {e}")
+
+    # ------------------------------------------------------------------
+    # Lease helpers (leader election)
+    # ------------------------------------------------------------------
+    def _ensure_lease(self) -> bool:
+        """Acquire or renew the lease; returns True if we are the leader.
+
+        Uses operation_locks(name=self._lease_name) as a distributed lock with TTL.
+        """
+        now = time.time()
+        # Refresh early (half TTL) to avoid expiry
+        if self._lease_held and now < self._lease_next_refresh:
+            return True
+
+        session = self.session_factory()
+        try:
+            from src.storage.schema import OperationLock, utc_now
+            # Load existing lock
+            lock = (
+                session.query(OperationLock)
+                .filter(OperationLock.name == self._lease_name)
+                .one_or_none()
+            )
+
+            # Compute expiry
+            from datetime import timedelta
+            now_dt = datetime.now(timezone.utc)
+            next_expiry = now_dt + timedelta(seconds=self._lease_ttl)
+
+            def _commit_refresh():
+                session.flush()
+                session.commit()
+
+            if lock is None:
+                # Try to create the lock
+                try:
+                    lock = OperationLock(
+                        name=self._lease_name,
+                        owner=self._lease_owner,
+                        created_at=utc_now(),
+                        expires_at=next_expiry.isoformat(),
+                    )
+                    session.add(lock)
+                    _commit_refresh()
+                    self._lease_held = True
+                except IntegrityError:
+                    session.rollback()
+                    self._lease_held = False
+            else:
+                # Parse expiry
+                expires_at = None
+                try:
+                    if lock.expires_at:
+                        expires_at = datetime.fromisoformat(lock.expires_at)
+                except Exception:
+                    expires_at = None
+
+                if lock.owner == self._lease_owner or (expires_at is None or expires_at <= now_dt):
+                    # Take over or renew
+                    lock.owner = self._lease_owner
+                    lock.expires_at = next_expiry.isoformat()
+                    lock.created_at = utc_now()
+                    _commit_refresh()
+                    self._lease_held = True
+                else:
+                    # Another active owner
+                    self._lease_held = False
+
+            # Schedule next refresh (half TTL)
+            if self._lease_held:
+                self._lease_next_refresh = time.time() + max(1.0, self._lease_ttl * 0.5)
+                with self._stats_lock:
+                    self._stats['is_paused'] = False
+            else:
+                with self._stats_lock:
+                    self._stats['is_paused'] = True
+
+            return self._lease_held
+
+        except Exception as e:
+            # Fail-open: if lease check fails, do not process to avoid split-brain
+            logger.debug(f"Lease check failed, deferring processing: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            self._lease_held = False
+            with self._stats_lock:
+                self._stats['is_paused'] = True
+            return False
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    def _release_lease(self) -> None:
+        if not self._lease_held:
+            return
+        session = self.session_factory()
+        try:
+            from src.storage.schema import OperationLock
+            lock = (
+                session.query(OperationLock)
+                .filter(
+                    OperationLock.name == self._lease_name,
+                    OperationLock.owner == self._lease_owner,
+                )
+                .one_or_none()
+            )
+        
+            if lock:
+                session.delete(lock)
+                session.commit()
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+        self._lease_held = False
 
 
 class WorkerPool:

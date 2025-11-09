@@ -1,5 +1,10 @@
-{% set queue_sample = snapshot.queue.value if snapshot.queue else (worker_status.get('queue') if worker_status else None) %}
+{# Prefer live queue depth from worker_status; fall back to last telemetry sample #}
+{% set queue_sample = (worker_status.get('queue') if worker_status else None) or (snapshot.queue.value if snapshot and snapshot.queue else None) %}
 {% set pending = queue_sample.get('pending') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set processing = queue_sample.get('processing') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set queued_total = pending.get('total', 0) + processing.get('total', 0) %}
+{% set queued_exp = pending.get('experiences', 0) + processing.get('experiences', 0) %}
+{% set queued_man = pending.get('manuals', 0) + processing.get('manuals', 0) %}
 {% set failed = queue_sample.get('failed') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
 {% set pending_total = pending.get('total', 0) %}
 {% set pending_exp = pending.get('experiences', 0) %}
@@ -11,7 +16,7 @@
   id="ops-queue-card"
   class="card ops-card"
   hx-get="/ui/operations/queue"
-  hx-trigger="ops-refresh from:body"
+  hx-trigger="ops-refresh from:body, every 1s"
   hx-target="this"
   hx-swap="outerHTML"
   sse-swap="queue"
@@ -19,16 +24,20 @@
   <header>
     <div>
       <h2>Queue Health</h2>
-      <p class="muted">Pending embedding jobs pulled from telemetry samples.</p>
+      <p class="muted">Live DB counts (pending + in-progress).</p>
     </div>
-    <span class="status-pill {{ 'ok' if pending_total == 0 else 'warn' }}">
-      {{ 'Idle' if pending_total == 0 else pending_total ~ ' pending' }}
+    <span class="status-pill {{ 'ok' if queued_total == 0 else 'warn' }}">
+      {{ 'Idle' if queued_total == 0 else queued_total ~ ' queued' }}
     </span>
   </header>
   <div class="stat-grid">
     <div class="stat-pair">
-      <p class="stat-label">Pending (exp/manuals)</p>
-      <p class="stat-value">{{ pending_total }}<small class="muted"> ({{ pending_exp }}/{{ pending_man }})</small></p>
+      <p class="stat-label">Queued (pending+processing)</p>
+      <p class="stat-value">{{ queued_total }}<small class="muted"> ({{ queued_exp }}/{{ queued_man }})</small></p>
+    </div>
+    <div class="stat-pair">
+      <p class="stat-label">In Progress (exp/manuals)</p>
+      <p class="stat-value">{{ processing.get('total', 0) }}<small class="muted"> ({{ processing.get('experiences', 0) }}/{{ processing.get('manuals', 0) }})</small></p>
     </div>
     <div class="stat-pair">
       <p class="stat-label">Failed (exp/manuals)</p>
