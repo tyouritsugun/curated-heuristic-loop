@@ -55,7 +55,6 @@ See [User Stories](#user-stories) for a walkthrough of how Generator, Evaluator,
 - **Reads** – retrieve candidates via FAISS (vector), optionally rerank with the Qwen3 reranker, then fetch full records from SQLite by ID. Responses include `source` metadata so clients can distinguish global vs personal entries.
 - **Writes** – persist to SQLite immediately with `embedding_status='pending'`; return success. Vector refresh now happens explicitly via the Operations dashboard (FAISS snapshot upload/rebuild) or maintenance scripts such as `rebuild_index.py`. MCP never writes directly to review or published sheets.
 - **Dedup & Decision Hints** – every write returns top-k matches with scores, sections, and source flags, plus guidance on whether to: (a) add a new atomic experience, (b) refactor an existing atomic experience, or (c) update a category manual (for integrative, non-atomic context). Keep manuals concise—do not add global atomic heuristics to manuals.
-- **Review Hooks** – optionally expose an MCP tool to request a change to a global entry; the server marks `sync_status='pending'` and records a curator-facing note.
 
 ## Experience vs Manual Decision
 - Prefer an **atomic experience** when the guidance is actionable, narrow, and testable on its own. If a match is highly similar, propose refactoring both entries to keep them orthogonal; avoid merging into a broad catch-all.
