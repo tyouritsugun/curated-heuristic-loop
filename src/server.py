@@ -388,6 +388,36 @@ def write_entry(
     """
     Create a new experience or manual entry in the requested category.
 
+    Args:
+        entity_type: Either 'experience' or 'manual'
+        category_code: Category shelf code (e.g., 'PGS', 'GLN')
+        data: Entry payload
+
+    Payload schema:
+        For entity_type='experience':
+            Required fields:
+                - section (str): One of 'useful', 'harmful', or 'contextual'
+                - title (str): 1-120 characters
+                - playbook (str): 1-2000 characters
+            Optional fields:
+                - context (object|string|null): Ignored unless section='contextual'
+
+        For entity_type='manual':
+            Required fields:
+                - title (str): 1-120 characters
+                - content (str): non-empty
+            Optional fields:
+                - summary (str|null)
+
+    Returns:
+        JSON with:
+            - success (bool)
+            - entry_id (str)
+            - entry (object): Full entry for read-after-write (includes embedding_status)
+            - duplicates (list): Potential duplicates with scores and summaries
+            - recommendation (str): Suggested action based on similarity
+            - message (str): Notes on async indexing readiness
+
     Example:
         write_entry('experience', 'PGS', {
             'section': 'useful',
@@ -419,6 +449,13 @@ def update_entry(
 ) -> Dict[str, Any]:
     """
     Update an existing experience or manual entry by id.
+
+    Allowed fields:
+        - experience: title, playbook, context, section (use force_contextual=true to set section='contextual')
+        - manual: title, content, summary
+
+    Returns:
+        JSON with success, entry_id, entry (full object), and message.
 
     Example:
         update_entry('manual', 'PGS', 'MNL-PGS-20250115-104200123456', {

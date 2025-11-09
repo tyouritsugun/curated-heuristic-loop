@@ -72,6 +72,13 @@ class WriteEntryResponse(BaseModel):
     """Response model for creating an entry."""
     success: bool
     entry_id: str
+    # Full entry payload for read-after-write flows
+    entry: Optional[Dict[str, Any]] = None
+    # Potential duplicates surfaced at write-time with guidance
+    duplicates: Optional[List[Dict[str, Any]]] = None
+    recommendation: Optional[str] = None
+    # Optional human-readable notes (e.g., context ignored for non-contextual sections)
+    warnings: Optional[List[str]] = None
     message: Optional[str] = None
 
 
@@ -79,6 +86,8 @@ class UpdateEntryResponse(BaseModel):
     """Response model for updating an entry."""
     success: bool
     entry_id: str
+    # Return the updated entry for better UX
+    entry: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
 
 

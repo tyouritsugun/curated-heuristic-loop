@@ -93,6 +93,7 @@ def read_entries(
                         "playbook_truncated": truncated,
                         "context": normalize_context(exp.context),
                         "section": exp.section,
+                        "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
                         "author": exp.author,
                         "source": exp.source,
@@ -121,6 +122,7 @@ def read_entries(
                         "playbook": exp.playbook,
                         "context": normalize_context(exp.context),
                         "section": exp.section,
+                        "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
                         "author": exp.author,
                         "source": exp.source,
@@ -158,6 +160,7 @@ def read_entries(
                         "content_preview": preview,
                         "content_truncated": truncated,
                         "summary": man.summary,
+                        "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
                         "score": r.score,
@@ -181,6 +184,7 @@ def read_entries(
                         "title": man.title,
                         "content": man.content,
                         "summary": man.summary,
+                        "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
                         "reason": "id_lookup",
@@ -231,10 +235,82 @@ def write_entry(
             })
             entry_id = new_obj.id
 
+            # Duplicate suggestions with decision hints
+            duplicates_payload = []
+            recommendation = None
+            try:
+                if search_service is not None:
+                    dup_candidates = search_service.find_duplicates(
+                        session=session,
+                        title=validated.title,
+                        content=validated.playbook,
+                        entity_type='experience',
+                        category_code=request.category_code,
+                        exclude_id=None,
+                        threshold=(config.duplicate_threshold_insert if config else 0.60),
+                    )
+
+                    for c in dup_candidates:
+                        duplicates_payload.append({
+                            "entity_id": c.entity_id,
+                            "entity_type": c.entity_type,
+                            "score": c.score,
+                            "reason": getattr(c.reason, 'value', str(c.reason)),
+                            "provider": c.provider,
+                            "title": c.title,
+                            "summary": c.summary,
+                        })
+
+                    if dup_candidates:
+                        highest = max(c.score for c in dup_candidates)
+                        if highest >= 0.90:
+                            recommendation = (
+                                "MERGE_RECOMMENDED: Very high similarity detected. Consider updating the existing entry."
+                            )
+                        elif highest >= 0.75:
+                            recommendation = (
+                                "REVIEW_SUGGESTED: High similarity detected. Review similar entries before proceeding."
+                            )
+                        else:
+                            recommendation = (
+                                "PROCEED_WITH_CAUTION: Moderate similarity detected. Review similar entries to avoid duplication."
+                            )
+            except Exception:
+                # Best-effort; do not fail write on duplicate check issues
+                pass
+
+            # Build full entry for read-after-write
+            entry_dict = {
+                "id": new_obj.id,
+                "title": new_obj.title,
+                "playbook": new_obj.playbook,
+                "context": normalize_context(new_obj.context),
+                "section": new_obj.section,
+                "embedding_status": getattr(new_obj, "embedding_status", None),
+                "updated_at": new_obj.updated_at,
+                "author": new_obj.author,
+                "source": new_obj.source,
+                "sync_status": new_obj.sync_status,
+            }
+
+            warnings: list[str] = []
+            raw_context = request.data.get("context")
+            if raw_context and validated.section in {"useful", "harmful"}:
+                warnings.append(
+                    "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
+                )
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=entry_id,
-                message="Experience created successfully"
+                entry=entry_dict,
+                duplicates=duplicates_payload or None,
+                recommendation=recommendation,
+                warnings=warnings or None,
+                message=(
+                    "Experience created successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Semantic search will not reflect this change until indexing is complete."
+                ),
             )
 
         else:  # manual
@@ -271,10 +347,69 @@ def write_entry(
             })
             manual_id = new_manual.id
 
+            # Duplicate detection for manuals with decision hints
+            duplicates_payload = []
+            recommendation = None
+            try:
+                if search_service is not None:
+                    dup_candidates = search_service.find_duplicates(
+                        session=session,
+                        title=title,
+                        content=content,
+                        entity_type='manual',
+                        category_code=request.category_code,
+                        exclude_id=None,
+                        threshold=(config.duplicate_threshold_insert if config else 0.60),
+                    )
+
+                    for c in dup_candidates:
+                        duplicates_payload.append({
+                            "entity_id": c.entity_id,
+                            "entity_type": c.entity_type,
+                            "score": c.score,
+                            "reason": getattr(c.reason, 'value', str(c.reason)),
+                            "provider": c.provider,
+                            "title": c.title,
+                            "summary": c.summary,
+                        })
+
+                    if dup_candidates:
+                        highest = max(c.score for c in dup_candidates)
+                        if highest >= 0.90:
+                            recommendation = (
+                                "MERGE_RECOMMENDED: Very high similarity detected. Consider updating the existing manual."
+                            )
+                        elif highest >= 0.75:
+                            recommendation = (
+                                "REVIEW_SUGGESTED: High similarity detected. Review the similar manuals before proceeding."
+                            )
+                        else:
+                            recommendation = (
+                                "PROCEED_WITH_CAUTION: Moderate similarity detected. Review similar manuals to avoid duplication."
+                            )
+            except Exception:
+                pass
+
+            manual_dict = {
+                "id": new_manual.id,
+                "title": new_manual.title,
+                "content": new_manual.content,
+                "summary": new_manual.summary,
+                "embedding_status": getattr(new_manual, "embedding_status", None),
+                "updated_at": new_manual.updated_at,
+                "author": new_manual.author,
+            }
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=manual_id,
-                message="Manual created successfully"
+                entry=manual_dict,
+                duplicates=duplicates_payload or None,
+                recommendation=recommendation,
+                message=(
+                    "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Semantic search will not reflect this change until indexing is complete."
+                ),
             )
 
     except HTTPException:
@@ -338,10 +473,27 @@ def update_entry(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
+            entry_dict = {
+                "id": updated.id,
+                "title": updated.title,
+                "playbook": updated.playbook,
+                "context": normalize_context(updated.context),
+                "section": updated.section,
+                "embedding_status": getattr(updated, "embedding_status", None),
+                "updated_at": updated.updated_at,
+                "author": updated.author,
+                "source": updated.source,
+                "sync_status": updated.sync_status,
+            }
+
             return UpdateEntryResponse(
                 success=True,
                 entry_id=updated.id,
-                message="Experience updated successfully"
+                entry=entry_dict,
+                message=(
+                    "Experience updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Semantic search will not reflect this change until indexing is complete."
+                ),
             )
 
         else:  # manual
@@ -361,10 +513,24 @@ def update_entry(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
+            manual_dict = {
+                "id": updated.id,
+                "title": updated.title,
+                "content": updated.content,
+                "summary": updated.summary,
+                "embedding_status": getattr(updated, "embedding_status", None),
+                "updated_at": updated.updated_at,
+                "author": updated.author,
+            }
+
             return UpdateEntryResponse(
                 success=True,
                 entry_id=updated.id,
-                message="Manual updated successfully"
+                entry=manual_dict,
+                message=(
+                    "Manual updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Semantic search will not reflect this change until indexing is complete."
+                ),
             )
 
     except HTTPException:
