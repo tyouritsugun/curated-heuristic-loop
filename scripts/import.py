@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -352,6 +353,15 @@ def main() -> None:
             )
 
     try:
+        # Clear FAISS index files before clearing database tables
+        # This ensures consistency between database and index files
+        faiss_index_dir = data_path / "faiss_index"
+        if faiss_index_dir.exists():
+            logger.info("Clearing FAISS index files from %s", faiss_index_dir)
+            shutil.rmtree(faiss_index_dir)
+            faiss_index_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("FAISS index directory cleared and recreated")
+
         with db.session_scope() as session:
             logger.info("Clearing existing categories, experiences, manuals, and embeddings")
             session.query(Embedding).delete()

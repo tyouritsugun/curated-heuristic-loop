@@ -360,20 +360,220 @@ class SettingsService:
                 session.close()
 
     def diagnostics(self, session: Session) -> Dict[str, DiagnosticStatus]:
-        """Return validation diagnostics for each settings section."""
-        snapshot = self.snapshot(session)
-        credentials = snapshot.get("credentials")
-        sheets = snapshot.get("sheets")
-        models = snapshot.get("models")
+        """Return validation diagnostics for each settings section.
 
-        cred_status = self._diagnose_credentials(credentials)
-        sheets_status = self._diagnose_sheets(sheets, cred_status)
-        model_status = self._diagnose_models(models)
+        NOTE: This function now primarily checks .env configuration.
+        Database-stored settings are deprecated and only checked as fallback.
+        """
+        import os
+        from pathlib import Path
+
+        # Check .env configuration first (Phase 2)
+        credentials_path_env = os.getenv("GOOGLE_CREDENTIAL_PATH", "")
+        import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "")
+        export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "")
+
+        # Build credential diagnostic from .env
+        if credentials_path_env:
+            cred_file = Path(credentials_path_env)
+            if not cred_file.is_absolute():
+                project_root = Path(__file__).resolve().parents[2]
+                cred_file = (project_root / cred_file).resolve()
+
+            if cred_file.exists() and cred_file.is_file():
+                cred_status = DiagnosticStatus(
+                    name="credentials",
+                    state="ok",
+                    headline="Credentials ready",
+                    detail=f"Using {cred_file}",
+                    validated_at=utc_now(),
+                )
+            else:
+                cred_status = DiagnosticStatus(
+                    name="credentials",
+                    state="error",
+                    headline="Credential file not found",
+                    detail=f"Check GOOGLE_CREDENTIAL_PATH in .env: {cred_file}",
+                )
+        else:
+            # Fallback to deprecated database check
+            snapshot = self.snapshot(session)
+            credentials = snapshot.get("credentials")
+            cred_status = self._diagnose_credentials(credentials)
+
+        # Build sheet diagnostic from .env
+        if import_sheet_id and export_sheet_id:
+            sheets_status = DiagnosticStatus(
+                name="sheets",
+                state="ok",
+                headline="Sheet configuration ready",
+                detail=f"Import: {import_sheet_id[:12]}..., Export: {export_sheet_id[:12]}...",
+                validated_at=utc_now(),
+            )
+        else:
+            sheets_status = DiagnosticStatus(
+                name="sheets",
+                state="error",
+                headline="Sheet configuration missing",
+                detail="Set IMPORT_SPREADSHEET_ID and EXPORT_SPREADSHEET_ID in .env file",
+            )
+
+        # Check models from data/model_selection.json
+        data_path = self._secrets_root
+        model_file = data_path / "model_selection.json"
+        if model_file.exists():
+            try:
+                import json
+                with model_file.open("r") as f:
+                    model_data = json.load(f)
+                embedding = model_data.get("embedding", {})
+                reranker = model_data.get("reranker", {})
+                model_status = DiagnosticStatus(
+                    name="models",
+                    state="ok",
+                    headline="Model selection configured",
+                    detail=f"Embedding: {embedding.get('repo', 'N/A')}, Reranker: {reranker.get('repo', 'N/A')}",
+                    validated_at=utc_now(),
+                )
+            except Exception:
+                model_status = DiagnosticStatus(
+                    name="models",
+                    state="warn",
+                    headline="Model file invalid",
+                    detail=f"Check {model_file}",
+                )
+        else:
+            model_status = DiagnosticStatus(
+                name="models",
+                state="info",
+                headline="Using default models",
+                detail="No custom model selection configured",
+            )
+
+        # Check database status
+        database_filename = os.getenv("DATABASE_FILENAME", "chl.db")
+        db_path = data_path / database_filename
+        if db_path.exists():
+            try:
+                db_size_mb = db_path.stat().st_size / (1024 * 1024)
+                # Check if we can query the database
+                from src.storage.schema import Experience, CategoryManual
+                exp_count = session.query(Experience).count()
+                manual_count = session.query(CategoryManual).count()
+                database_status = DiagnosticStatus(
+                    name="database",
+                    state="ok",
+                    headline="Database ready",
+                    detail=f"{db_size_mb:.1f} MB · {exp_count} experiences · {manual_count} manuals",
+                    validated_at=utc_now(),
+                )
+            except Exception as exc:
+                database_status = DiagnosticStatus(
+                    name="database",
+                    state="error",
+                    headline="Database error",
+                    detail=str(exc),
+                )
+        else:
+            database_status = DiagnosticStatus(
+                name="database",
+                state="error",
+                headline="Database not found",
+                detail=f"Run setup.py to initialize database at {db_path}",
+            )
+
+        # Check FAISS index status
+        # Index files use model-specific naming: unified_{model_slug}.index
+        # Check if any .index file exists in the faiss_index directory
+        faiss_index_dir = data_path / "faiss_index"
+        index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
+        if index_files:
+            try:
+                from src.storage.schema import FAISSMetadata
+                from sqlalchemy import func
+                # Count non-deleted vectors in metadata table
+                vector_count = session.query(func.count(FAISSMetadata.id)).filter(
+                    FAISSMetadata.deleted == False
+                ).scalar() or 0
+
+                if vector_count > 0:
+                    # Use the first index file found
+                    index_size_mb = index_files[0].stat().st_size / (1024 * 1024)
+                    # Get most recent creation timestamp
+                    latest_entry = session.query(FAISSMetadata).order_by(
+                        FAISSMetadata.created_at.desc()
+                    ).first()
+                    built_date = latest_entry.created_at[:10] if latest_entry and latest_entry.created_at else 'N/A'
+
+                    faiss_status = DiagnosticStatus(
+                        name="faiss",
+                        state="ok",
+                        headline="FAISS index ready",
+                        detail=f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
+                        validated_at=utc_now(),
+                    )
+                else:
+                    faiss_status = DiagnosticStatus(
+                        name="faiss",
+                        state="warn",
+                        headline="FAISS metadata missing",
+                        detail="Index files exist but metadata table is empty. Rebuild index via Operations page to sync.",
+                    )
+            except Exception as exc:
+                faiss_status = DiagnosticStatus(
+                    name="faiss",
+                    state="warn",
+                    headline="FAISS check failed",
+                    detail=str(exc),
+                )
+        else:
+            faiss_status = DiagnosticStatus(
+                name="faiss",
+                state="info",
+                headline="FAISS index not built",
+                detail="Build index via Operations page or upload snapshot",
+            )
+
+        # Check disk space
+        try:
+            import shutil
+            disk_usage = shutil.disk_usage(str(data_path))
+            free_gb = disk_usage.free / (1024 ** 3)
+            total_gb = disk_usage.total / (1024 ** 3)
+            used_percent = (disk_usage.used / disk_usage.total) * 100
+
+            if used_percent > 90:
+                disk_state = "error"
+                disk_headline = "Disk space critical"
+            elif used_percent > 75:
+                disk_state = "warn"
+                disk_headline = "Disk space low"
+            else:
+                disk_state = "ok"
+                disk_headline = "Disk space healthy"
+
+            disk_status = DiagnosticStatus(
+                name="disk",
+                state=disk_state,
+                headline=disk_headline,
+                detail=f"{free_gb:.1f} GB free of {total_gb:.1f} GB ({used_percent:.1f}% used)",
+                validated_at=utc_now(),
+            )
+        except Exception as exc:
+            disk_status = DiagnosticStatus(
+                name="disk",
+                state="warn",
+                headline="Disk check failed",
+                detail=str(exc),
+            )
 
         return {
             "credentials": cred_status,
             "sheets": sheets_status,
             "models": model_status,
+            "database": database_status,
+            "faiss": faiss_status,
+            "disk": disk_status,
         }
 
     # ------------------------------------------------------------------

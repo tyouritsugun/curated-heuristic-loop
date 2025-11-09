@@ -634,6 +634,7 @@ def _get_env_config_status() -> dict:
     credentials_state = "error"
     credentials_status = "Not configured"
     credentials_detail = None
+    cred_file = None
 
     if credentials_path:
         cred_file = Path(credentials_path)
@@ -1162,40 +1163,19 @@ async def diagnostics_probe(
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
 ):
-    actor = _actor_from_request(request)
-    snapshot = settings_service.snapshot(session)
-    sheets = snapshot.get("sheets") if snapshot else None
-    config_path = sheets.get("config_path") if sheets else None
-    if not config_path:
-        return _respond(
-            "partials/diagnostics_panel.html",
-            request,
-            session,
-            settings_service,
-            error="Load scripts_config.yaml before running diagnostics.",
-        )
+    """Refresh diagnostics by re-running all checks.
 
-    try:
-        settings_service.load_sheet_config(
-            session,
-            config_path=config_path,
-            actor=actor,
-        )
-    except SettingValidationError as exc:
-        return _respond(
-            "partials/diagnostics_panel.html",
-            request,
-            session,
-            settings_service,
-            error=str(exc),
-        )
-
+    Configuration is now managed via .env file, so this endpoint
+    just triggers a fresh diagnostic check without loading any config files.
+    """
+    # Diagnostics are automatically refreshed when we render the response
+    # No need to load scripts_config.yaml since configuration is in .env
     return _respond(
         "partials/diagnostics_panel.html",
         request,
         session,
         settings_service,
-        message="scripts_config.yaml reloaded and connectivity refreshed.",
+        message="Diagnostics refreshed. Configuration is managed via .env file.",
         message_level="success",
         trigger_event="settings-changed",
     )

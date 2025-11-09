@@ -138,6 +138,10 @@ def initialize_faiss_with_recovery(
                 logger.warning("No valid entities found for rebuild")
                 faiss_manager.save()
 
+            # Explicitly flush metadata changes before session_scope commits
+            # This ensures faiss_metadata rows are written to database
+            session.flush()
+
             return faiss_manager
 
         except Exception as e3:

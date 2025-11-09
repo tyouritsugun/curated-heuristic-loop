@@ -12,16 +12,18 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    ```
 2. **Clone the repo and enter it**:
    ```bash
-   git clone https://github.com/<your-org>/curated-heuristic-loop.git
+   git clone https://github.com/tyouritsugun/curated-heuristic-loop.git
    cd curated-heuristic-loop
    ```
 3. **Sync dependencies (includes FAISS + embedding clients)**:
    ```bash
    uv sync --python 3.11 --extra ml
    ```
-   > Skip only if you plan to run in text-search mode. The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., so vector search and reranking work on day one.
+   > The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., so vector search and reranking will work effectively.
 
-4. **Configure environment** (new in Phase 1):
+4. **Configure environment**:
+   Apply the google service account and download the json credential file. 
+   Prepare the google spreadsheets for import and export, and share them with the account in your google service credential file with read and write permission.
    ```bash
    cp .env.sample .env
    # Edit .env and fill in:
@@ -29,13 +31,17 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    # - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
    # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
    ```
-   > The `.env` file is auto-loaded by the FastAPI server, MCP server, and scripts via python-dotenv. No need to duplicate configuration in MCP client settings.
 
 5. **Run first-time setup** (optional but recommended):
    ```bash
+   # Default
    uv run python scripts/setup.py
+
+   # Recommended if you have GPU VRAM
+   uv run python scripts/setup.py --download-models
+
    ```
-   > This validates your environment, copies credentials, initializes the database, and downloads models. Add `--download-models` for interactive model selection.
+   > This validates your environment, copies credentials, initializes the database, and downloads models. 
 
 6. **Start the bundled FastAPI server**:
    ```bash

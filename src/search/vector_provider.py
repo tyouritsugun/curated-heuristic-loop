@@ -297,9 +297,9 @@ class VectorFAISSProvider(SearchProvider):
             # Create new empty index
             self.index_manager._create_new_index()
 
-            # Get all embeddings for this model
+            # Get all embeddings for this model (use model_repo, not model_name which includes quantization)
             embeddings = emb_repo.get_all_by_model(
-                self.embedding_client.model_name,
+                self.embedding_client.model_repo,
                 entity_type=None  # Both experiences and manuals
             )
 

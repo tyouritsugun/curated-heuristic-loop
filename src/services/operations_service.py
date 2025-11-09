@@ -75,6 +75,7 @@ class OperationsService:
                 self._handlers["import"] = self._import_handler
                 self._handlers["export"] = self._export_handler
                 self._handlers["index"] = self._index_handler
+                self._handlers["sync"] = self._sync_handler
                 return
             logger.warning(
                 "OperationsService mode 'scripts' requested but scripts directory '%s' is missing. "
@@ -87,6 +88,7 @@ class OperationsService:
         self._handlers.setdefault("import", self._noop_handler)
         self._handlers.setdefault("export", self._noop_handler)
         self._handlers.setdefault("index", self._noop_handler)
+        self._handlers.setdefault("sync", self._noop_handler)
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -293,7 +295,19 @@ class OperationsService:
         payload = payload or {}
         if config := payload.get("config"):
             command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
+        result = self._run_script(command, payload)
+
+        # Auto-trigger sync job if import succeeded
+        if result.get("exit_code") == 0:
+            try:
+                logger.info("Import succeeded, triggering automatic sync job...")
+                self.trigger(job_type="sync", payload={}, actor="system:auto_import")
+            except OperationConflict:
+                logger.warning("Sync job already running, skipping automatic trigger")
+            except Exception as e:
+                logger.error(f"Failed to trigger automatic sync job: {e}")
+
+        return result
 
     def _export_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
         del session
@@ -316,6 +330,47 @@ class OperationsService:
         ]
         payload = payload or {}
         return self._run_script(command, payload)
+
+    def _sync_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Run sync_embeddings.py followed by rebuild_index.py"""
+        del session
+        payload = payload or {}
+
+        # Step 1: Sync embeddings
+        logger.info("Running embedding sync...")
+        sync_command = [
+            sys.executable,
+            str(self._scripts_dir / "sync_embeddings.py"),
+        ]
+        if payload.get("retry_failed"):
+            sync_command.append("--retry-failed")
+        if max_count := payload.get("max_count"):
+            sync_command.extend(["--max-count", str(max_count)])
+
+        sync_result = self._run_script(sync_command, payload)
+
+        # If sync failed, return early
+        if sync_result.get("exit_code") != 0:
+            return {
+                "phase": "sync_embeddings",
+                "sync_result": sync_result,
+                "message": "Embedding sync failed, skipping index rebuild"
+            }
+
+        # Step 2: Rebuild index
+        logger.info("Running index rebuild...")
+        index_command = [
+            sys.executable,
+            str(self._scripts_dir / "rebuild_index.py"),
+        ]
+        index_result = self._run_script(index_command, payload)
+
+        return {
+            "phase": "complete",
+            "sync_result": sync_result,
+            "index_result": index_result,
+            "message": "Sync and rebuild completed successfully"
+        }
 
     def _simulate_delay(self, payload: Optional[Dict[str, Any]]) -> None:
         if not payload:

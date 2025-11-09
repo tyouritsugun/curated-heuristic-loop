@@ -94,36 +94,6 @@ TOOL_INDEX = [
         "description": "Return the generator or evaluator workflow manual seeded in GLN.",
         "example": {"guide_type": "generator"}
     },
-    {
-        "name": "run_import",
-        "description": "Trigger import operation via API; returns job id + status.",
-        "example": {"payload": {"mode": "full"}}
-    },
-    {
-        "name": "run_export",
-        "description": "Trigger export operation via API; returns job id + status.",
-        "example": {"payload": {"dest": "sheets"}}
-    },
-    {
-        "name": "rebuild_index",
-        "description": "Trigger index maintenance via API operations; returns job id + status.",
-        "example": {}
-    },
-    {
-        "name": "job_status",
-        "description": "Fetch status of a previously triggered operation job by id.",
-        "example": {"job_id": "<uuid>"}
-    },
-    {
-        "name": "cancel_job",
-        "description": "Cancel a running or queued operation job by id.",
-        "example": {"job_id": "<uuid>"}
-    },
-    {
-        "name": "list_jobs",
-        "description": "List recent operation jobs (limit 1-100).",
-        "example": {"limit": 10}
-    },
 ]
 
 WORKFLOW_MODE_PAYLOAD = {
@@ -475,12 +445,6 @@ def init_server():
     mcp.tool()(update_entry)
     mcp.tool()(delete_entry)
     mcp.tool()(get_guidelines)
-    mcp.tool()(run_import)
-    mcp.tool()(run_export)
-    mcp.tool()(rebuild_index)
-    mcp.tool()(job_status)
-    mcp.tool()(cancel_job)
-    mcp.tool()(list_jobs)
 
     try:
         mcp.instructions = json.dumps(_build_handshake_payload())
@@ -720,122 +684,9 @@ def get_guidelines(guide_type: str, version: str = None) -> Dict[str, Any]:
         raise MCPError(f"Unexpected error: {e}")
 
 
-def _actor_header() -> Dict[str, str]:
-    """Best-effort actor header for operations audit trail."""
-    try:
-        import getpass
-        actor = getpass.getuser() or "unknown"
-    except Exception:
-        actor = "unknown"
-    return {"x-actor": actor}
-
-
-def run_import(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Trigger an import job via API operations endpoint."""
-    try:
-        body = {"payload": payload} if payload else {}
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/operations/import",
-            payload=body,
-            headers=_actor_header(),
-        )
-        return response
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in run_import: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def run_export(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Trigger an export job via API operations endpoint."""
-    try:
-        body = {"payload": payload} if payload else {}
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/operations/export",
-            payload=body,
-            headers=_actor_header(),
-        )
-        return response
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in run_export: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def rebuild_index(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Trigger an index maintenance job via API operations endpoint."""
-    try:
-        body = {"payload": payload} if payload else {}
-        response, _ = _request_with_fallback(
-            "POST",
-            "/api/v1/operations/index",
-            payload=body,
-            headers=_actor_header(),
-        )
-        return response
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in rebuild_index: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def job_status(job_id: str) -> Dict[str, Any]:
-    """Fetch status of a previously triggered operation job by id."""
-    try:
-        response, _ = _request_with_fallback(
-            "GET",
-            f"/api/v1/operations/jobs/{job_id}",
-            headers=_actor_header(),
-        )
-        return response
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in job_status: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def cancel_job(job_id: str) -> Dict[str, Any]:
-    """Cancel a running or queued operation job by id."""
-    try:
-        response, _ = _request_with_fallback(
-            "POST",
-            f"/api/v1/operations/jobs/{job_id}/cancel",
-            headers=_actor_header(),
-        )
-        return response
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in cancel_job: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def list_jobs(limit: int = 10) -> Dict[str, Any]:
-    """List recent operation jobs."""
-    try:
-        try:
-            l = int(limit)
-        except (TypeError, ValueError):
-            l = 10
-        l = max(1, min(l, 100))
-        response, _ = _request_with_fallback(
-            "GET",
-            f"/api/v1/operations/jobs?limit={l}",
-            headers=_actor_header(),
-        )
-        # Wrap in an object for consistency with MCP tool conventions
-        return {"jobs": response, "limit": l}
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in list_jobs: {e}")
-        raise MCPError(f"Unexpected error: {e}")
+# Operations management tools (run_import, run_export, rebuild_index, job_status,
+# cancel_job, list_jobs) have been removed from MCP interface.
+# These operations should be managed through the web UI at /operations.
 
 
 # Initialize on module load unless explicitly skipped (useful for tests)

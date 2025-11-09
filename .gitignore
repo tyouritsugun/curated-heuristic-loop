@@ -22,7 +22,6 @@ env/
 htmlcov/
 
 # Credentials and sensitive files
-scripts/scripts_config.yaml
 credentials/
 *.pem
 *.key

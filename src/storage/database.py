@@ -48,6 +48,7 @@ class Database:
             cursor = dbapi_conn.cursor()
             try:
                 cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout for concurrent access
                 try:
                     cursor.execute("PRAGMA journal_mode=WAL")
                 except Exception:

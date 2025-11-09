@@ -2,31 +2,30 @@
   id="ops-controls-card"
   class="card ops-card"
   hx-get="/ui/operations/controls"
-  hx-trigger="ops-refresh from:body"
+  hx-trigger="ops-refresh from:body, every 3s"
   hx-target="this"
   hx-swap="outerHTML"
 >
   <header>
     <div>
       <h2>Operations</h2>
-      <p class="muted">Trigger import/export/index jobs with advisory locks.</p>
+      <p class="muted">Trigger import/export jobs with advisory locks. Embeddings sync automatically after import.</p>
     </div>
   </header>
   <div class="ops-actions">
+    {% set import_active = (job_summaries or {}).get('import', {}).get('is_active', False) %}
+    {% set export_active = (job_summaries or {}).get('export', {}).get('is_active', False) %}
     <form hx-post="/ui/operations/run/import" hx-target="#ops-controls-card" hx-swap="outerHTML">
-      <button type="submit">Run Import</button>
+      <button type="submit" {% if import_active %}disabled{% endif %}>Run Import</button>
     </form>
     <form hx-post="/ui/operations/run/export" hx-target="#ops-controls-card" hx-swap="outerHTML">
-      <button type="submit" class="secondary">Run Export</button>
-    </form>
-    <form hx-post="/ui/operations/run/index" hx-target="#ops-controls-card" hx-swap="outerHTML">
-      <button type="submit" class="secondary">Rebuild Index</button>
+      <button type="submit" class="secondary" {% if export_active %}disabled{% endif %}>Run Export</button>
     </form>
   </div>
   <small class="muted">Buttons disable automatically if a job already holds the lock.</small>
-  <small class="muted caution-text">Import expects the target Google Sheet to already have <em>Categories</em>, <em>Experiences</em>, and <em>Manuals</em> worksheets. Export clears those worksheets before writing fresh rows from <code>data/chl.db</code>.</small>
+  <small class="muted caution-text">Import expects the target Google Sheet to already have <em>Categories</em>, <em>Experiences</em>, and <em>Manuals</em> worksheets. Export clears those worksheets before writing fresh rows from <code>data/chl.db</code>. After import, embeddings are generated and the search index is rebuilt automatically.</small>
   <div class="ops-last-run">
-    {% set ordered = ['import', 'export', 'index'] %}
+    {% set ordered = ['import', 'export', 'sync'] %}
     {% for job_type in ordered %}
       {% set summary = (job_summaries or {}).get(job_type) %}
       <div class="run-row" data-job-type="{{ job_type }}">
