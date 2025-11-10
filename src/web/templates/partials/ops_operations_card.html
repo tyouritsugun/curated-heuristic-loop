@@ -9,23 +9,87 @@
 >
   <header>
     <div>
-      <h2>Operations</h2>
+      <h2>Data Operations</h2>
       <p class="muted">Trigger import/export jobs with advisory locks. Embeddings sync automatically after import.</p>
     </div>
   </header>
-  <div class="ops-actions">
-    {# Guard against None summaries to avoid calling .get on None #}
-    {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
-    {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
-    {% set import_active = import_summary.get('is_active', False) %}
-    {% set export_active = export_summary.get('is_active', False) %}
-    <form hx-post="/ui/operations/run/import" hx-target="#ops-controls-card" hx-swap="outerHTML">
-      <button type="submit" {% if import_active %}disabled{% endif %}>Run Import</button>
-    </form>
-    <form hx-post="/ui/operations/run/export" hx-target="#ops-controls-card" hx-swap="outerHTML">
-      <button type="submit" class="secondary" {% if export_active %}disabled{% endif %}>Run Export</button>
-    </form>
+
+  {# Import Configuration Card #}
+  <div class="data-operation-card">
+    <h3>Import</h3>
+    {% if env_config_status %}
+      <dl class="config-display">
+        <div>
+          <dt>Source Sheet:</dt>
+          <dd><code>{{ env_config_status.import_spreadsheet_id or 'Not configured' }}</code></dd>
+        </div>
+        <div>
+          <dt>Worksheets:</dt>
+          <dd>{{ env_config_status.import_worksheets or 'Categories, Experiences, Manuals' }}</dd>
+        </div>
+      </dl>
+      <small class="muted">To change source sheet, edit <code>.env</code> (no restart needed)</small>
+    {% endif %}
+
+    <div class="ops-actions">
+      {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
+      {% set import_active = import_summary.get('is_active', False) %}
+      <form hx-post="/ui/operations/run/import" hx-target="#ops-controls-card" hx-swap="outerHTML">
+        <button type="submit" {% if import_active %}disabled{% endif %}>
+          {% if import_active %}
+            Importing...
+          {% else %}
+            Run Import
+          {% endif %}
+        </button>
+      </form>
+      {% if import_active and import_summary.get('progress') %}
+        <div class="progress-indicator">
+          <progress value="{{ import_summary.get('progress', 0) }}" max="100"></progress>
+          <span>{{ import_summary.get('progress', 0) }}%</span>
+        </div>
+      {% endif %}
+    </div>
   </div>
+
+  {# Export Configuration Card #}
+  <div class="data-operation-card">
+    <h3>Export</h3>
+    {% if env_config_status %}
+      <dl class="config-display">
+        <div>
+          <dt>Target Sheet:</dt>
+          <dd><code>{{ env_config_status.export_spreadsheet_id or 'Not configured' }}</code></dd>
+        </div>
+        <div>
+          <dt>Worksheets:</dt>
+          <dd>{{ env_config_status.export_worksheets or 'Categories, Experiences, Manuals' }}</dd>
+        </div>
+      </dl>
+      <small class="muted">To change target sheet, edit <code>.env</code> (no restart needed)</small>
+    {% endif %}
+
+    <div class="ops-actions">
+      {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
+      {% set export_active = export_summary.get('is_active', False) %}
+      <form hx-post="/ui/operations/run/export" hx-target="#ops-controls-card" hx-swap="outerHTML">
+        <button type="submit" class="secondary" {% if export_active %}disabled{% endif %}>
+          {% if export_active %}
+            Exporting...
+          {% else %}
+            Run Export
+          {% endif %}
+        </button>
+      </form>
+      {% if export_active and export_summary.get('progress') %}
+        <div class="progress-indicator">
+          <progress value="{{ export_summary.get('progress', 0) }}" max="100"></progress>
+          <span>{{ export_summary.get('progress', 0) }}%</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
   <small class="muted">Buttons disable automatically if a job already holds the lock.</small>
   <small class="muted caution-text">Import expects the target Google Sheet to already have <em>Categories</em>, <em>Experiences</em>, and <em>Manuals</em> worksheets. Export clears those worksheets before writing fresh rows from <code>data/chl.db</code>. After import, embeddings are generated and the search index is rebuilt automatically.</small>
   <div class="ops-last-run">

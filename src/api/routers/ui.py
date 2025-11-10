@@ -522,6 +522,7 @@ def _build_operations_context(
         "job_summaries": job_summaries,
         "index_info": index_info,
         "active_page": "operations",
+        "env_config_status": _get_env_config_status(),
     }
 
 
@@ -606,6 +607,52 @@ def _actor_from_request(request: Request) -> str:
     return request.headers.get("x-actor") or WEB_ACTOR
 
 
+def _get_model_info() -> dict:
+    """Get current model configuration from model_selection.json or environment."""
+    import json
+    from pathlib import Path
+
+    model_info = {
+        "state": "warn",
+        "headline": "Not configured",
+        "embedding_repo": None,
+        "embedding_quant": None,
+        "reranker_repo": None,
+        "reranker_quant": None,
+        "embedding_size": None,
+    }
+
+    # Try to load from model_selection.json (preferred)
+    project_root = Path(__file__).resolve().parents[3]
+    model_selection_path = project_root / "data" / "model_selection.json"
+
+    if model_selection_path.exists():
+        try:
+            with model_selection_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            model_info["embedding_repo"] = data.get("embedding_repo")
+            model_info["embedding_quant"] = data.get("embedding_quant")
+            model_info["reranker_repo"] = data.get("reranker_repo")
+            model_info["reranker_quant"] = data.get("reranker_quant")
+            model_info["embedding_size"] = data.get("embedding_size")
+
+            if all([model_info["embedding_repo"], model_info["embedding_quant"],
+                    model_info["reranker_repo"], model_info["reranker_quant"]]):
+                model_info["state"] = "ok"
+                model_info["headline"] = "Loaded"
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback to environment variables
+    if not model_info["embedding_repo"]:
+        model_info["embedding_repo"] = os.getenv("CHL_EMBEDDING_REPO")
+        model_info["embedding_quant"] = os.getenv("CHL_EMBEDDING_QUANT")
+        model_info["reranker_repo"] = os.getenv("CHL_RERANKER_REPO")
+        model_info["reranker_quant"] = os.getenv("CHL_RERANKER_QUANT")
+
+    return model_info
+
+
 def _get_env_config_status() -> dict:
     """Read configuration from environment variables for display.
 
@@ -680,6 +727,9 @@ def _get_env_config_status() -> dict:
         overall_state = "warn"
         overall_headline = "Configuration incomplete"
 
+    # Model information from Config or model_selection.json
+    model_info = _get_model_info()
+
     return {
         "state": overall_state,
         "headline": overall_headline,
@@ -691,6 +741,7 @@ def _get_env_config_status() -> dict:
         "import_worksheets": import_worksheets,
         "export_sheet_id": export_sheet_id if export_sheet_id else None,
         "export_worksheets": export_worksheets,
+        "model_info": model_info,
     }
 
 
@@ -847,6 +898,208 @@ def operations_index_card(
         search_service=search_service,
         config=config,
     )
+
+
+@router.get("/ui/operations/models", response_class=HTMLResponse)
+def operations_models_card(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+):
+    return _operations_partial_response(
+        "partials/ops_models_card.html",
+        request,
+        session,
+        settings_service,
+        telemetry_service,
+        operations_service,
+        worker_control,
+    )
+
+
+@router.get("/ui/operations/models/change", response_class=HTMLResponse)
+def get_model_change_modal(
+    request: Request,
+    session: Session = Depends(get_db_session),
+):
+    """Render the model change modal with current selections and impact estimate."""
+    from src.storage.repository import ExperienceRepository, ManualRepository
+
+    # Get current model info
+    current_models = _get_model_info()
+
+    # Get impact estimate (count of items that will need re-embedding)
+    exp_repo = ExperienceRepository(session)
+    manual_repo = ManualRepository(session)
+
+    experience_count = exp_repo.count()
+    manual_count = manual_repo.count()
+    total_items = experience_count + manual_count
+
+    # Rough estimate: ~2 seconds per item for embedding generation
+    estimated_seconds = total_items * 2
+    if estimated_seconds < 60:
+        estimated_time = f"~{estimated_seconds}s"
+    elif estimated_seconds < 3600:
+        estimated_time = f"~{estimated_seconds // 60}m"
+    else:
+        estimated_time = f"~{estimated_seconds // 3600}h {(estimated_seconds % 3600) // 60}m"
+
+    impact_estimate = {
+        "experience_count": experience_count,
+        "manual_count": manual_count,
+        "total_items": total_items,
+        "estimated_time": estimated_time,
+    }
+
+    context = {
+        "request": request,
+        "current_models": current_models,
+        "embedding_choices": EMBEDDING_CHOICES,
+        "reranker_choices": RERANKER_CHOICES,
+        "impact_estimate": impact_estimate,
+    }
+
+    return templates.TemplateResponse("partials/model_change_modal.html", context)
+
+
+def _check_disk_space(min_gb: float = 10.0) -> tuple[bool, str]:
+    """Check if sufficient disk space is available.
+
+    Args:
+        min_gb: Minimum required disk space in GB
+
+    Returns:
+        Tuple of (has_space, message)
+    """
+    try:
+        # Check available space in user's home directory (where HF models are cached)
+        home = Path.home()
+        stat = shutil.disk_usage(home)
+        available_gb = stat.free / (1024 ** 3)
+
+        if available_gb < min_gb:
+            return False, f"Insufficient disk space: {available_gb:.1f} GB available, {min_gb:.1f} GB required"
+
+        return True, f"{available_gb:.1f} GB available"
+    except Exception as e:
+        logger.warning(f"Failed to check disk space: {e}")
+        # Continue anyway if check fails
+        return True, "Could not verify disk space"
+
+
+@router.post("/ui/operations/models/change", response_class=HTMLResponse)
+async def post_model_change(
+    request: Request,
+    embedding_choice: str = Form(...),
+    reranker_choice: str = Form(...),
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+):
+    """Handle model change request and trigger re-embedding job."""
+    actor = _actor_from_request(request)
+
+    # Check disk space before proceeding
+    has_space, space_msg = _check_disk_space(min_gb=10.0)
+    if not has_space:
+        return _operations_partial_response(
+            "partials/ops_models_card.html",
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            error=f"Cannot change models: {space_msg}. Free up disk space and try again.",
+        )
+
+    # Parse model choices
+    embedding_repo, embedding_quant = _parse_model_choice(embedding_choice)
+    reranker_repo, reranker_quant = _parse_model_choice(reranker_choice)
+
+    if not all([embedding_repo, embedding_quant, reranker_repo, reranker_quant]):
+        return _operations_partial_response(
+            "partials/ops_models_card.html",
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            error="Invalid model selection",
+        )
+
+    # Save model selection to model_selection.json
+    try:
+        model_selection_data = {
+            "embedding_repo": embedding_repo,
+            "embedding_quant": embedding_quant,
+            "reranker_repo": reranker_repo,
+            "reranker_quant": reranker_quant,
+        }
+
+        project_root = Path(__file__).resolve().parents[3]
+        model_selection_path = project_root / "data" / "model_selection.json"
+        model_selection_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with model_selection_path.open("w", encoding="utf-8") as f:
+            json.dump(model_selection_data, f, indent=2, ensure_ascii=False)
+
+        # Log the model change
+        session.add(
+            AuditLog(
+                event_type="models.changed",
+                actor=actor,
+                context=json.dumps(model_selection_data, ensure_ascii=False),
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+
+        # Trigger re-embedding operation to process all content with new models
+        try:
+            operations_service.trigger(job_type="reembed", payload=model_selection_data, actor=actor)
+            message = (
+                f"Model selection saved. Server restart required to load new models. "
+                f"All content will be re-embedded automatically after restart."
+            )
+        except Exception as reembed_exc:
+            logger.warning(f"Failed to trigger reembed job: {reembed_exc}")
+            message = (
+                f"Model selection saved. Server restart required to load new models. "
+                f"Re-embedding must be triggered manually via sync operation."
+            )
+
+        return _operations_partial_response(
+            "partials/ops_models_card.html",
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            message=message,
+            message_level="info",
+        )
+
+    except Exception as exc:
+        logger.exception("Failed to save model selection")
+        return _operations_partial_response(
+            "partials/ops_models_card.html",
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            error=f"Failed to save model selection: {str(exc)}",
+        )
 
 
 @router.post("/ui/operations/run/{operation_type}", response_class=HTMLResponse)

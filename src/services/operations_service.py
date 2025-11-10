@@ -76,6 +76,7 @@ class OperationsService:
                 self._handlers["export"] = self._export_handler
                 self._handlers["index"] = self._index_handler
                 self._handlers["sync"] = self._sync_handler
+                self._handlers["reembed"] = self._reembed_handler
                 return
             logger.warning(
                 "OperationsService mode 'scripts' requested but scripts directory '%s' is missing. "
@@ -89,6 +90,7 @@ class OperationsService:
         self._handlers.setdefault("export", self._noop_handler)
         self._handlers.setdefault("index", self._noop_handler)
         self._handlers.setdefault("sync", self._noop_handler)
+        self._handlers.setdefault("reembed", self._noop_handler)
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -394,6 +396,59 @@ class OperationsService:
             "sync_result": sync_result,
             "index_result": index_result,
             "message": "Sync and rebuild completed successfully"
+        }
+
+    def _reembed_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Re-generate all embeddings with current models and rebuild FAISS index.
+
+        This handler marks all experiences and manuals as 'pending' for re-embedding,
+        which allows the background worker to process them with the new model configuration.
+        After marking entities as pending, it triggers a sync job to process the queue.
+
+        Used when user changes embedding/reranker models via Operations UI.
+        """
+        from src.storage.schema import Experience, CategoryManual
+
+        payload = payload or {}
+        logger.info("Starting re-embed operation...")
+
+        # Step 1: Count entities
+        exp_count = session.query(Experience).count()
+        manual_count = session.query(CategoryManual).count()
+        total_count = exp_count + manual_count
+
+        logger.info(f"Marking {total_count} entities for re-embedding ({exp_count} experiences, {manual_count} manuals)")
+
+        # Step 2: Mark all experiences as pending
+        session.query(Experience).update(
+            {"embedding_status": "pending"},
+            synchronize_session=False
+        )
+
+        # Step 3: Mark all manuals as pending
+        session.query(CategoryManual).update(
+            {"embedding_status": "pending"},
+            synchronize_session=False
+        )
+
+        session.commit()
+        logger.info(f"Marked {total_count} entities as pending for re-embedding")
+
+        # Step 4: Auto-trigger sync job to process the pending queue
+        try:
+            logger.info("Triggering automatic sync job for re-embedding...")
+            self.trigger(job_type="sync", payload={}, actor="system:auto_reembed")
+        except OperationConflict:
+            logger.warning("Sync job already running, pending embeddings will be processed")
+        except Exception as e:
+            logger.error(f"Failed to trigger automatic sync job: {e}")
+
+        return {
+            "phase": "complete",
+            "experience_count": exp_count,
+            "manual_count": manual_count,
+            "total_count": total_count,
+            "message": f"Marked {total_count} entities for re-embedding. Background worker will process queue."
         }
 
     def _simulate_delay(self, payload: Optional[Dict[str, Any]]) -> None:
