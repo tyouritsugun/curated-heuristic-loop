@@ -28,16 +28,38 @@
     </div>
 
     <div class="config-section">
-      <h3>Import Spreadsheet</h3>
+      <div class="section-header">
+        <h3>Import Spreadsheet</h3>
+        {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
+        {% set import_active = import_summary.get('is_active', False) %}
+        <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML">
+          <button type="submit" {% if import_active %}disabled{% endif %}>
+            {% if import_active %}
+              Importing...
+            {% else %}
+              Run Import
+            {% endif %}
+          </button>
+        </form>
+      </div>
       {% if config_status.import_sheet_id %}
-        <div class="status-row">
-          <span class="label">Sheet ID:</span>
-          <code class="config-value">{{ config_status.import_sheet_id }}</code>
-        </div>
-        <div class="status-row">
-          <span class="label">Worksheets:</span>
-          <span class="config-value">{{ config_status.import_worksheets }}</span>
-        </div>
+        {% set summary = import_summary %}
+        {% if summary %}
+          <div class="status-row">
+            <div>
+              <p class="run-label">Last Run</p>
+              <p class="muted">{{ summary.description or 'Activity recorded.' }}</p>
+            </div>
+            <span class="status-pill {{ summary.pill_class }}" data-job-status="{{ summary.status }}">
+              {{ summary.status_label }}
+            </span>
+          </div>
+        {% else %}
+          <div class="status-row">
+            <span class="status-chip ok">Configured</span>
+            <small class="muted">No runs yet</small>
+          </div>
+        {% endif %}
       {% else %}
         <div class="status-row">
           <span class="status-chip error">Not Configured</span>
@@ -47,16 +69,38 @@
     </div>
 
     <div class="config-section">
-      <h3>Export Spreadsheet</h3>
+      <div class="section-header">
+        <h3>Export Spreadsheet</h3>
+        {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
+        {% set export_active = export_summary.get('is_active', False) %}
+        <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML">
+          <button type="submit" class="secondary" {% if export_active %}disabled{% endif %}>
+            {% if export_active %}
+              Exporting...
+            {% else %}
+              Run Export
+            {% endif %}
+          </button>
+        </form>
+      </div>
       {% if config_status.export_sheet_id %}
-        <div class="status-row">
-          <span class="label">Sheet ID:</span>
-          <code class="config-value">{{ config_status.export_sheet_id }}</code>
-        </div>
-        <div class="status-row">
-          <span class="label">Worksheets:</span>
-          <span class="config-value">{{ config_status.export_worksheets }}</span>
-        </div>
+        {% set summary = export_summary %}
+        {% if summary %}
+          <div class="status-row">
+            <div>
+              <p class="run-label">Last Run</p>
+              <p class="muted">{{ summary.description or 'Activity recorded.' }}</p>
+            </div>
+            <span class="status-pill {{ summary.pill_class }}" data-job-status="{{ summary.status }}">
+              {{ summary.status_label }}
+            </span>
+          </div>
+        {% else %}
+          <div class="status-row">
+            <span class="status-chip ok">Configured</span>
+            <small class="muted">No runs yet</small>
+          </div>
+        {% endif %}
       {% else %}
         <div class="status-row">
           <span class="status-chip error">Not Configured</span>

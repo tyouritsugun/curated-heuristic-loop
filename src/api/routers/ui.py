@@ -599,6 +599,64 @@ def _operations_partial_response(
     return response
 
 
+def _render_operation_result(
+    template_name: str,
+    request: Request,
+    session: Session,
+    settings_service: SettingsService,
+    telemetry_service,
+    operations_service,
+    worker_control,
+    *,
+    message: Optional[str] = None,
+    message_level: str = "info",
+    error: Optional[str] = None,
+    trigger_event: Optional[str] = None,
+):
+    """Render operation result template with appropriate context.
+
+    For config_status_card, includes both settings and job_summaries context.
+    For ops_operations_card, uses full operations context.
+    """
+    if template_name == "partials/config_status_card.html":
+        # Build settings context with job_summaries
+        context = _build_settings_context(
+            request,
+            session,
+            settings_service,
+            message=message,
+            message_level=message_level,
+            error=error,
+        )
+        # Add job_summaries from operations
+        jobs = operations_service.list_recent(session, limit=10)
+        job_summaries = _summarize_job_runs(jobs, operations_service.last_runs_by_type(session))
+        context["job_summaries"] = job_summaries
+        context["is_partial"] = True
+        response = templates.TemplateResponse(template_name, context)
+    else:
+        # Use full operations context
+        response = _render_operations_template(
+            template_name,
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            None,
+            None,
+            message=message,
+            message_level=message_level,
+            error=error,
+            is_partial=True,
+        )
+
+    if trigger_event and hasattr(response, "headers"):
+        response.headers.setdefault("HX-Trigger", trigger_event)
+    return response
+
+
 def _default_scripts_config_path() -> Path:
     return Path(__file__).resolve().parents[3] / "scripts" / "scripts_config.yaml"
 
@@ -759,9 +817,16 @@ def settings_page(
     request: Request,
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
+    operations_service=Depends(get_operations_service),
 ):
     """Render the settings dashboard."""
-    return _render_full(request, session, settings_service)
+    context = _build_settings_context(request, session, settings_service)
+    # Add job_summaries for import/export status display
+    jobs = operations_service.list_recent(session, limit=10)
+    job_summaries = _summarize_job_runs(jobs, operations_service.last_runs_by_type(session))
+    context["job_summaries"] = job_summaries
+    context["is_partial"] = False
+    return templates.TemplateResponse("settings.html", context)
 
 
 @router.get("/operations", response_class=HTMLResponse)
@@ -816,26 +881,6 @@ def operations_queue_card(
     )
 
 
-@router.get("/ui/operations/workers", response_class=HTMLResponse)
-def operations_workers_card(
-    request: Request,
-    session: Session = Depends(get_db_session),
-    settings_service: SettingsService = Depends(get_settings_service),
-    telemetry_service=Depends(get_telemetry_service),
-    operations_service=Depends(get_operations_service),
-    worker_control=Depends(get_worker_control_service),
-):
-    return _operations_partial_response(
-        "partials/ops_workers_card.html",
-        request,
-        session,
-        settings_service,
-        telemetry_service,
-        operations_service,
-        worker_control,
-    )
-
-
 @router.get("/ui/operations/jobs", response_class=HTMLResponse)
 def operations_jobs_card(
     request: Request,
@@ -873,30 +918,6 @@ def operations_controls_card(
         telemetry_service,
         operations_service,
         worker_control,
-    )
-
-
-@router.get("/ui/operations/index", response_class=HTMLResponse)
-def operations_index_card(
-    request: Request,
-    session: Session = Depends(get_db_session),
-    settings_service: SettingsService = Depends(get_settings_service),
-    telemetry_service=Depends(get_telemetry_service),
-    operations_service=Depends(get_operations_service),
-    worker_control=Depends(get_worker_control_service),
-    search_service=Depends(get_search_service),
-    config=Depends(get_config),
-):
-    return _operations_partial_response(
-        "partials/ops_index_card.html",
-        request,
-        session,
-        settings_service,
-        telemetry_service,
-        operations_service,
-        worker_control,
-        search_service=search_service,
-        config=config,
     )
 
 
@@ -1119,8 +1140,14 @@ async def run_operation_from_ui(
         try:
             parsed_payload = json.loads(payload)
         except json.JSONDecodeError as exc:
-            return _operations_partial_response(
-                "partials/ops_operations_card.html",
+            # Determine target template based on operation type
+            target_template = (
+                "partials/config_status_card.html"
+                if operation_type in ("import", "export")
+                else "partials/ops_operations_card.html"
+            )
+            return _render_operation_result(
+                target_template,
                 request,
                 session,
                 settings_service,
@@ -1133,8 +1160,13 @@ async def run_operation_from_ui(
     try:
         operations_service.trigger(operation_type, parsed_payload, actor)
     except OperationConflict as exc:
-        return _operations_partial_response(
-            "partials/ops_operations_card.html",
+        target_template = (
+            "partials/config_status_card.html"
+            if operation_type in ("import", "export")
+            else "partials/ops_operations_card.html"
+        )
+        return _render_operation_result(
+            target_template,
             request,
             session,
             settings_service,
@@ -1144,8 +1176,13 @@ async def run_operation_from_ui(
             error=str(exc),
         )
     except ValueError as exc:
-        return _operations_partial_response(
-            "partials/ops_operations_card.html",
+        target_template = (
+            "partials/config_status_card.html"
+            if operation_type in ("import", "export")
+            else "partials/ops_operations_card.html"
+        )
+        return _render_operation_result(
+            target_template,
             request,
             session,
             settings_service,
@@ -1155,8 +1192,13 @@ async def run_operation_from_ui(
             error=str(exc),
         )
 
-    return _operations_partial_response(
-        "partials/ops_operations_card.html",
+    target_template = (
+        "partials/config_status_card.html"
+        if operation_type in ("import", "export")
+        else "partials/ops_operations_card.html"
+    )
+    return _render_operation_result(
+        target_template,
         request,
         session,
         settings_service,
@@ -1232,40 +1274,18 @@ async def worker_action_from_ui(
             result = worker_control.drain(session, timeout, actor)
             message = f"Drain status: {result['status']}"
         else:
-            return _operations_partial_response(
-                "partials/ops_workers_card.html",
-                request,
-                session,
-                settings_service,
-                telemetry_service,
-                operations_service,
-                worker_control,
-                error=f"Unsupported worker action '{action}'.",
-            )
+            # Workers card was removed from UI, return JSON error instead
+            raise HTTPException(status_code=400, detail=f"Unsupported worker action '{action}'")
     except WorkerUnavailableError as exc:
-        return _operations_partial_response(
-            "partials/ops_workers_card.html",
-            request,
-            session,
-            settings_service,
-            telemetry_service,
-            operations_service,
-            worker_control,
-            error=str(exc),
-        )
+        # Workers card was removed from UI, return JSON error instead
+        raise HTTPException(status_code=503, detail=str(exc))
 
-    return _operations_partial_response(
-        "partials/ops_workers_card.html",
-        request,
-        session,
-        settings_service,
-        telemetry_service,
-        operations_service,
-        worker_control,
-        message=message,
-        message_level="success",
-        trigger_event="ops-refresh",
-    )
+    # Workers card was removed from UI, return JSON success instead
+    return JSONResponse(content={
+        "success": True,
+        "message": message,
+        "action": action,
+    })
 # DEPRECATED (Phase 2): Sheet configuration now read-only via .env
 # Keeping endpoint for backward compatibility but it returns an error message
 @router.post("/ui/settings/sheets", response_class=HTMLResponse)
@@ -1614,16 +1634,13 @@ async def telemetry_stream(
                 "error": None,
                 "is_partial": True,
             }
+            # Only render templates that still exist in the UI
             queue_html = templates.get_template("partials/ops_queue_card.html").render(render_context)
-            workers_html = templates.get_template("partials/ops_workers_card.html").render(render_context)
             jobs_html = templates.get_template("partials/ops_jobs_card.html").render(render_context)
-            index_html = templates.get_template("partials/ops_index_card.html").render(render_context)
             controls_html = templates.get_template("partials/ops_operations_card.html").render(render_context)
 
             yield {"event": "queue", "data": queue_html}
-            yield {"event": "workers", "data": workers_html}
             yield {"event": "jobs", "data": jobs_html}
-            yield {"event": "index", "data": index_html}
             yield {"event": "controls", "data": controls_html}
 
             emitted += 1
@@ -1690,18 +1707,8 @@ async def upload_index_snapshot(
         )
         if archive_path and archive_path.exists():
             archive_path.unlink(missing_ok=True)
-        return _operations_partial_response(
-            "partials/ops_index_card.html",
-            request,
-            session,
-            settings_service,
-            telemetry_service,
-            operations_service,
-            worker_control,
-            search_service=search_service,
-            config=config,
-            error=str(exc),
-        )
+        # Index card was removed from UI, return JSON error instead
+        raise HTTPException(status_code=400, detail=str(exc))
 
     if archive_path and archive_path.exists():
         archive_path.unlink(missing_ok=True)
@@ -1721,22 +1728,15 @@ async def upload_index_snapshot(
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Failed to record audit log for snapshot upload: %s", exc, exc_info=True)
 
-    reload_note = " Reloaded index." if restore_result.get("reloaded") else " Restart service to apply changes."
-    message = f"Uploaded snapshot ({len(restore_result.get('copied', []))} files)." + reload_note
-    return _operations_partial_response(
-        "partials/ops_index_card.html",
-        request,
-        session,
-        settings_service,
-        telemetry_service,
-        operations_service,
-        worker_control,
-        search_service=search_service,
-        config=config,
-        message=message,
-        message_level="success",
-        trigger_event="ops-refresh",
-    )
+    reload_note = "Reloaded index." if restore_result.get("reloaded") else "Restart service to apply changes."
+    message = f"Uploaded snapshot ({len(restore_result.get('copied', []))} files). {reload_note}"
+    # Index card was removed from UI, return JSON success instead
+    return JSONResponse(content={
+        "success": True,
+        "message": message,
+        "files_copied": restore_result.get("copied", []),
+        "reloaded": restore_result.get("reloaded", False),
+    })
 
 
 def _create_index_archive(config) -> Path:
