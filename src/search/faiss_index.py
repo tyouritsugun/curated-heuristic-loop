@@ -139,23 +139,40 @@ class FAISSIndexManager:
             f"Creating new FAISS IndexFlatIP with dimension={self.dimension}"
         )
 
-        if reset_metadata and self.session:
-            try:
-                from src.storage.schema import FAISSMetadata
+        if reset_metadata:
+            # Get session using factory pattern or fallback to shared session
+            if self.session_factory:
+                session = self.session_factory()
+                owns_session = True
+            elif self.session:
+                session = self.session
+                owns_session = False
+            else:
+                session = None
 
-                deleted_rows = self.session.query(FAISSMetadata).delete()
-                if deleted_rows:
-                    logger.info(
-                        f"Cleared {deleted_rows} stale faiss_metadata rows "
-                        "before creating fresh index"
+            if session:
+                try:
+                    from src.storage.schema import FAISSMetadata
+
+                    deleted_rows = session.query(FAISSMetadata).delete()
+                    if deleted_rows:
+                        logger.info(
+                            f"Cleared {deleted_rows} stale faiss_metadata rows "
+                            "before creating fresh index"
+                        )
+                    if owns_session:
+                        session.commit()
+                    else:
+                        session.flush()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to reset FAISS metadata before rebuilding index: {e}"
                     )
-                self.session.flush()
-            except Exception as e:
-                logger.warning(
-                    f"Failed to reset FAISS metadata before rebuilding index: {e}"
-                )
-                self.session.rollback()
-                raise
+                    session.rollback()
+                    raise
+                finally:
+                    if owns_session:
+                        session.close()
 
         # IndexFlatIP for cosine similarity (requires normalized embeddings)
         self._index = self.faiss.IndexFlatIP(self.dimension)
@@ -439,17 +456,24 @@ class FAISSIndexManager:
         Returns:
             Ratio between 0.0 and 1.0
         """
-        if not self.session:
+        # Get session using factory pattern or fallback to shared session
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            session = self.session
+            owns_session = False
+        else:
             return 0.0
 
         try:
             from src.storage.schema import FAISSMetadata
 
-            total = self.session.query(FAISSMetadata).count()
+            total = session.query(FAISSMetadata).count()
             if total == 0:
                 return 0.0
 
-            deleted = self.session.query(FAISSMetadata).filter(
+            deleted = session.query(FAISSMetadata).filter(
                 FAISSMetadata.deleted == True
             ).count()
 
@@ -458,6 +482,9 @@ class FAISSIndexManager:
         except Exception as e:
             logger.warning(f"Failed to compute tombstone ratio: {e}")
             return 0.0
+        finally:
+            if owns_session:
+                session.close()
 
     def needs_rebuild(self) -> bool:
         """Check if index needs rebuilding
@@ -610,13 +637,20 @@ class FAISSIndexManager:
 
     def _get_metadata_by_internal_id(self, internal_id: int) -> Optional[Dict[str, str]]:
         """Get entity metadata by FAISS internal ID"""
-        if not self.session:
+        # Get session using factory pattern or fallback to shared session
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            session = self.session
+            owns_session = False
+        else:
             return None
 
         try:
             from src.storage.schema import FAISSMetadata
 
-            mapping = self.session.query(FAISSMetadata).filter(
+            mapping = session.query(FAISSMetadata).filter(
                 FAISSMetadata.faiss_internal_id == internal_id,
                 FAISSMetadata.deleted == False
             ).first()
@@ -632,45 +666,67 @@ class FAISSIndexManager:
         except Exception as e:
             logger.warning(f"Failed to lookup metadata for internal_id={internal_id}: {e}")
             return None
+        finally:
+            if owns_session:
+                session.close()
 
     def _mark_deleted(self, entity_id: str, entity_type: str) -> None:
         """Mark entry as deleted in metadata"""
-        if not self.session:
+        # Get session using factory pattern or fallback to shared session
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            session = self.session
+            owns_session = False
+        else:
             return
 
         try:
             from src.storage.schema import FAISSMetadata
 
-            mapping = self.session.query(FAISSMetadata).filter(
+            mapping = session.query(FAISSMetadata).filter(
                 FAISSMetadata.entity_id == entity_id,
                 FAISSMetadata.entity_type == entity_type
             ).first()
 
             if mapping:
                 mapping.deleted = True
-                self.session.flush()
+                if owns_session:
+                    session.commit()
+                else:
+                    session.flush()
 
         except Exception as e:
             try:
-                if self.session:
-                    self.session.rollback()
+                session.rollback()
             except Exception as rollback_error:
                 logger.warning(
                     f"Failed to rollback session after delete mark error: {rollback_error}"
                 )
             logger.error(f"Failed to mark as deleted: {e}")
             raise
+        finally:
+            if owns_session:
+                session.close()
 
     def _compute_checksum(self) -> str:
         """Compute checksum of embeddings table for validation"""
-        if not self.session:
+        # Get session using factory pattern or fallback to shared session
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            session = self.session
+            owns_session = False
+        else:
             return ""
 
         try:
             from src.storage.schema import Embedding
 
             # Count embeddings for this model
-            count = self.session.query(Embedding).filter(
+            count = session.query(Embedding).filter(
                 Embedding.model_name == self.model_name
             ).count()
 
@@ -680,6 +736,9 @@ class FAISSIndexManager:
         except Exception as e:
             logger.warning(f"Failed to compute checksum: {e}")
             return ""
+        finally:
+            if owns_session:
+                session.close()
 
     @property
     def is_available(self) -> bool:

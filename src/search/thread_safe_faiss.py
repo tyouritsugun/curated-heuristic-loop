@@ -43,9 +43,12 @@ def initialize_faiss_with_recovery(
 
     # Try to create FAISS manager
     try:
+        # Use full model name from config (single source of truth)
+        model_name = config.embedding_model
+
         faiss_manager = FAISSIndexManager(
             index_dir=str(config.faiss_index_path),
-            model_name=config.embedding_repo,
+            model_name=model_name,
             dimension=dimension,
             session=session,  # For initialization queries
             session_factory=session_factory  # For ongoing metadata operations
@@ -93,7 +96,7 @@ def initialize_faiss_with_recovery(
 
             # Get all embeddings from database
             embeddings = session.query(Embedding).filter(
-                Embedding.model_name == config.embedding_repo
+                Embedding.model_name == model_name
             ).all()
 
             if not embeddings:
@@ -126,7 +129,7 @@ def initialize_faiss_with_recovery(
                 if emb.entity_id in entity_type_map:
                     entity_ids.append(emb.entity_id)
                     entity_types.append(entity_type_map[emb.entity_id])
-                    vectors.append(emb.get_embedding())
+                    vectors.append(np.frombuffer(emb.embedding_data, dtype=np.float32))
 
             if entity_ids:
                 # Stack vectors and add to index
@@ -428,9 +431,15 @@ class ThreadSafeFAISSManager:
         from src.storage.schema import Embedding, FAISSMetadata
 
         logger.info("Starting FAISS index rebuild")
-        session = self._manager.session
 
-        if not session:
+        # Get session using factory pattern or fallback to shared session
+        if self._manager.session_factory:
+            session = self._manager.session_factory()
+            owns_session = True
+        elif self._manager.session:
+            session = self._manager.session
+            owns_session = False
+        else:
             logger.warning("Cannot rebuild index: no session available")
             return
 
@@ -476,7 +485,7 @@ class ThreadSafeFAISSManager:
                 if emb.entity_id in metadata_map:
                     entity_ids.append(emb.entity_id)
                     entity_types.append(metadata_map[emb.entity_id])
-                    embedding_vectors.append(emb.get_embedding())
+                    embedding_vectors.append(np.frombuffer(emb.embedding_data, dtype=np.float32))
 
             if not entity_ids:
                 logger.warning("No valid embeddings after filtering")
@@ -487,19 +496,19 @@ class ThreadSafeFAISSManager:
             # Stack embeddings
             embeddings_array = np.vstack(embedding_vectors).astype(np.float32)
 
-                # Create new index and reset metadata
-                self._manager._create_new_index(reset_metadata=True)
+            # Create new index and reset metadata
+            self._manager._create_new_index(reset_metadata=True)
 
-                # Batch add
-                self._manager.add(entity_ids, entity_types, embeddings_array)
+            # Batch add
+            self._manager.add(entity_ids, entity_types, embeddings_array)
 
-                # Save atomically
-                self._save_safely()
+            # Save atomically
+            self._save_safely()
 
-                logger.info(
-                    f"FAISS index rebuild complete: {len(entity_ids)} vectors "
-                    f"(removed {len(metadata_list) - len(entity_ids)} tombstones)"
-                )
+            logger.info(
+                f"FAISS index rebuild complete: {len(entity_ids)} vectors "
+                f"(removed {len(metadata_list) - len(entity_ids)} tombstones)"
+            )
 
         except Exception as e:
             logger.error(f"FAISS rebuild failed: {e}")
@@ -508,6 +517,9 @@ class ThreadSafeFAISSManager:
             except Exception:
                 pass
             raise FAISSIndexError(f"Rebuild failed: {e}") from e
+        finally:
+            if owns_session:
+                session.close()
 
     def save(self) -> None:
         """Explicitly save index (for manual save policy)."""

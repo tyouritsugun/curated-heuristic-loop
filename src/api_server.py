@@ -120,6 +120,7 @@ async def lifespan(app: FastAPI):
 
         # Initialize search service (sessionless for thread-safety)
         try:
+            logger.info("Starting search service initialization...")
             from src.embedding.client import EmbeddingClient
             from src.search.thread_safe_faiss import initialize_faiss_with_recovery, ThreadSafeFAISSManager
             from src.search.vector_provider import VectorFAISSProvider
@@ -132,17 +133,20 @@ async def lifespan(app: FastAPI):
             vector_provider = None
 
             try:
+                logger.info(f"Loading embedding client: {config.embedding_model}")
                 embedding_client = EmbeddingClient(
                     model_repo=config.embedding_repo,
                     quantization=config.embedding_quant,
                     n_gpu_layers=0  # CPU-only
                 )
-                logger.info(f"Embedding client loaded: {config.embedding_repo}:{config.embedding_quant}")
+                logger.info(f"✓ Embedding client loaded successfully: {config.embedding_model}")
             except Exception as e:
+                logger.error(f"✗ Embedding client initialization failed: {e}", exc_info=True)
                 logger.warning(f"Embedding client not available: {e}")
 
             if embedding_client:
                 try:
+                    logger.info("Initializing FAISS index with recovery...")
                     # Use recovery logic to load FAISS index with automatic fallback
                     with db.session_scope() as temp_session:
                         faiss_manager = initialize_faiss_with_recovery(
@@ -159,27 +163,34 @@ async def lifespan(app: FastAPI):
                             rebuild_threshold=config.faiss_rebuild_threshold,
                         )
                         logger.info(
-                            f"ThreadSafeFAISSManager initialized: policy={config.faiss_save_policy}, "
-                            f"threshold={config.faiss_rebuild_threshold}"
+                            f"✓ ThreadSafeFAISSManager initialized: policy={config.faiss_save_policy}, "
+                            f"threshold={config.faiss_rebuild_threshold}, vectors={faiss_manager.index.ntotal}"
                         )
                     else:
-                        logger.warning("FAISS index recovery failed, will use text search fallback")
+                        logger.warning("✗ FAISS index recovery returned None, will use text search fallback")
                 except Exception as e:
+                    logger.error(f"✗ FAISS initialization failed with exception: {e}", exc_info=True)
                     logger.warning(f"FAISS initialization failed: {e}")
+            else:
+                logger.info("Skipping FAISS initialization (no embedding client)")
 
             if embedding_client and thread_safe_faiss:
                 try:
+                    logger.info(f"Loading reranker: {config.reranker_model}")
                     reranker_client = RerankerClient(
                         model_repo=config.reranker_repo,
                         quantization=config.reranker_quant,
                         n_gpu_layers=0
                     )
-                    logger.info(f"Reranker loaded: {config.reranker_repo}:{config.reranker_quant}")
+                    logger.info(f"✓ Reranker loaded: {config.reranker_model}")
                 except Exception as e:
-                    logger.warning(f"Reranker not available: {e}")
+                    logger.warning(f"✗ Reranker not available: {e}")
+            else:
+                logger.info("Skipping reranker initialization (missing embedding client or FAISS)")
 
             if embedding_client and thread_safe_faiss:
                 try:
+                    logger.info("Creating vector provider...")
                     vector_provider = VectorFAISSProvider(
                         index_manager=thread_safe_faiss,
                         embedding_client=embedding_client,
@@ -187,11 +198,15 @@ async def lifespan(app: FastAPI):
                         topk_retrieve=getattr(config, "topk_retrieve", 100),
                         topk_rerank=getattr(config, "topk_rerank", 40),
                     )
-                    logger.info("Vector provider initialized")
+                    logger.info(f"✓ Vector provider initialized, is_available={vector_provider.is_available}")
                 except Exception as e:
+                    logger.error(f"✗ Vector provider initialization failed: {e}", exc_info=True)
                     logger.warning(f"Vector provider initialization failed: {e}")
+            else:
+                logger.info("Skipping vector provider initialization (missing embedding client or FAISS)")
 
             primary_provider = "vector_faiss" if (vector_provider and vector_provider.is_available) else "sqlite_text"
+            logger.info(f"Determined primary provider: {primary_provider}")
 
             search_service = SearchService(
                 primary_provider=primary_provider,
@@ -199,7 +214,7 @@ async def lifespan(app: FastAPI):
                 max_retries=getattr(config, "search_fallback_retries", 1),
                 vector_provider=vector_provider,
             )
-            logger.info(f"Search service initialized with primary provider: {primary_provider}")
+            logger.info(f"✓ Search service initialized with primary provider: {primary_provider}")
 
             # Initialize background embedding worker if we have embedding client
             if embedding_client:
@@ -245,6 +260,7 @@ async def lifespan(app: FastAPI):
                     worker_pool = None
 
         except Exception as e:
+            logger.error(f"✗ Search service initialization completely failed: {e}", exc_info=True)
             logger.warning(f"Search service initialization failed: {e}")
             search_service = None
 

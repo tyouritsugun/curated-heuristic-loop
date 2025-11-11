@@ -920,8 +920,8 @@ def main():
         config.embedding_quant = embedding_quant
         config.reranker_repo = reranker_repo
         config.reranker_quant = reranker_quant
-        config.embedding_model = f"{embedding_repo}:{embedding_quant}"
-        config.reranker_model = f"{reranker_repo}:{reranker_quant}"
+        # Note: config.embedding_model and config.reranker_model are now computed properties
+        # derived from the repo and quant values above (single source of truth)
 
         # 6. Validate setup
         if not validate_setup(config):

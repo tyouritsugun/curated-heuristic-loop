@@ -139,9 +139,7 @@ class Config:
         self.reranker_repo = os.getenv("CHL_RERANKER_REPO", default_reranker_repo)
         self.reranker_quant = os.getenv("CHL_RERANKER_QUANT", default_reranker_quant)
 
-        # Legacy compatibility (kept for backward compatibility)
-        self.embedding_model = f"{self.embedding_repo}:{self.embedding_quant}"
-        self.reranker_model = f"{self.reranker_repo}:{self.reranker_quant}"
+        # Model migration settings
         self.embedding_model_auto_migrate = os.getenv("CHL_EMBEDDING_MODEL_AUTO_MIGRATE", "0") == "1"
 
         # Threshold settings
@@ -300,6 +298,31 @@ class Config:
                 f"Invalid CHL_FAISS_REBUILD_THRESHOLD={self.faiss_rebuild_threshold}. "
                 f"Must be in range [0.0, 1.0]."
             )
+
+    # ========================================================================
+    # Computed Properties - Single Source of Truth for Model Names
+    # ========================================================================
+
+    @property
+    def embedding_model(self) -> str:
+        """Full embedding model name in format 'repo:quant'.
+
+        This is the canonical format used for:
+        - FAISS index file naming
+        - Database embedding records
+        - Model identification in metadata
+
+        Example: "Qwen/Qwen3-Embedding-4B-GGUF:Q4_K_M"
+        """
+        return f"{self.embedding_repo}:{self.embedding_quant}"
+
+    @property
+    def reranker_model(self) -> str:
+        """Full reranker model name in format 'repo:quant'.
+
+        Example: "Mungert/Qwen3-Reranker-4B-GGUF:Q4_K_M"
+        """
+        return f"{self.reranker_repo}:{self.reranker_quant}"
 
 
 def get_config() -> Config:
