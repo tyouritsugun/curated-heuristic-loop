@@ -8,9 +8,16 @@
     <h3>New User Setup</h3>
     <p>If you haven't set up the system yet, follow these steps:</p>
     <ol>
-      <li>Copy <code>.env.sample</code> to <code>.env</code> and fill in your credentials and sheet IDs</li>
+      <li>Edit the <code>.env</code> file in the project root (copy from <code>.env.sample</code> if needed):
+        <ul>
+          <li><code>GOOGLE_CREDENTIAL_PATH</code> - Path to service account JSON</li>
+          <li><code>IMPORT_SPREADSHEET_ID</code> - Published spreadsheet ID</li>
+          <li><code>EXPORT_SPREADSHEET_ID</code> - Review spreadsheet ID</li>
+        </ul>
+        <small class="muted">See <code>.env.sample</code> for complete list of available configuration options. Changes take effect on next import/export operation (no restart needed).</small>
+      </li>
       <li>Run <code>python scripts/setup.py</code> to initialize the database and download models</li>
-      <li>Start the server and begin using the Operations dashboard</li>
+      <li>Start the server and begin using the Settings dashboard</li>
     </ol>
     <p class="muted">See README.md for detailed setup instructions.</p>
   </div>

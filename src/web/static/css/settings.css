@@ -628,3 +628,34 @@ code {
 .status-row .muted {
   margin-top: 0.25rem;
 }
+
+.section-title-button {
+  background: #007bff;
+  border: none;
+  padding: 0.75rem 1.25rem;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  border-radius: 8px;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  width: 100%;
+}
+
+.section-title-button:hover:not(:disabled) {
+  background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.section-title-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.section-title-button:disabled {
+  cursor: not-allowed;
+  background: #6c757d;
+  opacity: 0.6;
+}

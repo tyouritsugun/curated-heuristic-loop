@@ -10,34 +10,15 @@
 
   <div class="config-status-grid">
     <div class="config-section">
-      <h3>Google Credentials</h3>
-      {% if config_status.credentials_path %}
-        <div class="status-row">
-          <span class="status-chip {{ config_status.credentials_state }}">{{ config_status.credentials_status }}</span>
-          <code class="config-value">{{ config_status.credentials_path }}</code>
-        </div>
-        {% if config_status.credentials_detail %}
-          <small class="muted">{{ config_status.credentials_detail }}</small>
-        {% endif %}
-      {% else %}
-        <div class="status-row">
-          <span class="status-chip error">Not Configured</span>
-          <small class="muted">Set GOOGLE_CREDENTIAL_PATH in .env file</small>
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="config-section">
+      {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
+      {% set import_active = import_summary.get('is_active', False) %}
       <div class="section-header">
-        <h3>Import Spreadsheet</h3>
-        {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
-        {% set import_active = import_summary.get('is_active', False) %}
-        <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML">
-          <button type="submit" {% if import_active %}disabled{% endif %}>
+        <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+          <button type="submit" class="section-title-button" {% if import_active %}disabled{% endif %}>
             {% if import_active %}
-              Importing...
+              Import Spreadsheet (Importing...)
             {% else %}
-              Run Import
+              Import Spreadsheet
             {% endif %}
           </button>
         </form>
@@ -69,16 +50,15 @@
     </div>
 
     <div class="config-section">
+      {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
+      {% set export_active = export_summary.get('is_active', False) %}
       <div class="section-header">
-        <h3>Export Spreadsheet</h3>
-        {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
-        {% set export_active = export_summary.get('is_active', False) %}
-        <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML">
-          <button type="submit" class="secondary" {% if export_active %}disabled{% endif %}>
+        <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+          <button type="submit" class="section-title-button" {% if export_active %}disabled{% endif %}>
             {% if export_active %}
-              Exporting...
+              Export Spreadsheet (Exporting...)
             {% else %}
-              Run Export
+              Export Spreadsheet
             {% endif %}
           </button>
         </form>
@@ -109,38 +89,6 @@
       {% endif %}
     </div>
   </div>
-
-  <details>
-    <summary>How to update configuration</summary>
-    <ol>
-      <li>Edit the <code>.env</code> file in the project root</li>
-      <li>Update the relevant environment variables:
-        <ul>
-          <li><code>GOOGLE_CREDENTIAL_PATH</code> - Path to service account JSON</li>
-          <li><code>IMPORT_SPREADSHEET_ID</code> - Published spreadsheet ID</li>
-          <li><code>EXPORT_SPREADSHEET_ID</code> - Review spreadsheet ID</li>
-        </ul>
-      </li>
-      <li>Changes take effect on next import/export operation (no restart needed)</li>
-    </ol>
-    <small class="muted">See <code>.env.sample</code> for complete list of available configuration options.</small>
-  </details>
-
-  <details>
-    <summary>Test Connection</summary>
-    <form
-      method="post"
-      action="/ui/settings/test-connection"
-      hx-post="/ui/settings/test-connection"
-      hx-target="#config-status-card"
-      hx-swap="outerHTML"
-      hx-indicator="#config-test-indicator"
-    >
-      <button type="submit">Test Connection</button>
-      <small class="muted">Validates credentials and lists available worksheets</small>
-    </form>
-    <span class="htmx-indicator" id="config-test-indicator">Testing…</span>
-  </details>
 
   {% if is_partial and (message or error) %}
     {% with oob=True %}

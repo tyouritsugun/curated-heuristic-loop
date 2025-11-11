@@ -25,13 +25,10 @@
   {% endif %}
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
-    <div id="ops-controls-card" class="operations-section">
-      {% include "partials/ops_operations_card.html" %}
-    </div>
     <div id="ops-models-card" class="operations-section">
       {% include "partials/ops_models_card.html" %}
     </div>
-    
+
     <div id="ops-queue-card" class="operations-section">
       {% include "partials/ops_queue_card.html" %}
     </div>

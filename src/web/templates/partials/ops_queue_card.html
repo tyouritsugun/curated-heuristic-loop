@@ -44,8 +44,17 @@
       <p class="stat-value">{{ failed_total }}<small class="muted"> ({{ failed_exp }}/{{ failed_man }})</small></p>
     </div>
     <div class="stat-pair">
-      <p class="stat-label">Last sample</p>
-      <p class="stat-value">{{ snapshot.queue.recorded_at if snapshot.queue else 'n/a' }}</p>
+      <p class="stat-label">Sync Status</p>
+      {% set sync_summary = (job_summaries or {}).get('sync') %}
+      {% if sync_summary %}
+        <p class="stat-value">
+          <span class="status-pill {{ sync_summary.pill_class }}" data-job-status="{{ sync_summary.status }}" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">
+            {{ sync_summary.status_label }}
+          </span>
+        </p>
+      {% else %}
+        <p class="stat-value" style="font-size: 0.9rem;">No runs yet</p>
+      {% endif %}
     </div>
   </div>
   <span class="htmx-indicator">Refreshing…</span>
