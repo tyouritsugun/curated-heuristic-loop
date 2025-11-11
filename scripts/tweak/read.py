@@ -95,9 +95,9 @@ def _init_vector_provider(session, config, disable_reranker: bool) -> Optional[S
 
     try:
         vector_provider = VectorFAISSProvider(
-            session=session,
             index_manager=faiss_manager,
             embedding_client=embedding_client,
+            model_name=config.embedding_model,
             reranker_client=reranker_client,
             topk_retrieve=config.topk_retrieve,
             topk_rerank=config.topk_rerank,

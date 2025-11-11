@@ -122,6 +122,7 @@ def main():
             embedding_service = EmbeddingService(
                 session=session,
                 embedding_client=embedding_client,
+                model_name=config.embedding_model,
                 faiss_index_manager=index_manager
             )
 

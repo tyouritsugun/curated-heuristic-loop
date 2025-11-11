@@ -83,6 +83,7 @@ def main():
             provider = VectorFAISSProvider(
                 index_manager=index_manager,
                 embedding_client=embedding_client,
+                model_name=config.embedding_model,
                 reranker_client=None,  # Not needed for rebuild
                 topk_retrieve=config.topk_retrieve,
                 topk_rerank=config.topk_rerank

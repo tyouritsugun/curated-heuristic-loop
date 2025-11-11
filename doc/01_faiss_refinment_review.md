@@ -1,30 +1,30 @@
 # FAISS Refinement Review Update (2025-11-11)
 
-Commits reviewed: `6232b43` (initial refinement) and `57df8b3` (bug fixes). Remote history could not be fetched because outbound DNS is blocked in this environment, so analysis is limited to local commits.
+Commits reviewed: `6232b43` (initial refinement), `57df8b3` (first bug fix pass), and `31367d5` (latest fixes + docs). Remote history is still unavailable because outbound DNS is blocked in this environment, so the review reflects the local repository state only.
 
-## What Got Fixed
-- `_session_scope` now flushes caller-owned sessions on success and always rollbacks on failure, so legacy single-session CLIs no longer get stuck in "pending rollback" states (`src/search/faiss_index.py:269-309`).
-- Embedding inserts now persist `embedding_client.model_name` (`repo:quant`) so FAISS consistency checks and rebuilds can key off the same value as `_compute_checksum()` (`src/embedding/service.py:143-474`).
-- Automatic rebuild during `initialize_faiss_with_recovery` now respects `FAISSMetadata.deleted`, so deleted entities stay deleted even after checksum-triggered recovery (`src/search/thread_safe_faiss.py:68-134`).
+## Improvements Since Last Review
+- **Consistent keying inside services.** `EmbeddingService` stores a canonical `<repo>:<quant>` string and also uses the same key for `get_by_entity` checks, eliminating the duplicate-row issue noted earlier (`src/embedding/service.py:38-205`, `335-474`).
+- **Vector rebuild respects canonical keys.** `VectorFAISSProvider.rebuild_index()` now pulls embeddings via the same canonical model name, preventing deleted rows from returning during manual rebuilds (`src/search/vector_provider.py:34-119`, `297-319`).
+- **Background worker wiring.** `BackgroundEmbeddingWorker` and the FastAPI startup path now thread `config.embedding_model` through to both the embedding service and the vector provider so long-running workers stay consistent (`src/api_server.py:194-235`, `src/services/background_worker.py:37-250`).
 
 ## Remaining Issues
-1. **High – Embedding lookups still use the old key**  
-   Both places that check for an existing embedding row still call `self.emb_repo.get_by_entity(..., model_name=self.embedding_client.model_repo)` (`src/embedding/service.py:335-352` and `428-445`). Because inserts now store `<repo>:<quant>`, these lookups never match. Every embed is treated as new, leading to duplicate rows, more tombstones, and `FAISSIndexManager.update()` never being used.  
-   **Fix:** Replace those lookups with `model_name=getattr(self.embedding_client, "model_name", "")` (or a helper that normalizes both strings). Consider a migration to collapse duplicate rows created since `57df8b3` landed.
+1. **High – Scripts still call the old signatures (runtime failure).**  
+   `VectorFAISSProvider.__init__` now requires `model_name` and no longer accepts a `session` kwarg, yet `scripts/rebuild_index.py:83-94`, `scripts/tweak/read.py:86-108`, and `scripts/tweak/write.py:86-108` still call it with the old arguments. These CLIs will raise `TypeError` before doing any work.  
+   **Fix:** Pass `model_name=config.embedding_model` and drop the obsolete `session=` parameter in every call site.
 
-2. **High – Rebuild utilities still query by `model_repo`**  
-   `VectorFAISSProvider.rebuild_index()` fetches embeddings with `self.embedding_client.model_repo` (`src/search/vector_provider.py:300-333`). After the storage change, this method (and `scripts/rebuild_index.py`, which calls it) will rebuild an empty FAISS index because no rows match the old key. Automatic rebuild during startup is now fixed, but any manual rebuild or health tooling will drop all vectors.  
-   **Fix:** Update every call that filters `Embedding.model_name` to use the same `<repo>:<quant>` value. A quick `rg "model_repo" src -n | grep model_name` surfaces the remaining hotspots.
+2. **High – EmbeddingService constructor not updated everywhere.**  
+   `EmbeddingService.__init__` now expects `model_name`, but `scripts/sync_embeddings.py:122-146` still instantiate it with only `(session, embedding_client, faiss_index_manager)`. Running `python scripts/sync_embeddings.py` will crash immediately.  
+   **Fix:** Thread `config.embedding_model` into that script (and any other ad-hoc tooling) to match the new signature.
 
-3. **Medium – Legacy data invisible to checksum/rebuild**  
-   `_compute_checksum()` now works for new rows, but embeddings written before `57df8b3` still carry `model_repo`. Unless we migrate those rows (or make `_compute_checksum()`/rebuild attempt both keys), FAISS will think older data doesn’t exist and may trigger unnecessary rebuilds or skip rows entirely.  
-   **Fix:** Run a one-time SQL migration to rewrite `embeddings.model_name` to `<repo>:<quant>` where applicable, or add a fallback query that unions both formats until the migration is complete.
+3. **Medium – Existing embeddings still use the legacy key.**  
+   The code path now writes `<repo>:<quant>`, but rows created before `57df8b3` keep the old `model_repo` string. Neither `_compute_checksum()` nor rebuild routines attempt to read both formats, so older data remains invisible to the new consistency checks until a migration runs.  
+   **Fix:** Run a one-time migration (or add a dual-format fallback) so checksum validation and rebuilds produce accurate results without requiring a full re-embed.
 
 ## Impact on Other Components
-- Keeping `FAISSMetadata.deleted` as the source of truth is now consistent throughout the recovery code, but ensure any admin tooling that used `embeddings` to gauge deletions understands that rows stick around for disaster recovery.
-- Scripts and CLIs (e.g., `scripts/search_health.py`, `scripts/tweak/read.py`) should be reviewed for lingering `model_repo` filters; otherwise telemetry and diagnostics will drift from actual FAISS contents.
+- Any diagnostics or admin tooling that instantiates `VectorFAISSProvider` or `EmbeddingService` will now fail fast unless updated; coordinate with dev-ops/docs so users know to pull the latest scripts once the fixes land.
+- Tombstone policy (`FAISSMetadata.deleted` as source of truth, embeddings retained for DR) now flows through both automatic and manual rebuild paths; just ensure future migrations preserve that invariant.
 
 ## Suggested Next Actions
-1. Normalize every place that reads/writes `Embedding.model_name` so it always uses the canonical `<repo>:<quant>` string (preferably via a shared helper). 
-2. Backfill historical embedding rows to the new format to keep checksum/rebuild logic accurate. 
-3. Add a regression test that runs `VectorFAISSProvider.rebuild_index()` end-to-end to ensure it produces the same vector count before and after model name changes.
+1. Update every script/CLI instantiation to pass the canonical `model_name` and remove deprecated parameters; add a smoke test that imports each CLI module to catch signature drift.
+2. Backfill or dual-read legacy embedding rows so checksum validation monitors the real corpus.
+3. Once the above land, re-run manual rebuild + sync flows to verify they behave identically to the production server path.
