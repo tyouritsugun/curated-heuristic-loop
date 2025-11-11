@@ -143,7 +143,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=experience_id,
                     entity_type='experience',
-                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_name=getattr(self.embedding_client, "model_name", ""),
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -254,7 +254,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=manual_id,
                     entity_type='manual',
-                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_name=getattr(self.embedding_client, "model_name", ""),
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -343,7 +343,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=experience_id,
                     entity_type='experience',
-                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_name=getattr(self.embedding_client, "model_name", ""),
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -435,7 +435,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=manual_id,
                     entity_type='manual',
-                    model_name=getattr(self.embedding_client, "model_repo", ""),
+                    model_name=getattr(self.embedding_client, "model_name", ""),
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),

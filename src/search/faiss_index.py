@@ -271,7 +271,7 @@ class FAISSIndexManager:
 
         Args:
             read_only: If True, hint that this is a read-only operation
-                      (no automatic commit even if we own the session)
+                      (no automatic commit/flush even if we own the session)
 
         Yields:
             SQLAlchemy session
@@ -293,17 +293,26 @@ class FAISSIndexManager:
 
         try:
             yield session
-            # Commit if we own the session and this is a write operation
+
+            # Success path: commit or flush depending on ownership
             if owns_session and not read_only:
+                # We own the session, commit changes
                 session.commit()
+            elif not owns_session and not read_only:
+                # Shared session (CLI/script), flush to make changes visible
+                # but don't commit (caller owns the transaction)
+                session.flush()
+
         except Exception as e:
-            if owns_session:
-                try:
-                    session.rollback()
-                except Exception as rollback_error:
-                    logger.warning(f"Failed to rollback session: {rollback_error}")
+            # ALWAYS rollback on error, even for shared sessions!
+            # Shared sessions left in "pending rollback" state are broken
+            try:
+                session.rollback()
+            except Exception as rollback_error:
+                logger.warning(f"Failed to rollback session: {rollback_error}")
             raise
         finally:
+            # Only close if we own the session
             if owns_session:
                 try:
                     session.close()

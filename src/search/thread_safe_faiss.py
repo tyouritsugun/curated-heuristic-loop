@@ -68,52 +68,64 @@ def initialize_faiss_with_recovery(
         if faiss_manager.needs_rebuild():
             logger.warning("Index inconsistency detected, triggering automatic rebuild")
             try:
-                # Rebuild from database
-                from src.storage.schema import Embedding
+                # Rebuild from database - MUST respect faiss_metadata.deleted flag!
+                # Only rebuild vectors that are NOT tombstoned
+                from src.storage.schema import Embedding, FAISSMetadata
 
-                # Get all embeddings from database
-                embeddings = session.query(Embedding).filter(
-                    Embedding.model_name == model_name
+                # Get non-deleted metadata entries (source of truth for what should be in index)
+                metadata_list = session.query(FAISSMetadata).filter(
+                    FAISSMetadata.deleted == False
                 ).all()
 
-                if not embeddings:
-                    logger.warning("No embeddings found in database for rebuild")
+                if not metadata_list:
+                    logger.warning("No non-deleted entries found for rebuild, creating empty index")
+                    faiss_manager._create_new_index(reset_metadata=True)
+                    faiss_manager.save()
+                    session.flush()
                 else:
-                    # Build entity type mapping
-                    entity_type_map = {}
-                    for emb in embeddings:
-                        if emb.entity_id.startswith('EXP-'):
-                            entity_type_map[emb.entity_id] = 'experience'
-                        elif emb.entity_id.startswith('MNL-'):
-                            entity_type_map[emb.entity_id] = 'manual'
-                        else:
-                            logger.warning(f"Unknown entity type for ID: {emb.entity_id}, skipping")
-                            continue
+                    # Build entity_id → entity_type mapping from metadata
+                    metadata_map = {
+                        meta.entity_id: meta.entity_type
+                        for meta in metadata_list
+                    }
 
-                    # Prepare bulk add
-                    entity_ids = []
-                    entity_types = []
-                    vectors = []
+                    # Get embeddings for these non-deleted entities only
+                    embeddings = session.query(Embedding).filter(
+                        Embedding.model_name == model_name,
+                        Embedding.entity_id.in_(list(metadata_map.keys()))
+                    ).all()
 
-                    for emb in embeddings:
-                        if emb.entity_id in entity_type_map:
-                            entity_ids.append(emb.entity_id)
-                            entity_types.append(entity_type_map[emb.entity_id])
-                            vectors.append(np.frombuffer(emb.embedding_data, dtype=np.float32))
-
-                    if entity_ids:
-                        # Create fresh index and reset metadata
+                    if not embeddings:
+                        logger.warning("No embeddings found for non-deleted entries")
                         faiss_manager._create_new_index(reset_metadata=True)
-
-                        # Stack vectors and add to index
-                        vectors_array = np.vstack(vectors).astype(np.float32)
-                        faiss_manager.add(entity_ids, entity_types, vectors_array)
                         faiss_manager.save()
-
-                        logger.info(
-                            f"FAISS index auto-rebuilt successfully: {len(entity_ids)} vectors"
-                        )
                         session.flush()
+                    else:
+                        # Prepare bulk add
+                        entity_ids = []
+                        entity_types = []
+                        vectors = []
+
+                        for emb in embeddings:
+                            if emb.entity_id in metadata_map:
+                                entity_ids.append(emb.entity_id)
+                                entity_types.append(metadata_map[emb.entity_id])
+                                vectors.append(np.frombuffer(emb.embedding_data, dtype=np.float32))
+
+                        if entity_ids:
+                            # Create fresh index and reset metadata
+                            faiss_manager._create_new_index(reset_metadata=True)
+
+                            # Stack vectors and add to index
+                            vectors_array = np.vstack(vectors).astype(np.float32)
+                            faiss_manager.add(entity_ids, entity_types, vectors_array)
+                            faiss_manager.save()
+
+                            logger.info(
+                                f"FAISS index auto-rebuilt successfully: {len(entity_ids)} vectors "
+                                f"(excluded {len(metadata_list) - len(entity_ids)} deleted entries)"
+                            )
+                            session.flush()
             except Exception as rebuild_error:
                 logger.error(f"Auto-rebuild failed: {rebuild_error}")
                 # Continue with potentially inconsistent index rather than failing startup
