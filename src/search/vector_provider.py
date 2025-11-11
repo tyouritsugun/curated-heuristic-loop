@@ -34,6 +34,7 @@ class VectorFAISSProvider(SearchProvider):
         self,
         index_manager: FAISSIndexManager,
         embedding_client: EmbeddingClient,
+        model_name: str,
         reranker_client: Optional['RerankerClient'] = None,
         topk_retrieve: int = 100,
         topk_rerank: int = 40,
@@ -43,12 +44,14 @@ class VectorFAISSProvider(SearchProvider):
         Args:
             index_manager: FAISS index manager
             embedding_client: Client for generating embeddings
+            model_name: Full model name in 'repo:quant' format (from config.embedding_model)
             reranker_client: Optional reranker for precision (None to disable)
             topk_retrieve: Number of FAISS candidates to retrieve
             topk_rerank: Number of candidates to rerank (must be <= topk_retrieve)
         """
         self.index_manager = index_manager
         self.embedding_client = embedding_client
+        self.model_name = model_name
         self.reranker_client = reranker_client
         self.topk_retrieve = topk_retrieve
         self.topk_rerank = min(topk_rerank, topk_retrieve)
@@ -297,9 +300,9 @@ class VectorFAISSProvider(SearchProvider):
             # Create new empty index
             self.index_manager._create_new_index()
 
-            # Get all embeddings for this model (use model_repo, not model_name which includes quantization)
+            # Get all embeddings for this model (use full model name with quantization)
             embeddings = emb_repo.get_all_by_model(
-                self.embedding_client.model_repo,
+                self.model_name,
                 entity_type=None  # Both experiences and manuals
             )
 

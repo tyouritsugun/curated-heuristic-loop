@@ -194,6 +194,7 @@ async def lifespan(app: FastAPI):
                     vector_provider = VectorFAISSProvider(
                         index_manager=thread_safe_faiss,
                         embedding_client=embedding_client,
+                        model_name=config.embedding_model,
                         reranker_client=reranker_client,
                         topk_retrieve=getattr(config, "topk_retrieve", 100),
                         topk_rerank=getattr(config, "topk_rerank", 40),
@@ -229,6 +230,7 @@ async def lifespan(app: FastAPI):
                     background_worker = BackgroundEmbeddingWorker(
                         session_factory=db.get_session,
                         embedding_client=embedding_client,
+                        model_name=config.embedding_model,
                         faiss_manager=thread_safe_faiss,  # May be None, worker handles this
                         poll_interval=poll_interval,
                         batch_size=batch_size,

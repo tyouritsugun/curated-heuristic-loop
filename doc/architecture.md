@@ -1,11 +1,10 @@
 # CHL System Architecture
 
-## Overview
+## 1. Overview
 
-This document describes the architecture of the Curated Heuristic Loop (CHL) system. The system uses SQLite database storage with optional vector search capabilities, while maintaining the core Generator/Evaluator workflow and providing team collaboration features through Google Sheets integration.
+This document describes the technical architecture of the Curated Heuristic Loop (CHL) system. The system is designed around a local-first data model using SQLite and FAISS, with Google Sheets serving as a medium for human-in-the-loop curation.
 
-## High-Level Architecture
-
+### 1.1. High-Level Diagram
 ```mermaid
 graph TB
     subgraph "Client Layer"
@@ -50,9 +49,20 @@ graph TB
     REBUILD --> INDEX
 ```
 
-## Data Flow Patterns
+## 2. System Components
 
-### Generator Mode (Read Path)
+The system consists of several key components:
+
+-   **MCP Server (`src/server.py`):** A lightweight server that exposes the CHL functionality to AI assistants via the Model Context Protocol (MCP). It handles tool calls like `read_entries` and `write_entry`.
+-   **API Server (`src/api_server.py`):** A FastAPI server that provides a REST API for programmatic access and serves the web-based UI for operations and settings.
+-   **Application Services (`src/services`):** Core logic for operations, settings management, and telemetry.
+-   **Search Service (`src/search`):** An abstraction layer for finding relevant entries. It uses a provider-based model, with the primary implementation using FAISS for vector search and a fallback SQLite provider.
+-   **Storage Layer (`src/storage`):** Manages all data persistence. It includes the SQLAlchemy-based repository for interacting with the SQLite database and a client for Google Sheets.
+-   **Scripts (`scripts/`):** A collection of command-line tools for setup, maintenance, and data synchronization (import/export).
+
+## 3. Data Flow Patterns
+
+### 3.1. Generator Mode (Read Path)
 
 ```mermaid
 sequenceDiagram
@@ -86,9 +96,7 @@ sequenceDiagram
     LLM-->>Dev: Execute task with guidance
 ```
 
-
-
-### Evaluator Mode (Write Path with Dedup)
+### 3.2. Evaluator Mode (Write Path)
 
 ```mermaid
 sequenceDiagram
@@ -125,9 +133,7 @@ sequenceDiagram
     LLM-->>Dev: Summary with actions
 ```
 
-
-
-### Export/Sync Workflow (Team Collaboration)
+### 3.3. Curation Workflow (Export/Import)
 
 ```mermaid
 flowchart TD
@@ -160,207 +166,93 @@ flowchart TD
     IMPORT -->|update| DEV2
 ```
 
-## Key Architectural Decisions
+## 4. Data Models and Storage
 
-### 1. Search Abstraction Layer
+The system utilizes three primary data surfaces: local SQLite, a local FAISS index, and remote Google Sheets.
 
-Provider-based architecture allows swapping search implementations without changing the service layer.
+-   **Local SQLite:** The authoritative per-user store. It contains tables for `experiences` (atomic patterns), `category_manuals` (long-form context), `embeddings`, and metadata for tracking `source`, `sync_status`, and timestamps. All writes from the user flow here first.
+-   **Local FAISS:** A performance layer for efficient vector search. The index is keyed by `experience_id` and `manual_id` and is updated through an operator-driven workflow (e.g., via the Web UI or `rebuild_index.py`). This keeps write latency low on the client side.
+-   **Google Sheets:** A human-readable and -editable surface for team-based curation. The `export.py` script generates a **Review Sheet** from local databases, and curators merge approved content into a **Published Sheet**, which is then consumed by `import.py` to update local databases across the team.
 
-**Interface Contract:**
-- `search(query, category_code, top_k)` - Find experiences matching query text
-- `find_duplicates(title, playbook, category_code, threshold)` - Detect similar entries before insert
-- `rebuild_index()` - Reconstruct search index from database
+### 4.1. SQLite Schema Design
 
-**Implementations:**
-- SQLite text provider using simple substring and exact-title matching (fallback)
-- Vector provider backed by FAISS with optional reranking scores from the Qwen3 GGUF reranker (served via `llama-cpp-python`)
+-   **experiences:** Stores atomic patterns and heuristics.
+    -   Primary fields: `id`, `category_code`, `section`, `title`, `playbook`, `context`
+    -   Provenance: `source`, `sync_status`, `author`
+    -   Timestamps: `created_at`, `updated_at`, `synced_at`
+-   **category_manuals:** For long-form context and domain knowledge.
+    -   Primary fields: `id`, `category_code`, `title`, `content`, `summary`
+    -   Provenance: `source`, `sync_status`, `author`
+    -   Timestamps: `created_at`, `updated_at`, `synced_at`
+-   **embeddings:** Vector representations for search.
+    -   Links to experiences and manuals via `entity_id` and `entity_type`.
+    -   Stores serialized vectors and tracks the embedding model version.
+-   **categories:** Metadata for each knowledge category.
+    -   Fields: `code`, `name`, `description`.
 
-### 2. Knowledge Organization: Two Data Types
+## 5. Key Architectural Decisions
 
-The CHL system organizes knowledge into two complementary data types:
+### 5.1. Knowledge Organization: Experience vs. Manual
 
-#### Atomic Experiences
-**Purpose**: Capture specific, focused patterns and heuristics that solve discrete problems.
+The system distinguishes between two types of knowledge to balance specificity and context:
 
-**Characteristics**:
-- **Focused**: Each experience addresses one specific pattern or approach
-- **Orthogonal**: Experiences should have low relevance to each other
-- **Actionable**: Contains concrete playbook steps
-- **Structured**: Has sections (useful/harmful/contextual) with optional context
-- **Anti-bloat**: When duplicates detected, refactor both experiences to be more atomic rather than merging
+-   An **atomic experience** is preferred when guidance is focused, actionable, and testable on its own. To avoid bloat, the system encourages refactoring highly similar experiences to be more orthogonal rather than merging them.
+-   A **manual update** is used for integrative background, architectural rationale, or synthesis across multiple experiences. Manuals are intended to be concise to preserve embedding quality.
 
-**Use Cases**:
-- "Always validate user permissions before database mutations"
-- "Use DB transactions for multi-step data changes"
-- "Avoid N+1 queries in Laravel by eager loading relationships"
+The Evaluator prompt is designed to make this decision explicit, providing a clear rationale for curators.
 
-**Storage**: `experiences` table with 120-char title, 2000-char playbook
+### 5.2. Provenance & State Management
 
-#### Category Manuals
-**Purpose**: Store broader context, tutorials, and domain knowledge that doesn't fit into atomic experiences.
+The `source` and `sync_status` fields are crucial for the curation workflow:
 
-**Characteristics**:
-- **Long-form**: No length limit on content
-- **Contextual**: Provides background, explanations, and domain knowledge
-- **Tutorial-style**: Can include step-by-step guides, architecture overviews
-- **Complementary**: Works alongside atomic experiences to provide full picture
+-   **Source Field:**
+    -   `local`: Created by an individual developer, not yet reviewed.
+    -   `global`: Synced from the published sheet, indicating team approval.
+-   **Sync Status States:**
+    -   `synced`: The local copy matches the published sheet.
+    -   `pending`: The entry is new or has been modified locally and is awaiting review.
+    -   `local_only`: The entry is a personal note and will be excluded from exports.
 
-**Use Cases**:
-- Laravel authentication architecture overview
-- Database migration best practices and common patterns
-- Frontend component organization philosophy
-- Testing strategy and pyramid explanation
+### 5.3. Duplicate Detection Strategy
 
-**Storage**: `category_manuals` table with 120-char title, unlimited content, optional summary
+The goal is to maintain a library of atomic, focused experiences, not to merge them into broad, overlapping entries.
 
-**IDs**: `MNL-<CATEGORY_CODE>-YYYYMMDD-HHMMSSmmm` (e.g., `MNL-FTH-20250115-104200123`)
+-   When a new entry shows high similarity to an existing one, the assistant is prompted to refactor both to be more focused and orthogonal.
+-   This "anti-pattern" of avoiding merges is a core principle to prevent knowledge bloat and maintain the quality of the heuristic library.
 
-**Workflow Integration**:
-- LLM retrieves **manuals** during work sessions for broader context
-- LLM retrieves **experiences** for specific, actionable patterns
-- After session, LLM creates/updates **manuals** to capture conversation context
-- LLM creates **experiences** only when specific, atomic patterns emerge
+### 5.4. Search Abstraction Layer
 
-### Decision Guidelines: Experience vs Manual
+A provider-based architecture (`src/search/provider.py`) allows swapping search implementations. The primary provider uses FAISS for vector search with optional reranking, with a fallback to a simple SQLite-based text search.
 
-- Use an **atomic experience** when guidance is focused, actionable, and testable on its own.
-- Use a **manual update** when the change is integrative background, architecture rationale, or synthesis across multiple experiences.
-- Keep manuals concise to preserve embedding/search quality; avoid dumping global atomic heuristics into manuals.
-- On high similarity among experiences, prefer refactoring into more orthogonal entries instead of merging into broader ones.
+## 6. Interfaces and APIs
 
-### 3. SQLite Schema Design
+### 6.1. MCP Interface
 
-**experiences** - Atomic patterns and heuristics
-- Primary fields: id, category_code, section, title, playbook, context
-- Provenance: source (local/global), sync_status (synced/pending/local_only), author
-- Timestamps: created_at, updated_at, synced_at
+The MCP server provides a simple, tool-based interface for AI assistants:
 
-**category_manuals** - Long-form context and domain knowledge
-- Primary fields: id, category_code, title, content, summary
-- Provenance: source (local/global), sync_status (synced/pending/local_only), author
-- Timestamps: created_at, updated_at, synced_at
+-   **Reads (`read_entries`):** Retrieve candidates via vector search (FAISS), then fetch full records from SQLite. Responses include provenance metadata (`source`) to distinguish global vs. personal entries.
+-   **Writes (`write_entry`):** Persist to SQLite immediately with `embedding_status='pending'`. The write operation returns top-k similar matches to help the assistant decide whether to create a new entry, refactor an existing one, or update a manual.
+-   **No Direct Sheet Access:** The MCP interface never writes directly to Google Sheets. All curation flows through the explicit export/import scripts.
 
-**embeddings** - Vector representations for search
-- Links to experiences and manuals via entity_id and entity_type
-- Stores serialized vectors
-- Tracks embedding model version
+### 6.2. REST API
 
-**categories** - Category metadata
-- Three-letter code + human-readable name
+The FastAPI server (`src/api_server.py`) exposes a REST API for programmatic control and monitoring. Key endpoints include:
 
-### 4. Provenance & State Management
+-   `/health`: Health checks for the server and its components.
+-   `/api/v1/operations/*`: Trigger and monitor import/export jobs.
+-   `/api/v1/workers/*`: Control and monitor background worker status (if used).
+-   `/api/v1/settings/*`: Manage application settings.
 
-**Source Field:**
-- `local` - Created by individual developer, not yet reviewed
-- `global` - Synced from published sheet, team-approved
+This API powers the Web UI and can be used for custom integrations.
 
-**Sync Status States:**
-- `synced` (0) - Local copy matches the latest published sheet after `chl sync` completes
-- `pending` (1) - Needs human review (new local entry or modified global entry)
-- `local_only` (2) - Personal preference, keep local only, exclude from exports
+## 7. Configuration Management
 
-**State Transitions:**
-- New local entry: `source='local', sync_status='pending'`
-- Update global entry: `source='global', sync_status='pending'`
-- After export: keep `sync_status='pending'` until published entries are imported
-- Personal item: `sync_status='local_only'`
-- After sync: `source='global', sync_status='synced'` and update `synced_at`
+Configuration is managed by `src/config.py`, which loads settings from environment variables with sensible project defaults. The `CHL_EXPERIENCE_ROOT` variable is central, defining the base path for the database, FAISS index, and other data files.
 
-Whenever entries move to `synced`, record the current UTC timestamp in `synced_at` for traceability.
+## 8. Technology Stack
 
-### 5. Duplicate Detection Strategy
-
-**Philosophy: Atomic Experiences, Not Merging**
-
-Duplicate detection is used to maintain a library of atomic, focused experiences:
-- **Goal**: Prevent experience bloat and overlap
-- **Approach**: When high similarity is detected, guide the LLM to refactor both the existing and new experiences to be more focused and orthogonal
-- **Anti-pattern**: Avoid merging or updating experiences into broader, less specific entries
-
-**Detection Thresholds**:
-- `duplicate_threshold_update (0.85)`: High similarity - prompt LLM to refactor both experiences into atomic, orthogonal entries
-- `duplicate_threshold_insert (0.60)`: Medium similarity - surface context to help LLM differentiate and maintain focus
-
-**Workflow**:
-- Detect similar experiences during write operations
-- Present similarity scores and existing entries to the LLM
-- Let the LLM decide how to refactor for atomicity
-- Curator reviews ensure experiences remain focused and non-overlapping
-
-### 6. Configuration Management
-
-Configuration is loaded by `src/config.Config`, which reads environment variables directly and falls back to project defaults (database under `<experience_root>/chl.db`, FAISS index under `<experience_root>/faiss_index`, etc.). The helper also auto-creates the experience root directory when required, and resolves relative paths under `<experience_root>`.
-
-**Configuration highlights:**
-- Database path (`CHL_DATABASE_PATH`) and echo flag
-- Experience root (`CHL_EXPERIENCE_ROOT`) which drives default paths for SQLite, FAISS, and model selection cache
-- Duplicate detection thresholds (`CHL_DUPLICATE_THRESHOLD_INSERT`, `CHL_DUPLICATE_THRESHOLD_UPDATE`)
-- Read limits for MCP tools (`CHL_READ_DETAILS_LIMIT`, used by read_entries)
-- ML model overrides (`CHL_EMBEDDING_REPO`, `CHL_EMBEDDING_QUANT`, `CHL_RERANKER_REPO`, `CHL_RERANKER_QUANT`)
-- Export & sync settings (Google credentials path, review/published sheet IDs)
-- Logging level (`CHL_LOG_LEVEL`) and optional author override (`CHL_AUTHOR`)
-
-
-
-### 7. Layer Responsibilities
-
-**MCP Tooling (src/mcp):**
-- Tool handlers validate payloads, invoke repositories, kick off best-effort embeddings, and surface duplicate suggestions.
-- Utilities provide consistent error payloads and small response helpers.
-
-**Storage (src/storage):**
-- SQLAlchemy models, repositories, and session management live here.
-- SheetsClient wraps Google Sheets operations for export/import scripts and MCP helpers.
-- Import/export helpers handle conflict resolution and sync status bookkeeping.
-
-**Search (src/search):**
-- `SearchService` orchestrates between the FAISS-backed provider and the SQLite text fallback.
-- Providers implement `SearchProvider` for both vector and SQL-based searches, plus duplicate detection.
-- `faiss_index.py` tracks vector IDs and incremental updates.
-
-**Embedding (src/embedding):**
-- `EmbeddingClient` and `RerankerClient` load Qwen3 GGUF models via `llama-cpp-python`.
-- Index maintenance now flows through the Operations service + FAISS snapshot tooling rather than an inline `EmbeddingService`.
-
-**Operational Scripts (scripts/):**
-- `setup.py`, `rebuild_index.py`, `export.py`, and `import.py` automate maintenance and data exchange.
-- Shared settings live in `scripts/scripts_config.yaml`; scripts read that file by default but still accept CLI overrides.
-- Run them via `uv run python …` to reuse the managed environment.
-
-## Technology Stack
-
-**Storage:**
-- SQLite - Embedded database
-- SQLAlchemy - ORM for schema and queries
-
-**Search:**
-- SQLite text queries - fallback provider
-- FAISS (via `faiss-cpu`) - vector index
-- Qwen3 embedding & reranker models served by `llama-cpp-python`
-
-**External Services:**
-- gspread - Google Sheets API client
-- google-auth / google-auth-oauthlib - Service account authentication
-
-**Scripts/CLI:**
-- Python maintenance scripts executed with `uv run python …`
-
-**MCP Server:**
-- FastMCP - MCP protocol server framework
-
-## Extension Points
-
-**Search Providers:**
-Vector FAISS is the standard provider; additional providers can still implement the `search/` interface if future requirements demand them.
-
-**Export Formats:**
-Extend export workflows in `storage/` with format-specific handlers (CSV, Notion, Markdown, etc.).
-
-**External Integrations:**
-Add clients in `integration/` for services like Notion, Linear, or custom embedding providers.
-
-**Curator Workflows:**
-Build on export/sync workflows in `storage/` for clustering, bulk operations, analytics dashboards, etc.
-
-**GraphRAG Compatibility:**
-The design intentionally remains compatible with future relationship graphs (GraphRAG). A relationships store (e.g., `relationships` table with typed edges) can be added later without changing MCP tool contracts; current phases avoid persisting relationships and surface only similarity context for human review.
+-   **Storage:** SQLite with SQLAlchemy ORM.
+-   **Search:** FAISS (`faiss-cpu`) for vector search, with embeddings and reranking provided by Qwen3 GGUF models served via `llama-cpp-python`.
+-   **External Services:** `gspread` and `google-auth` for Google Sheets integration.
+-   **Servers:** `FastMCP` for the MCP server and `FastAPI` for the REST API and Web UI.
+-   **CLI:** Python scripts managed with `uv`.

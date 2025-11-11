@@ -37,6 +37,7 @@ class BackgroundEmbeddingWorker:
         self,
         session_factory: Callable[[], Session],
         embedding_client: EmbeddingClient,
+        model_name: str,
         faiss_manager: Optional[Any] = None,
         poll_interval: float = 5.0,
         batch_size: int = 10,
@@ -47,6 +48,7 @@ class BackgroundEmbeddingWorker:
         Args:
             session_factory: Factory function that returns a new database session
             embedding_client: Client for generating embeddings
+            model_name: Full model name in 'repo:quant' format (from config.embedding_model)
             faiss_manager: Optional FAISS manager for index updates
             poll_interval: Seconds to wait between polls (default: 5.0)
             batch_size: Maximum number of entries to process per batch (default: 10)
@@ -54,6 +56,7 @@ class BackgroundEmbeddingWorker:
         """
         self.session_factory = session_factory
         self.embedding_client = embedding_client
+        self.model_name = model_name
         self.faiss_manager = faiss_manager
         self.poll_interval = poll_interval
         self.batch_size = batch_size
@@ -240,6 +243,7 @@ class BackgroundEmbeddingWorker:
             embedding_service = EmbeddingService(
                 session=session,
                 embedding_client=self.embedding_client,
+                model_name=self.model_name,
                 faiss_index_manager=self.faiss_manager,
                 max_tokens=self.max_tokens,
             )

@@ -38,6 +38,7 @@ class EmbeddingService:
         self,
         session: Session,
         embedding_client: EmbeddingClient,
+        model_name: str,
         faiss_index_manager: Optional['FAISSIndexManager'] = None,
         max_tokens: int = 8000,
     ):
@@ -46,11 +47,13 @@ class EmbeddingService:
         Args:
             session: SQLAlchemy session
             embedding_client: Client for generating embeddings
+            model_name: Full model name in 'repo:quant' format (from config.embedding_model)
             faiss_index_manager: Optional FAISS manager for index updates
             max_tokens: Max tokens for manual content (default: 8000)
         """
         self.session = session
         self.embedding_client = embedding_client
+        self.model_name = model_name
         self.faiss_index_manager = faiss_index_manager
         self.max_tokens = max_tokens
 
@@ -143,7 +146,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=experience_id,
                     entity_type='experience',
-                    model_name=getattr(self.embedding_client, "model_name", ""),
+                    model_name=self.model_name,
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -254,7 +257,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=manual_id,
                     entity_type='manual',
-                    model_name=getattr(self.embedding_client, "model_name", ""),
+                    model_name=self.model_name,
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -335,7 +338,7 @@ class EmbeddingService:
             existing = self.emb_repo.get_by_entity(
                 entity_id=experience_id,
                 entity_type='experience',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
+                model_name=self.model_name,
             )
 
             # Upsert embedding row
@@ -343,7 +346,7 @@ class EmbeddingService:
                 lambda: self.emb_repo.create(
                     entity_id=experience_id,
                     entity_type='experience',
-                    model_name=getattr(self.embedding_client, "model_name", ""),
+                    model_name=self.model_name,
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),
@@ -428,14 +431,14 @@ class EmbeddingService:
             existing = self.emb_repo.get_by_entity(
                 entity_id=manual_id,
                 entity_type='manual',
-                model_name=getattr(self.embedding_client, "model_repo", ""),
+                model_name=self.model_name,
             )
 
             self._with_lock_retry(
                 lambda: self.emb_repo.create(
                     entity_id=manual_id,
                     entity_type='manual',
-                    model_name=getattr(self.embedding_client, "model_name", ""),
+                    model_name=self.model_name,
                     model_version=self.embedding_client.get_model_version(),
                     embedding=embedding,
                 ),

@@ -1,682 +1,161 @@
-# CHL Manual
+# CHL Operator's Manual
 
-This manual covers operational tasks, scripts, and workflows for the Curated Heuristic Loop system.
-The main README now focuses on the one-command Quick Start; once the FastAPI server is running, the `/settings` page guides operators through setup in the browser.
-Use this manual when you need deeper automation or want to script exports/imports.
-For MCP client configuration (Cursor, Codex CLI), see README.md.
+This manual covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
 
-Preconditions
-- Install [uv](https://docs.astral.sh/uv/) and ensure Python 3.10/3.11 is available (see README Quick Start).
-- *(Optional)* Set experience root: `export CHL_EXPERIENCE_ROOT="$(pwd)/data"` (defaults to `<project_root>/data` if not set)
+## 1. Initial Setup
 
-## Initial Setup
+This section guides you through the first-time setup of the CHL environment.
 
-### First-Time Setup
+### 1.1. Quick Start
+For the fastest setup, please follow the **Quick Start** guide in the main [README.md](../README.md). It will guide you through installing dependencies and starting the web server. The rest of this manual assumes you have completed those steps.
+
+### 1.2. First-Time Setup Script
+The `setup.py` script initializes your local environment.
+
+**Command:**
 ```bash
-cd /your/project/root
 uv run python scripts/setup.py
 ```
 
-> **Tip:** All script examples in this manual assume you're invoking them with the project’s managed environment. Prefix commands with `uv run` (e.g., `uv run python scripts/export.py`) if you rely on uv to resolve dependencies.
-
-**Note:** `CHL_EXPERIENCE_ROOT` now defaults to `<project_root>/data` if not set. The data directory will be auto-created if it doesn't exist.
-
-**Purpose:** One-time initialization for new installations
-
 **When to use:**
-- First time cloning the repository
-- After deleting `data/` directory
-- After changing embedding model selection (`CHL_EMBEDDING_REPO` / `CHL_EMBEDDING_QUANT`)
-- To re-download corrupted models
+- After first cloning the repository.
+- To re-download models after changing the selection (`CHL_EMBEDDING_REPO`).
+- If your `data/` directory is deleted or corrupted.
 
 **What it does:**
-1. Creates `data/` directory structure
-2. Initializes SQLite database (creates tables)
-3. Downloads embedding & reranker models (if not already cached)
-4. Creates FAISS index directory
-5. Validates setup completeness
+1. Creates the `data/` directory structure.
+2. Initializes the SQLite database (`chl.db`).
+3. Downloads the required embedding and reranker models.
+4. Creates the FAISS index directory.
 
-**Options:**
+### 1.3. Seed Default Content
+After setup, you can seed the database with default categories and example entries.
+
+**Command:**
 ```bash
-# Automatic setup (recommended) - uses smallest models (0.6B)
-uv run python scripts/setup.py
-
-# Interactive model selection - choose larger models (4B, 8B)
-uv run python scripts/setup.py --download-models
-
-# Force re-download models (if models are corrupted or you want to update)
-uv run python scripts/setup.py --force-models
-```
-
-**Interactive Model Selection:**
-When using `--download-models`, you'll see a menu to choose:
-- **Embedding models**: 0.6B (~524 MB), 4B (~4 GB), 8B (~8 GB)
-- **Reranker models**: 0.6B (~612 MB), 4B (~4 GB), 8B (~8 GB)
-
-Larger models provide better quality but require more RAM/VRAM. For recommended model selection based on tested hardware, see the main [README](../README.md#system-requirements).
-
-### Seed starter content (recommended)
-
-Run this after setup to load the default CHL categories and sample entries and sync the guidelines **inside uv's environment**:
-
-```bash
-# Full seed: categories, sample entries, and guidelines (default)
 uv run python scripts/seed_default_content.py
-
-# Sync guidelines only (skip starter content)
-uv run python scripts/seed_default_content.py --skip-seed
-
-# Seed content only (skip guideline sync)
-uv run python scripts/seed_default_content.py --skip-guidelines
 ```
-
-This command is idempotent; rerun it to restore starter data or refresh guidelines.
-
-The guideline sync keeps the `GLN` category aligned with the Markdown sources. It re-imports `generator.md` and `evaluator.md`, deletes stale manuals, and removes a guide if its source file is missing. After syncing, you can retrieve the manuals via MCP:
-
-```bash
-codex-cli mcp tool call chl get_guidelines --params guide_type=generator
-codex-cli mcp tool call chl get_guidelines --params guide_type=evaluator
-```
-
-**Output (first run):**
-```
-============================================================
-  CHL MCP Server - First-Time Setup
-============================================================
-
-✓ Data directory: data/
-✓ FAISS index directory: data/faiss_index/
-✓ Database initialized: data/chl.db
-  - 0 categories
-  - 0 experiences
-  - 0 manuals
-
-Downloading models (this may take 5-10 minutes)...
-
-  [1/2] Qwen/Qwen3-Embedding-0.6B
-        ✓ Downloaded (dimension: 1024)
-
-  [2/2] Qwen/Qwen3-Reranker-0.6B
-        ✓ Downloaded
-
-✓ Models ready
-✓ Setup validation passed
-```
-
-**Output (subsequent runs - models cached):**
-```
-✓ Models already cached
-  - Embedding: Qwen/Qwen3-Embedding-0.6B
-  - Reranker: Qwen/Qwen3-Reranker-0.6B
-  (Use --force-models to re-download)
-
-============================================================
-  Setup Complete!
-============================================================
-
-Next steps:
-
-  1. Start the FastAPI server:
-     uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
-
-  2. Finish onboarding at http://127.0.0.1:8000/settings, then rebuild/upload a FAISS snapshot via /operations before enabling vector search.
-```
-
-**Preconditions:**
-- Python 3.10 or 3.11 (install once with `uv python install 3.11`)
-- Install dependencies with the supported runtime (includes llama-cpp, FAISS, gspread): `uv sync --python 3.11 --extra ml`
-- `CHL_EXPERIENCE_ROOT` environment variable set (defaults to `<project_root>/data` if omitted)
-- Internet connection (for model download)
-
-**Troubleshooting:**
-- "ML dependencies not found": Install ML extras with `uv sync --python 3.11 --extra ml`
-- "Model download failed": Check internet connection, try `python scripts/setup.py --force-models`
-- "Permission denied": Use `chmod +x scripts/setup.py`
-- Models already downloaded but showing as missing: Try `python scripts/setup.py --force-models`
-
----
-
-## 1: Search & Embeddings
-
-### Rebuild Search Index
-```bash
-python scripts/rebuild_index.py
-```
-
-**Purpose:** Regenerate embeddings and FAISS index from scratch.
-
-**When to use:**
-- After changing embedding model selection (`CHL_EMBEDDING_REPO` / `CHL_EMBEDDING_QUANT`)
-- After bulk data imports
-- When FAISS index becomes corrupted
-- When embedding_status shows many 'failed' entries
-
-**Process:**
-1. Deletes existing embeddings and FAISS metadata
-2. Generates embeddings for all experiences and manuals
-3. Builds new FAISS index
-4. Updates embedding_status to 'embedded'
-
-**Environment variables (optional overrides):**
-- `CHL_EXPERIENCE_ROOT` - path to data directory
-- `CHL_DATABASE_PATH` - path to SQLite database
-- `CHL_EMBEDDING_REPO` / `CHL_EMBEDDING_QUANT` - override the embedding GGUF selection (defaults recorded by `scripts/setup.py`)
-- `CHL_RERANKER_REPO` / `CHL_RERANKER_QUANT` - override reranker selection (defaults recorded by `scripts/setup.py`)
-
-**Output:**
-- Progress bar showing embedding generation
-- Final statistics: entities processed, time taken, errors
-- New FAISS index files in `data/faiss_index/`
-
----
-
-### Manage FAISS Snapshots (Web UI preferred)
-1. Start the FastAPI server: `uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000`
-2. Open `http://127.0.0.1:8000/operations`.
-3. Use the **FAISS Snapshot** card to:
-   - **Download** the current `.index/.meta/.backup` files as a ZIP for safekeeping or to hand off to another machine.
-   - **Upload** a new snapshot (ZIP, ≤512 MiB). The server validates the archive, writes it under `CHL_FAISS_INDEX_PATH`, logs the action, and hot-reloads the vectors when possible.
-4. Queue telemetry + audit log entries confirm who performed each snapshot swap.
-
-Security and limits:
-- Allowed file extensions in the snapshot: `.index`, `.json`, `.backup` (case-insensitive)
-- Per-file size limit: 512 MiB (uploads larger than this are rejected)
-- Archive size limit: 512 MiB
-- The server validates all ZIP entries before extraction and performs secure, file-by-file writes.
-
-> Tip: run `uv run python scripts/rebuild_index.py` on a machine with the ML extras when you need to regenerate embeddings, then upload the resulting snapshot through the Operations dashboard.
-
----
-
-### Search Health Check
-```bash
-python scripts/search_health.py
-```
-
-**Purpose:** Inspect search index health and statistics.
-
-**When to use:**
-- Diagnosing search performance issues
-- Monitoring embedding status
-- Validating index integrity
-
-**Output:**
-```json
-{
-  "totals": {"experiences": 150, "manuals": 25},
-  "embedding_status": {"pending": 5, "embedded": 168, "failed": 2},
-  "faiss": {
-    "available": true,
-    "model": "Qwen/Qwen3-Embedding-0.6B",
-    "dimension": 1024,
-    "vectors": 168,
-    "by_type": {"experience": 145, "manual": 23},
-    "index_path": "data/faiss_index/unified_qwen_qwen3-embedding-06b.index",
-    "last_updated": "2025-10-26T15:30:00Z"
-  },
-  "warnings": [
-    "2 entities have failed embeddings",
-    "5 entities have pending embeddings"
-  ]
-}
-```
-
----
-
-## 2: Export & Import
-
-The export/import scripts read their sheet IDs from `scripts/scripts_config.yaml`.
-Populate that file once and re-run the scripts with a single command. A minimal
-example:
-
-```yaml
-# scripts/scripts_config.yaml
-export:
-  # sheet_id: your-review-sheet-id
-  experiences_sheet:
-    # id: your-review-sheet-id
-    worksheet: Experiences
-  manuals_sheet:
-    # id: your-review-sheet-id
-    worksheet: Manuals
-  dry_run: false
-  verbose: false
-
-import:
-  # sheet_id: your-published-sheet-id
-  experiences_sheet:
-    # id: your-published-sheet-id
-    worksheet: Experiences
-  manuals_sheet:
-    # id: your-published-sheet-id
-    worksheet: Manuals
-  verbose: false
-```
-
-Uncomment and replace the `sheet_id`/`id` placeholders with your actual Google
-Sheet identifiers. The same YAML should also define `data_path` and
-`google_credentials_path`, giving both the CLI scripts and the web UI a single source of truth for storage locations and sheet metadata.
-
-### Check Export Status (optional)
-```bash
-```
-Use this to review pending entries or sync metadata before exporting.
-
-### Export to Google Sheets
-```bash
-uv run python scripts/export.py
-```
-- Writes **all** experiences and manuals from SQLite to the configured
-  worksheets.
-- Add `--dry-run` to preview counts without touching Google Sheets.
-
-### Import from Google Sheets (destructive)
-```bash
-uv run python scripts/import.py --yes
-```
-- Replaces the local experiences/manual tables with the worksheet contents.
-- After import, upload or rebuild a FAISS snapshot via `/operations` (or run `uv run python scripts/rebuild_index.py` on a machine with ML extras) so vector search reflects the curated sheet.
-- Omit `--yes` to receive an interactive confirmation prompt.
-
----
-
-## Complete Workflow Summary (MVP)
-
-This section describes the end-to-end workflow for team curation using Google Sheets.
-
-### Setup (One-Time)
-
-1. **Create Google Sheets**
-   - Review Sheet: For curator review of pending entries
-   - Published Sheet: Curated, approved entries for team sync
-
-2. **Set up Service Account**
-   - Create a service account in Google Cloud Console.
-   - Download the credentials JSON, copy it into `<experience_root>/credentials` (defaults to `<project_root>/data/credentials`), and reference that absolute path in `scripts/scripts_config.yaml` (`google_credentials_path`).
-   - Share both sheets with the service-account email.
-
-3. **Configure script settings**
-   - Edit `scripts/scripts_config.yaml`: set `data_path`, `google_credentials_path`, and populate the `export`/`import`
-     sections with your Google Sheet IDs plus worksheet names. The CLI and UI both read this file, so you only set the paths once.
-
-### Regular Workflow
-
-#### 1. Export to Review Sheet
-```bash
-uv run python scripts/export.py
-```
-Write the full SQLite dataset—categories, experiences, and manuals—to the configured Google Sheets worksheets.
-You can also create `scripts/scripts_config.yaml` to store the sheet IDs/worksheet names and simply run `uv run python scripts/export.py`; CLI flags still override the YAML values.
-
-#### 2. Manual Curation (Google Sheets)
-Curators work directly in the exported worksheets:
-- Edit `title`, `playbook`, `content`, or `summary` fields to capture the
-  curated guidance.
-- Adjust `section` when recategorising experiences; ensure values remain one of
-  `useful`, `harmful`, or `contextual`.
-- Remove rows that should not be published or add new ones inline if needed.
-- Leave the `id` and `category_code` columns unchanged so imports remain stable.
-
-Sheet columns (exported as plain values):
-- Categories: `code`, `name`, `description`, `created_at`.
-- Experiences: `id`, `category_code`, `section`, `title`, `playbook`, `context`,
-  `source`, `sync_status`, `author`, `embedding_status`, `created_at`,
-  `updated_at`, `synced_at`, `exported_at`.
-- Manuals: `id`, `category_code`, `title`, `content`, `summary`, `source`,
-  `sync_status`, `author`, `embedding_status`, `created_at`, `updated_at`,
-  `synced_at`, `exported_at`.
-
-Keep the identifier and category columns stable—downstream imports expect them
-unchanged. Provide ISO 8601 strings when editing timestamp columns.
-
-### Workflow Checklist
-
-1. **Export** – `uv run python scripts/export.py` writes the latest SQLite entries
-   to Google Sheets using the configuration in `scripts/scripts_config.yaml`.
-2. **Curate in Sheets** – reviewers edit the exported category/experience/manual worksheets, remove rows, or adjust values as needed. Ensure IDs stay unique and category codes remain three-letter uppercase values.
-3. **Import** – `uv run python scripts/import.py --yes` overwrites the local
-   categories, experiences, and manuals with the curated sheet content. Follow up by uploading/rebuilding a FAISS snapshot via `/operations` (or `uv run python scripts/rebuild_index.py`) so vector search reflects the curated data.
-4. **Regenerate embeddings** – When you need a fresh snapshot (after large imports or model upgrades), run `uv run python scripts/rebuild_index.py` on a machine with the ML extras, then upload the resulting ZIP via the Operations dashboard. Restart MCP clients if they were pointing at outdated vectors.
-
-Tips:
-- Keep a backup of `data/chl.db` if you want the option to roll back imports.
-- The import script treats empty strings as NULL/None. Provide ISO 8601 strings
-  for timestamp fields when editing directly in Sheets.
-
----
-
----
-
-## 3: API Server Operations
-
-The optional FastAPI server provides REST endpoints and asynchronous embedding processing. The MCP server and API server are independent—use the API for high-volume workflows or programmatic integration.
-
-### Start the API Server
-```bash
-uv run uvicorn src.api_server:app --host 0.0.0.0 --port 8000
-```
-
-**Output** (successful startup):
-```
-INFO:     Started server process [12345]
-INFO:     Waiting for application startup.
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Starting CHL API server..."}
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Database initialized: /path/to/chl.db"}
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Search service initialized with primary provider: vector_faiss"}
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Worker pool initialized with 2 workers"}
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "Embedding worker pool started"}
-{"timestamp": "2025-11-06T...", "level": "INFO", "message": "CHL API server started successfully"}
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-### Health Check
-```bash
-curl http://localhost:8000/health
-```
-
-Returns service status and component health:
-```json
-{
-  "status": "healthy",
-  "components": {
-    "database": {"status": "available", "path": "/path/to/chl.db"},
-    "faiss_index": {"status": "available", "vectors": 150},
-    "embedding_model": {"status": "available", "model": "Qwen/Qwen3-Embedding-0.6B"}
-  },
-  "timestamp": "2025-11-06T..."
-}
-```
-
-### Monitor Embedding Queue
-```bash
-curl http://localhost:8000/admin/queue/status
-```
-
-Returns queue depth and worker status:
-```json
-{
-  "queue": {
-    "pending": {"experiences": 5, "manuals": 2, "total": 7},
-    "failed": {"experiences": 0, "manuals": 0, "total": 0}
-  },
-  "workers": {
-    "num_workers": 2,
-    "workers": [
-      {
-        "worker_id": 0,
-        "running": true,
-        "paused": false,
-        "jobs_processed": 150,
-        "jobs_succeeded": 148,
-        "jobs_failed": 2,
-        "last_run": 1699520400.0
-      },
-      {
-        "worker_id": 1,
-        "running": true,
-        "paused": false,
-        "jobs_processed": 143,
-        "jobs_succeeded": 142,
-        "jobs_failed": 1,
-        "last_run": 1699520398.0
-      }
-    ],
-    "total_jobs_processed": 293,
-    "total_jobs_succeeded": 290,
-    "total_jobs_failed": 3
-  }
-}
-```
-
-### Pause/Resume Workers
-```bash
-# Pause all workers (for maintenance)
-curl -X POST http://localhost:8000/admin/queue/pause
-
-# Resume workers
-curl -X POST http://localhost:8000/admin/queue/resume
-```
-
-**When to use**:
-- Before manual database operations
-- During bulk imports (automatic when using `scripts/import.py`)
-- For controlled maintenance windows
-
-### Retry Failed Embeddings
-```bash
-curl -X POST http://localhost:8000/admin/queue/retry-failed
-```
-
-Resets all failed entries to `pending` status so workers retry them:
-```json
-{
-  "retried": {
-    "experiences": 2,
-    "manuals": 1,
-    "total": 3
-  }
-}
-```
-
-### Drain Queue (Wait for Completion)
-```bash
-curl -X POST "http://localhost:8000/admin/queue/drain?timeout=300"
-```
-
-Blocks until all pending jobs are processed (max 5 minutes):
-```json
-{
-  "status": "drained",
-  "elapsed": 45.2
-}
-```
-
-**When to use**:
-- Before shutting down the API server
-- Before bulk import operations (automatic)
-- To ensure all embeddings are complete before backups
-
-### FAISS Index Status
-```bash
-curl http://localhost:8000/admin/index/status
-```
-
-Returns index health and configuration:
-```json
-{
-  "status": "available",
-  "index_size": 150,
-  "tombstone_ratio": 0.02,
-  "needs_rebuild": false,
-  "save_policy": "periodic",
-  "rebuild_threshold": 0.2,
-  "model_name": "Qwen/Qwen3-Embedding-0.6B",
-  "dimension": 1024
-}
-```
-
-### Trigger Index Operations
-```bash
-# Force save FAISS index to disk
-curl -X POST http://localhost:8000/admin/index/save
-
-# Force rebuild FAISS index from embeddings
-curl -X POST http://localhost:8000/admin/index/rebuild
-```
-
-**Warning**: Rebuild is a blocking operation that may take several seconds.
-
-### Web UI (Settings & Operations)
-
-When the FastAPI server is running you can manage CHL entirely from the browser on the same machine. The topmost card on `/settings` now reminds operators to edit `scripts/scripts_config.yaml`, load it, pick models, validate diagnostics, and then jump to `/operations`—no README digging required.
-
-- **Settings Dashboard** – `http://127.0.0.1:8000/settings`
-  - Checklist: links the one‑time steps (prepare YAML, load it, pick models, validate, head to Ops).
-  - Google Sheets: load or refresh `scripts_config.yaml`. The UI reads `data_path`, `google_credentials_path`, and the export/import sheet IDs, verifies permissions, and stores only the metadata/validation timestamp in SQLite.
-  - Models: choose embedding/reranker repos + quantization; changes update `data/model_selection.json` so workers pick them up.
-  - Diagnostics & backups: re-run the YAML validation, view the latest audit events, and download/restore a JSON snapshot of non-secret metadata (the YAML and credentials stay on disk).
-
-- **Operations Dashboard** – `http://127.0.0.1:8000/operations`
-  - Import/export/index buttons call the same CLI helpers (`scripts/import.py`, `scripts/export.py`, `scripts/rebuild_index.py`) with advisory locks and surface stdout/stderr snippets inline; results trigger an `ops-refresh` event so queue/worker/job cards update immediately.
-  - Worker card only exposes pause/resume/drain when an external worker pool registers; otherwise it stays informational (“no workers connected”) so manual FAISS snapshots are the default workflow.
-  - Queue and job cards stream over SSE/htmx every five seconds; if SSE drops, the `ops-refresh` events keep things in sync.
-  - **FAISS snapshots**: download the current `.index/.meta/.backup` files as a ZIP or upload a ZIP built from the same files. Uploads are limited to 512 MiB, require ZIP format, write files directly to `CHL_FAISS_INDEX_PATH`, log an `index.snapshot.uploaded` audit entry, and attempt to hot-reload the in-memory FAISS manager. If the reload fails, restart the API server to pick up the files.
-
-The UI binds to `127.0.0.1` by default; place your own authenticated reverse proxy in front if you must expose it elsewhere.
-
-### Configuration
-
-Environment variables for API server:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CHL_NUM_EMBEDDING_WORKERS` | `2` | *Legacy.* Count for the removed background worker pool (ignored in current builds). |
-| `CHL_WORKER_POLL_INTERVAL` | `5` | *Legacy.* Poll interval for the archived worker pool. |
-| `CHL_WORKER_BATCH_SIZE` | `10` | *Legacy.* Batch size for the archived worker pool. |
-| `CHL_FAISS_SAVE_POLICY` | `periodic` | When to save index (`manual`, `periodic`, `immediate`) |
-| `CHL_FAISS_SAVE_INTERVAL` | `300` | Seconds between periodic saves |
-| `CHL_FAISS_REBUILD_THRESHOLD` | `0.2` | Tombstone ratio triggering rebuild (0.0-1.0) |
-| `CHL_OPERATIONS_MODE` | `scripts` | Controls `/operations` job handlers. Use `scripts` (default) to execute the CLI helpers, or `noop` to keep the buttons inert (handy for CI/tests). |
-
-### Background Worker Lifecycle
-
-> **Legacy notice:** Local embedding workers are no longer bundled. This section remains for operators wiring up an external pool via the API.
-
-1. **Startup**: Workers are created when API server starts (if ML dependencies available)
-2. **Polling**: Each worker polls for pending entries every `WORKER_POLL_INTERVAL` seconds
-3. **Batch Processing**: Workers fetch up to `WORKER_BATCH_SIZE` entries and generate embeddings
-4. **Status Updates**: Entries are marked as `embedded` or `failed` after processing
-5. **FAISS Updates**: Index is updated incrementally as embeddings complete
-6. **Shutdown**: Workers drain pending jobs (up to 30s) before server shutdown
-
-### Troubleshooting
-
-**Workers not starting**:
-- Check logs: `{"message": "Worker pool not initialized (embedding service unavailable)"}`
-- Install ML dependencies: `uv sync --python 3.11 --extra ml`
-- Verify models are downloaded: `uv run python scripts/setup.py`
-
-**High failure rate**:
-- Check worker logs for specific errors
-- Retry failed jobs: `curl -X POST http://localhost:8000/admin/queue/retry-failed`
-- If errors persist, rebuild index: `python scripts/rebuild_index.py`
-
-**Queue not draining**:
-- Check worker status: `curl http://localhost:8000/admin/queue/status`
-- Ensure workers are not paused
-- Check for stuck entries (status still `pending` after long time)
-
----
-
-## Script Development Guidelines
-
-When adding new scripts:
-
-1. **Location:** Place in `scripts/` directory
-2. **Naming:** Use snake_case, descriptive names
-3. **Structure:**
-   ```python
-   #!/usr/bin/env python3
-   """One-line description of what this script does."""
-   import sys
-   from pathlib import Path
-
-   # Add project root to path
-   sys.path.insert(0, str(Path(__file__).parent.parent))
-
-   from src.config import get_config
-   # ... other imports
-
-   def main():
-       # Script logic here
-       pass
-
-   if __name__ == "__main__":
-       main()
-   ```
-
-4. **Documentation:** Add entry to this file with:
-   - Command to run
-   - Purpose
-   - When to use
-   - Expected output
-
-5. **Error Handling:**
-   - Print clear error messages
-   - Exit with non-zero code on failure
-   - Log to console (not just files)
-
-6. **Environment:**
-   - Use `get_config()` for configuration
-   - Respect environment variables
-   - Provide sensible defaults
-
----
-
-## Troubleshooting
-
-### Script won't run
-```bash
-# Make sure you're in project root
-cd /path/to/curated-heuristic-loop
-
-# Check Python path
-python --version  # Should be 3.10+ (uv can pin 3.11 via `uv python install 3.11`)
-
-# Run with uv-managed environment
-```
-
-### Import errors
-```bash
-# Sync dependencies (includes ML extras)
-uv sync --python 3.11 --extra ml
-```
-
-### Permission denied
-```bash
-# Make script executable (if needed)
-chmod +x scripts/rebuild_index.py
-```
-
----
-
-## Environment Variable Reference
-
-Scripts respect these environment variables (legacy support).
-When using `scripts/export.py` and `scripts/import.py`, prefer configuring
-`scripts/scripts_config.yaml` instead of environment variables.
-
-### Core Settings
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CHL_EXPERIENCE_ROOT` | `<project_root>/data` | Path to data directory |
-| `CHL_DATABASE_PATH` | `<experience_root>/chl.db` | SQLite database path (relative values resolve under `<experience_root>`) |
-| `CHL_DATABASE_ECHO` | `false` | Log SQL queries |
-
-### Search & ML
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CHL_EMBEDDING_REPO` | Recorded in `data/model_selection.json` | Embedding GGUF repository (e.g., `Qwen/Qwen3-Embedding-0.6B-GGUF`) |
-| `CHL_EMBEDDING_QUANT` | Recorded in `data/model_selection.json` | Embedding quantization (e.g., `Q8_0`) |
-| `CHL_RERANKER_REPO` | Recorded in `data/model_selection.json` | Reranker GGUF repository |
-| `CHL_RERANKER_QUANT` | Recorded in `data/model_selection.json` | Reranker quantization |
-| `CHL_FAISS_INDEX_PATH` | `<experience_root>/faiss_index` | FAISS index directory (relative values resolve under `<experience_root>`) |
-
-### Export & Sync
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CHL_REVIEW_SHEET_ID` | (none) | Google Sheets ID for Review Sheet |
-| `CHL_PUBLISHED_SHEET_ID` | (none) | Google Sheets ID for Published Sheet |
-| `CHL_EXPORT_BATCH_SIZE` | `1000` | Rows per API call |
-
-These variables remain available for legacy tooling, but the preferred
-configuration path is `scripts/scripts_config.yaml` for export/import scripts.
-
-### Operations & Caching
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CHL_OPERATIONS_MODE` | `scripts` | Use built-in scripts or `noop` for dry-run |
-| `CHL_OPERATIONS_TIMEOUT_SEC` | `900` (min `60`) | Max seconds per import/export/index operation |
-| `CHL_CATEGORIES_CACHE_TTL` | `30.0` | MCP categories/tool index cache TTL (seconds) |
+This command is idempotent and also syncs the `generator.md` and `evaluator.md` guidelines into the `GLN` category.
+
+## 2. The CHL Workflow
+
+The CHL workflow is designed for developers, AI assistants, and curators to collaborate on building a shared knowledge base.
+
+### 2.1. End-to-End Workflow
+1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`write_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
+2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/rebuild_index.py`. This process generates embeddings for all `pending` entries.
+3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using `scripts/export.py`.
+4.  **Curate (Curator):** The curator reviews the submitted entries in Google Sheets, merging duplicates, editing for clarity, and approving the highest-quality insights.
+5.  **Publish (Curator):** Approved entries are moved to a "Published" tab or a separate Published Sheet.
+6.  **Distribute (Developer):** Developers sync their local databases from the Published Sheet using `scripts/import.py`. This updates their local knowledge base with the latest curated heuristics.
+
+### 2.2. MCP Interaction Flow (for Assistant developers)
+1.  **Startup:** The MCP service loads its configuration and advertises available categories via `list_categories`.
+2.  **Generator Mode:** The assistant queries for relevant entries using `read_entries(query=...)`.
+3.  **Evaluator Mode:** The assistant writes new knowledge using `write_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
+
+### 2.3. Review and Governance
+-   **Controlled Vocabulary:** Use a consistent set of categories, sections, and tags.
+-   **Curator Actions:** Curators should record actions (e.g., `accepted`, `superseded`) in the Published Sheet to provide feedback to the system.
+-   **Analytics:** Periodically run analytics on the knowledge base to identify unused entries or duplicate clusters.
+
+## 3. Web UI Guide
+
+The simplest way to manage CHL is through the built-in web interface, available by running `uvicorn src.api_server:app` and navigating to `http://127.0.0.1:8000`.
+
+### 3.1. Settings Dashboard (`/settings`)
+This page is for initial configuration and system management.
+-   **First-Time Checklist:** Guides you through setting up credentials and sheet IDs.
+-   **Configuration:** Load `scripts_config.yaml` to configure Google Sheets access.
+-   **Models:** Select the embedding and reranker models.
+-   **Diagnostics:** Validate connections and review audit logs.
+-   **Backup/Restore:** Download or restore a JSON backup of system metadata.
+
+### 3.2. Operations Dashboard (`/operations`)
+This page is for day-to-day operational tasks.
+-   **Jobs:** Trigger `import`, `export`, and `rebuild_index` jobs with a single click.
+-   **Job History:** View the status and logs of recent jobs.
+-   **FAISS Snapshots:** Download the current FAISS index for backup or upload a new one to quickly update the search index.
+
+## 4. Command-Line Operations
+
+For automation and scripting, use these command-line tools.
+
+### 4.1. Search and Indexing
+-   **Rebuild Search Index:** Regenerates embeddings and the FAISS index from scratch.
+    ```bash
+    uv run python scripts/rebuild_index.py
+    ```
+-   **Check Search Health:** Inspects the status of the search index and embeddings.
+    ```bash
+    uv run python scripts/search_health.py
+    ```
+
+### 4.2. Data Synchronization
+Before running, ensure your `scripts/scripts_config.yaml` is configured with the correct Google Sheet IDs.
+
+-   **Export to Google Sheets:** Writes local `pending` entries to the review sheet.
+    ```bash
+    uv run python scripts/export.py
+    ```
+-   **Import from Google Sheets:** Overwrites the local database with content from the published sheet. **This is a destructive operation.**
+    ```bash
+    uv run python scripts/import.py --yes
+    ```
+
+## 5. API Server Operations
+
+The FastAPI server provides REST endpoints for advanced control.
+
+-   **Health Check:**
+    ```bash
+    curl http://localhost:8000/health
+    ```
+-   **Queue Status:**
+    ```bash
+    curl http://localhost:8000/admin/queue/status
+    ```
+-   **Pause/Resume Workers:**
+    ```bash
+    curl -X POST http://localhost:8000/admin/queue/pause
+    curl -X POST http://localhost:8000/admin/queue/resume
+    ```
+-   **Retry Failed Embeddings:**
+    ```bash
+    curl -X POST http://localhost:8000/admin/queue/retry-failed
+    ```
+
+## 6. Reference
+
+### 6.1. Category Index
+The system is pre-configured with the following categories. You can add more as needed.
+  - `figma_page_design` (`FPD`)
+  - `database_schema_design` (`DSD`)
+  - `page_specification` (`PGS`)
+  - `ticket_management` (`TMG`)
+  - `architecture_design` (`ADG`)
+  - `migration_code` (`MGC`)
+  - `frontend_html` (`FTH`)
+  - `laravel_php_web` (`LPW`)
+  - `python_agent`(`PGT`)
+  - `playwright_page_test` (`PPT`)
+  - `e2e_test` (`EET`)
+  - `pull_request` (`PRQ`)
+
+### 6.2. Environment Variables
+While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. See the old `manual.md` for a complete list if needed. Key variables include:
+- `CHL_EXPERIENCE_ROOT`
+- `CHL_DATABASE_PATH`
+- `CHL_EMBEDDING_REPO`
+- `CHL_REVIEW_SHEET_ID`
+- `CHL_PUBLISHED_SHEET_ID`
+
+## 7. Troubleshooting
+
+-   **Script won't run:** Ensure you are in the project root and using the `uv` environment (`uv run ...`).
+-   **Import errors:** Your dependencies may be out of sync. Run `uv sync --python 3.11 --extra ml`.
+-   **Permission denied:** Make scripts executable with `chmod +x scripts/<script_name>.py`.
+
+## 8. Script Development Guidelines
+
+Follow the structure in `scripts/_template.py` when adding new scripts. Ensure they use `src.config.get_config()` and have clear documentation.
