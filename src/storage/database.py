@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from contextlib import contextmanager
 
 from .schema import Base
@@ -38,9 +39,11 @@ class Database:
         connection_string = f"sqlite:///{self.database_path}"
         # Use a higher SQLite connection timeout and allow cross-thread usage.
         # busy_timeout PRAGMA is also set below on every new connection.
+        # Use NullPool to prevent connection pooling issues with multi-process access
         self.engine = create_engine(
             connection_string,
             echo=self.echo,
+            poolclass=NullPool,  # No connection pooling for multi-process safety
             connect_args={
                 "check_same_thread": False,  # Allow SQLite in multi-threaded context
                 "timeout": 30.0,             # Connection-level timeout for busy database

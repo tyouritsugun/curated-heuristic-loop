@@ -53,14 +53,28 @@ class FAISSIndexManager:
         self.model_name = model_name
         self.dimension = dimension
 
+        # Validate session availability and prefer session_factory
+        if not session_factory and not session:
+            logger.warning(
+                "FAISSIndexManager initialized without session access. "
+                "Database operations (metadata, rebuild) will fail. "
+                "This is only acceptable for read-only index loading from files."
+            )
+
         # Support both old (session) and new (session_factory) patterns
         if session_factory:
             self.session_factory = session_factory
             self.session = None  # Don't use shared session
+            logger.debug("Using session_factory for database operations")
         else:
             # Backward compatibility: wrap single session in a factory
             self.session = session
             self.session_factory = None
+            if session:
+                logger.warning(
+                    "Using deprecated single session pattern. "
+                    "Consider migrating to session_factory for better concurrency."
+                )
 
         # Create index directory if needed
         self.index_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +135,10 @@ class FAISSIndexManager:
                     f"FAISS index loaded: {self._index.ntotal} vectors, "
                     f"dimension={self._index.d}"
                 )
+
+                # Validate consistency with database
+                self._validate_consistency()
+
             except Exception as e:
                 logger.error(f"Failed to load FAISS index: {e}. Creating new index.")
                 self._create_new_index()
@@ -140,18 +158,8 @@ class FAISSIndexManager:
         )
 
         if reset_metadata:
-            # Get session using factory pattern or fallback to shared session
-            if self.session_factory:
-                session = self.session_factory()
-                owns_session = True
-            elif self.session:
-                session = self.session
-                owns_session = False
-            else:
-                session = None
-
-            if session:
-                try:
+            try:
+                with self._session_scope(read_only=False) as session:
                     from src.storage.schema import FAISSMetadata
 
                     deleted_rows = session.query(FAISSMetadata).delete()
@@ -160,22 +168,72 @@ class FAISSIndexManager:
                             f"Cleared {deleted_rows} stale faiss_metadata rows "
                             "before creating fresh index"
                         )
-                    if owns_session:
-                        session.commit()
-                    else:
-                        session.flush()
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to reset FAISS metadata before rebuilding index: {e}"
-                    )
-                    session.rollback()
-                    raise
-                finally:
-                    if owns_session:
-                        session.close()
+                    # Commit handled by _session_scope
+
+            except FAISSIndexError:
+                logger.warning(
+                    "No session available to reset FAISS metadata. "
+                    "Proceeding with index creation (metadata may be inconsistent)."
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to reset FAISS metadata before rebuilding index: {e}"
+                )
+                raise
 
         # IndexFlatIP for cosine similarity (requires normalized embeddings)
         self._index = self.faiss.IndexFlatIP(self.dimension)
+
+    def _validate_consistency(self) -> None:
+        """Validate that index file matches database state.
+
+        Logs warnings if inconsistencies detected (checksum mismatch, missing metadata).
+        Called after index load to detect stale index files.
+        """
+        if not self.meta_path.exists():
+            logger.warning(
+                "Index exists but metadata file missing. "
+                "This may indicate incomplete save. Rebuild recommended."
+            )
+            return
+
+        try:
+            with open(self.meta_path) as f:
+                meta = json.load(f)
+
+            saved_checksum = meta.get('checksum', '')
+            saved_count = meta.get('count', 0)
+
+            # Compute current checksum from database
+            try:
+                current_checksum = self._compute_checksum()
+            except Exception as e:
+                logger.warning(f"Cannot validate consistency: checksum computation failed: {e}")
+                return
+
+            if saved_checksum != current_checksum:
+                logger.warning(
+                    f"Index inconsistency detected! "
+                    f"Metadata checksum={saved_checksum}, "
+                    f"Database checksum={current_checksum}. "
+                    f"Index file may be stale. Rebuild recommended to resync."
+                )
+                # Note: We don't auto-rebuild here to avoid startup delays
+                # The needs_rebuild() method will detect this and trigger rebuild when appropriate
+
+            # Also check if vector count makes sense
+            if self._index.ntotal != saved_count:
+                logger.warning(
+                    f"Index vector count mismatch: "
+                    f"FAISS has {self._index.ntotal} vectors, "
+                    f"metadata says {saved_count}. "
+                    f"Metadata file may be corrupted."
+                )
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Metadata file corrupted (invalid JSON): {e}")
+        except Exception as e:
+            logger.warning(f"Consistency validation failed: {e}")
 
     @contextmanager
     def _exclusive_lock(self):
@@ -206,6 +264,51 @@ class FAISSIndexManager:
                     fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
                 except Exception:
                     pass
+
+    @contextmanager
+    def _session_scope(self, read_only: bool = False):
+        """Context manager for session lifecycle with proper cleanup.
+
+        Args:
+            read_only: If True, hint that this is a read-only operation
+                      (no automatic commit even if we own the session)
+
+        Yields:
+            SQLAlchemy session
+
+        Raises:
+            FAISSIndexError: If no session available
+        """
+        if self.session_factory:
+            session = self.session_factory()
+            owns_session = True
+        elif self.session:
+            session = self.session
+            owns_session = False
+        else:
+            raise FAISSIndexError(
+                "No database session available. "
+                "FAISSIndexManager requires session_factory for database operations."
+            )
+
+        try:
+            yield session
+            # Commit if we own the session and this is a write operation
+            if owns_session and not read_only:
+                session.commit()
+        except Exception as e:
+            if owns_session:
+                try:
+                    session.rollback()
+                except Exception as rollback_error:
+                    logger.warning(f"Failed to rollback session: {rollback_error}")
+            raise
+        finally:
+            if owns_session:
+                try:
+                    session.close()
+                except Exception as close_error:
+                    logger.warning(f"Failed to close session: {close_error}")
 
     def add(
         self,
@@ -456,35 +559,26 @@ class FAISSIndexManager:
         Returns:
             Ratio between 0.0 and 1.0
         """
-        # Get session using factory pattern or fallback to shared session
-        if self.session_factory:
-            session = self.session_factory()
-            owns_session = True
-        elif self.session:
-            session = self.session
-            owns_session = False
-        else:
-            return 0.0
-
         try:
-            from src.storage.schema import FAISSMetadata
+            with self._session_scope(read_only=True) as session:
+                from src.storage.schema import FAISSMetadata
 
-            total = session.query(FAISSMetadata).count()
-            if total == 0:
-                return 0.0
+                total = session.query(FAISSMetadata).count()
+                if total == 0:
+                    return 0.0
 
-            deleted = session.query(FAISSMetadata).filter(
-                FAISSMetadata.deleted == True
-            ).count()
+                deleted = session.query(FAISSMetadata).filter(
+                    FAISSMetadata.deleted == True
+                ).count()
 
-            return deleted / total
+                return deleted / total
 
+        except FAISSIndexError:
+            logger.warning("No session available for tombstone ratio computation")
+            return 0.0
         except Exception as e:
             logger.warning(f"Failed to compute tombstone ratio: {e}")
             return 0.0
-        finally:
-            if owns_session:
-                session.close()
 
     def needs_rebuild(self) -> bool:
         """Check if index needs rebuilding
@@ -637,108 +731,72 @@ class FAISSIndexManager:
 
     def _get_metadata_by_internal_id(self, internal_id: int) -> Optional[Dict[str, str]]:
         """Get entity metadata by FAISS internal ID"""
-        # Get session using factory pattern or fallback to shared session
-        if self.session_factory:
-            session = self.session_factory()
-            owns_session = True
-        elif self.session:
-            session = self.session
-            owns_session = False
-        else:
-            return None
-
         try:
-            from src.storage.schema import FAISSMetadata
+            with self._session_scope(read_only=True) as session:
+                from src.storage.schema import FAISSMetadata
 
-            mapping = session.query(FAISSMetadata).filter(
-                FAISSMetadata.faiss_internal_id == internal_id,
-                FAISSMetadata.deleted == False
-            ).first()
+                mapping = session.query(FAISSMetadata).filter(
+                    FAISSMetadata.faiss_internal_id == internal_id,
+                    FAISSMetadata.deleted == False
+                ).first()
 
-            if mapping:
-                return {
-                    'entity_id': mapping.entity_id,
-                    'entity_type': mapping.entity_type
-                }
+                if mapping:
+                    return {
+                        'entity_id': mapping.entity_id,
+                        'entity_type': mapping.entity_type
+                    }
 
+                return None
+
+        except FAISSIndexError:
+            logger.warning("No session available for metadata lookup")
             return None
-
         except Exception as e:
             logger.warning(f"Failed to lookup metadata for internal_id={internal_id}: {e}")
             return None
-        finally:
-            if owns_session:
-                session.close()
 
     def _mark_deleted(self, entity_id: str, entity_type: str) -> None:
         """Mark entry as deleted in metadata"""
-        # Get session using factory pattern or fallback to shared session
-        if self.session_factory:
-            session = self.session_factory()
-            owns_session = True
-        elif self.session:
-            session = self.session
-            owns_session = False
-        else:
-            return
-
         try:
-            from src.storage.schema import FAISSMetadata
+            with self._session_scope(read_only=False) as session:
+                from src.storage.schema import FAISSMetadata
 
-            mapping = session.query(FAISSMetadata).filter(
-                FAISSMetadata.entity_id == entity_id,
-                FAISSMetadata.entity_type == entity_type
-            ).first()
+                mapping = session.query(FAISSMetadata).filter(
+                    FAISSMetadata.entity_id == entity_id,
+                    FAISSMetadata.entity_type == entity_type
+                ).first()
 
-            if mapping:
-                mapping.deleted = True
-                if owns_session:
-                    session.commit()
-                else:
-                    session.flush()
+                if mapping:
+                    mapping.deleted = True
+                    # Commit/flush handled by _session_scope
 
+        except FAISSIndexError:
+            logger.warning("No session available to mark entry as deleted")
+            return
         except Exception as e:
-            try:
-                session.rollback()
-            except Exception as rollback_error:
-                logger.warning(
-                    f"Failed to rollback session after delete mark error: {rollback_error}"
-                )
             logger.error(f"Failed to mark as deleted: {e}")
             raise
-        finally:
-            if owns_session:
-                session.close()
 
     def _compute_checksum(self) -> str:
         """Compute checksum of embeddings table for validation"""
-        # Get session using factory pattern or fallback to shared session
-        if self.session_factory:
-            session = self.session_factory()
-            owns_session = True
-        elif self.session:
-            session = self.session
-            owns_session = False
-        else:
-            return ""
-
         try:
-            from src.storage.schema import Embedding
+            with self._session_scope(read_only=True) as session:
+                from src.storage.schema import Embedding
 
-            # Count embeddings for this model
-            count = session.query(Embedding).filter(
-                Embedding.model_name == self.model_name
-            ).count()
+                # Count embeddings for this model
+                count = session.query(Embedding).filter(
+                    Embedding.model_name == self.model_name
+                ).count()
 
-            # Simple checksum based on count (can be enhanced)
-            return hashlib.md5(f"{self.model_name}:{count}".encode()).hexdigest()
+                # Simple checksum based on count (can be enhanced)
+                return hashlib.md5(f"{self.model_name}:{count}".encode()).hexdigest()
 
+        except FAISSIndexError:
+            logger.warning("No session available for checksum computation")
+            return ""
         except Exception as e:
             logger.warning(f"Failed to compute checksum: {e}")
             return ""
-        finally:
-            if owns_session:
-                session.close()
 
     @property
     def is_available(self) -> bool:

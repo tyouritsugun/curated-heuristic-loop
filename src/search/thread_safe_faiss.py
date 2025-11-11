@@ -59,10 +59,65 @@ def initialize_faiss_with_recovery(
 
     # Try normal load
     try:
-        _ = faiss_manager.index  # Triggers lazy load
+        _ = faiss_manager.index  # Triggers lazy load (includes validation)
         logger.info(
             f"FAISS index loaded successfully: {faiss_manager.index.ntotal} vectors"
         )
+
+        # Check if rebuild is needed due to inconsistency
+        if faiss_manager.needs_rebuild():
+            logger.warning("Index inconsistency detected, triggering automatic rebuild")
+            try:
+                # Rebuild from database
+                from src.storage.schema import Embedding
+
+                # Get all embeddings from database
+                embeddings = session.query(Embedding).filter(
+                    Embedding.model_name == model_name
+                ).all()
+
+                if not embeddings:
+                    logger.warning("No embeddings found in database for rebuild")
+                else:
+                    # Build entity type mapping
+                    entity_type_map = {}
+                    for emb in embeddings:
+                        if emb.entity_id.startswith('EXP-'):
+                            entity_type_map[emb.entity_id] = 'experience'
+                        elif emb.entity_id.startswith('MNL-'):
+                            entity_type_map[emb.entity_id] = 'manual'
+                        else:
+                            logger.warning(f"Unknown entity type for ID: {emb.entity_id}, skipping")
+                            continue
+
+                    # Prepare bulk add
+                    entity_ids = []
+                    entity_types = []
+                    vectors = []
+
+                    for emb in embeddings:
+                        if emb.entity_id in entity_type_map:
+                            entity_ids.append(emb.entity_id)
+                            entity_types.append(entity_type_map[emb.entity_id])
+                            vectors.append(np.frombuffer(emb.embedding_data, dtype=np.float32))
+
+                    if entity_ids:
+                        # Create fresh index and reset metadata
+                        faiss_manager._create_new_index(reset_metadata=True)
+
+                        # Stack vectors and add to index
+                        vectors_array = np.vstack(vectors).astype(np.float32)
+                        faiss_manager.add(entity_ids, entity_types, vectors_array)
+                        faiss_manager.save()
+
+                        logger.info(
+                            f"FAISS index auto-rebuilt successfully: {len(entity_ids)} vectors"
+                        )
+                        session.flush()
+            except Exception as rebuild_error:
+                logger.error(f"Auto-rebuild failed: {rebuild_error}")
+                # Continue with potentially inconsistent index rather than failing startup
+
         return faiss_manager
 
     except FAISSIndexError as e:
@@ -401,9 +456,30 @@ class ThreadSafeFAISSManager:
                 with open(meta_path, 'w') as f:
                     json.dump(metadata, f, indent=2)
 
+                # Verify what we just wrote (read back and compare)
+                try:
+                    with open(meta_path, 'r') as f:
+                        verified = json.load(f)
+                    if verified['checksum'] != metadata['checksum']:
+                        raise FAISSIndexError(
+                            f"Metadata verification failed after save! "
+                            f"Expected checksum={metadata['checksum']}, "
+                            f"got checksum={verified['checksum']}"
+                        )
+                    if verified['count'] != metadata['count']:
+                        raise FAISSIndexError(
+                            f"Metadata verification failed after save! "
+                            f"Expected count={metadata['count']}, "
+                            f"got count={verified['count']}"
+                        )
+                except (json.JSONDecodeError, KeyError) as verify_error:
+                    raise FAISSIndexError(
+                        f"Metadata file corrupted after save: {verify_error}"
+                    ) from verify_error
+
                 logger.debug(
-                    f"FAISS index saved successfully: {index_path} "
-                    f"({self._manager.index.ntotal} vectors)"
+                    f"FAISS index saved and verified successfully: {index_path} "
+                    f"({self._manager.index.ntotal} vectors, checksum={metadata['checksum']})"
                 )
 
         except Exception as e:
