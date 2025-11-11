@@ -130,22 +130,6 @@ class ErrorResponse(BaseModel):
 
 
 # Settings models
-class CredentialsSettingsRequest(BaseModel):
-    path: str = Field(..., description="Absolute or relative path to credentials JSON")
-    notes: Optional[str] = Field(None, description="Optional operator notes")
-
-
-class SheetsSettingsRequest(BaseModel):
-    config_path: str = Field(..., description="Absolute or relative path to scripts_config.yaml")
-
-
-class ModelSettingsRequest(BaseModel):
-    embedding_repo: Optional[str] = None
-    embedding_quant: Optional[str] = None
-    reranker_repo: Optional[str] = None
-    reranker_quant: Optional[str] = None
-
-
 class SettingsSnapshotResponse(BaseModel):
     credentials: Optional[Dict[str, Any]]
     sheets: Optional[Dict[str, Any]]
@@ -178,12 +162,6 @@ class JobStatusResponse(BaseModel):
 
 
 # Worker models
-class WorkerActionResponse(BaseModel):
-    status: str
-    elapsed: Optional[float] = None
-    remaining: Optional[int] = None
-
-
 class WorkerStatusResponse(BaseModel):
     queue: Dict[str, Any]
     workers: Optional[Dict[str, Any]]

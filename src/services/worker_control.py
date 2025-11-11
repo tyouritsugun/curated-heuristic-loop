@@ -15,7 +15,7 @@ class WorkerUnavailableError(RuntimeError):
 
 
 class WorkerControlService:
-    """Wraps worker pool operations with queue insights and audit logging."""
+    """Wraps worker pool operations with queue insights."""
 
     def __init__(self, session_factory, pool_getter=None):
         self._session_factory = session_factory
@@ -32,18 +32,21 @@ class WorkerControlService:
         return {"queue": queue, "workers": pool_status}
 
     def pause(self, session: Session, actor: Optional[str]) -> Dict[str, str]:
+        """Pause worker pool (used by deprecated /ui/workers/{action} endpoint)."""
         pool = self._require_pool()
         pool.pause_all()
         self._log(session, "workers.pause", actor, {"reason": "api_request"})
         return {"status": "paused"}
 
     def resume(self, session: Session, actor: Optional[str]) -> Dict[str, str]:
+        """Resume worker pool (used by deprecated /ui/workers/{action} endpoint)."""
         pool = self._require_pool()
         pool.resume_all()
         self._log(session, "workers.resume", actor, {"reason": "api_request"})
         return {"status": "resumed"}
 
     def drain(self, session: Session, timeout: int, actor: Optional[str]) -> Dict[str, Any]:
+        """Drain worker queue (used by deprecated /ui/workers/{action} endpoint)."""
         pool = self._require_pool()
         start = time.time()
         while time.time() - start < timeout:
