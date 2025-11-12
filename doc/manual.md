@@ -10,8 +10,13 @@ This section guides you through the first-time setup of the CHL environment.
 For the fastest setup, please follow the **Quick Start** guide in the main [README.md](../README.md). It will guide you through installing dependencies and starting the web server. The rest of this manual assumes you have completed those steps.
 
 **Choose your installation mode:**
-- **GPU mode** (default): Install with `--extra ml` for semantic search using FAISS and embeddings
-- **CPU-only mode**: Install without ML extras for keyword search using SQLite text matching
+- **GPU mode** (recommended for semantic search): Install with `--extra ml` for semantic search using FAISS and embeddings. Requires ≥8 GB VRAM. Enables conceptual query matching (e.g., "best practices" matches "recommended approaches").
+- **CPU-only mode** (keyword search): Install without ML extras for keyword search using SQLite text matching. Use when GPU resources are unavailable or when literal keyword matching is sufficient for your use case.
+
+**Decision guidance:**
+- Have ≥8 GB VRAM and need semantic search? → GPU mode
+- Limited VRAM or keyword search is sufficient? → CPU-only mode
+- Can switch modes later, but FAISS snapshots are NOT portable between modes
 
 See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running CHL without ML dependencies.
 

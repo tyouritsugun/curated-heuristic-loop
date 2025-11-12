@@ -10,8 +10,10 @@ from src.storage.repository import CategoryRepository, CategoryManualRepository
 GUIDELINES_CATEGORY_CODE = "GLN"
 GENERATOR_GUIDE_TITLE = "Generator workflow guidelines"
 EVALUATOR_GUIDE_TITLE = "Evaluator workflow guidelines"
+EVALUATOR_CPU_GUIDE_TITLE = "Evaluator workflow guidelines (CPU-only)"
 GENERATOR_FILE = Path("generator.md")
 EVALUATOR_FILE = Path("evaluator.md")
+EVALUATOR_CPU_FILE = Path("evaluator_cpu.md")
 
 
 def _read_markdown(path: Path) -> Optional[str]:
@@ -28,16 +30,21 @@ def _summarize(content: str) -> Optional[str]:
     return None
 
 
-def sync_guidelines(generator_path: Path = GENERATOR_FILE, evaluator_path: Path = EVALUATOR_FILE) -> None:
+def sync_guidelines(
+    generator_path: Path = GENERATOR_FILE,
+    evaluator_path: Path = EVALUATOR_FILE,
+    evaluator_cpu_path: Path = EVALUATOR_CPU_FILE
+) -> None:
     config = get_config()
     db = Database(config.database_path, echo=False)
     db.init_database()
 
     generator_md = _read_markdown(generator_path)
     evaluator_md = _read_markdown(evaluator_path)
+    evaluator_cpu_md = _read_markdown(evaluator_cpu_path)
 
-    if generator_md is None and evaluator_md is None:
-        print(f"No markdown files found at {generator_path} or {evaluator_path}. Nothing to sync.")
+    if generator_md is None and evaluator_md is None and evaluator_cpu_md is None:
+        print(f"No markdown files found. Nothing to sync.")
         return
 
     with db.session_scope() as session:
@@ -96,10 +103,17 @@ def sync_guidelines(generator_path: Path = GENERATOR_FILE, evaluator_path: Path 
             manual_repo.delete(existing_by_title[EVALUATOR_GUIDE_TITLE].id)
             print(f"Deleted manual: {EVALUATOR_GUIDE_TITLE} (evaluator.md missing)")
 
+        if evaluator_cpu_md is not None:
+            upsert_manual(EVALUATOR_CPU_GUIDE_TITLE, evaluator_cpu_md)
+        elif EVALUATOR_CPU_GUIDE_TITLE in existing_by_title:
+            manual_repo.delete(existing_by_title[EVALUATOR_CPU_GUIDE_TITLE].id)
+            print(f"Deleted manual: {EVALUATOR_CPU_GUIDE_TITLE} (evaluator_cpu.md missing)")
+
         # Remove any stale manuals that no longer correspond to the expected titles
+        expected_titles = {GENERATOR_GUIDE_TITLE, EVALUATOR_GUIDE_TITLE, EVALUATOR_CPU_GUIDE_TITLE}
         if retained_ids:
             for manual in existing_manuals:
-                if manual.id not in retained_ids and manual.title not in (GENERATOR_GUIDE_TITLE, EVALUATOR_GUIDE_TITLE):
+                if manual.id not in retained_ids and manual.title not in expected_titles:
                     manual_repo.delete(manual.id)
                     print(f"Deleted manual: {manual.title} (stale)")
 

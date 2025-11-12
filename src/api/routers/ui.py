@@ -818,15 +818,25 @@ def settings_page(
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
     operations_service=Depends(get_operations_service),
+    config=Depends(get_config),
 ):
-    """Render the settings dashboard."""
+    """Render the settings dashboard.
+
+    Dynamically selects template based on search mode:
+    - sqlite_only mode: settings_cpu.html (simplified, keyword search guidance)
+    - auto/vector mode: settings.html (full GPU features)
+    """
     context = _build_settings_context(request, session, settings_service)
     # Add job_summaries for import/export status display
     jobs = operations_service.list_recent(session, limit=10)
     job_summaries = _summarize_job_runs(jobs, operations_service.last_runs_by_type(session))
     context["job_summaries"] = job_summaries
     context["is_partial"] = False
-    return templates.TemplateResponse("settings.html", context)
+    context["search_mode"] = config.search_mode
+
+    # Select template based on search mode
+    template_name = "settings_cpu.html" if config.search_mode == "sqlite_only" else "settings.html"
+    return templates.TemplateResponse(template_name, context)
 
 
 @router.get("/operations", response_class=HTMLResponse)
@@ -856,6 +866,7 @@ def operations_page(
             "message_level": "info",
             "error": None,
             "is_partial": False,
+            "search_mode": config.search_mode,
         }
     )
     return templates.TemplateResponse("operations.html", context)

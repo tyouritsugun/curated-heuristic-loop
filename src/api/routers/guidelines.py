@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
 
-from src.api.dependencies import get_db_session
+from src.api.dependencies import get_db_session, get_config
 from src.storage.repository import CategoryManualRepository, CategoryRepository
+from src.config import Config
 
 router = APIRouter(prefix="/api/v1/guidelines", tags=["guidelines"])
 
@@ -13,16 +14,23 @@ GUIDE_TITLE_MAP = {
     "generator": "Generator workflow guidelines",
     "evaluator": "Evaluator workflow guidelines",
 }
+GUIDE_TITLE_MAP_CPU = {
+    "generator": "Generator workflow guidelines",
+    "evaluator": "Evaluator workflow guidelines (CPU-only)",
+}
 
 
 @router.get("/{guide_type}")
 def get_guidelines(
     guide_type: Literal["generator", "evaluator"],
     version: Optional[str] = Query(None, description="Optional version filter (not currently used)"),
-    session: Session = Depends(get_db_session)
+    session: Session = Depends(get_db_session),
+    config: Config = Depends(get_config)
 ) -> Dict[str, Any]:
     """
     Return the generator or evaluator workflow manual from the GLN category.
+
+    In sqlite_only mode, returns CPU-specific evaluator guidelines when guide_type='evaluator'.
 
     Parameters:
     - guide_type: 'generator' or 'evaluator'
@@ -31,7 +39,12 @@ def get_guidelines(
     Returns:
         Manual content with metadata
     """
-    title = GUIDE_TITLE_MAP.get(guide_type)
+    # Select title based on search mode
+    if config.search_mode == "sqlite_only" and guide_type == "evaluator":
+        title = GUIDE_TITLE_MAP_CPU.get(guide_type)
+    else:
+        title = GUIDE_TITLE_MAP.get(guide_type)
+
     if title is None:
         raise HTTPException(
             status_code=400,
@@ -54,7 +67,7 @@ def get_guidelines(
         raise HTTPException(
             status_code=404,
             detail=(
-                "Guideline manual not found. Update generator.md/evaluator.md and run "
+                f"Guideline manual '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
                 "'uv run python scripts/seed_default_content.py'."
             )
         )
@@ -63,6 +76,7 @@ def get_guidelines(
         "meta": {
             "code": category.code,
             "name": category.name,
+            "search_mode": config.search_mode,
         },
         "manual": {
             "id": manual.id,

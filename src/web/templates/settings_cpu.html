@@ -4,7 +4,7 @@
   <header class="page-header">
     <div>
       <h1>Settings &amp; Configuration</h1>
-      <div class="status-pill ok" style="display: inline-block; margin-left: 1rem;">GPU Mode (Semantic Search)</div>
+      <div class="status-pill info" style="display: inline-block; margin-left: 1rem;">CPU-Only Mode (Keyword Search)</div>
     </div>
     <div class="actions">
       <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
@@ -12,6 +12,19 @@
   </header>
 
   {% include "partials/flash.html" %}
+
+  <div class="info-box" style="margin-bottom: 1.5rem;">
+    <h3>Search Mode: CPU-Only</h3>
+    <p>This system is running in <strong>CPU-only mode</strong> using SQLite keyword search. Semantic search (FAISS, embeddings, reranker) is disabled.</p>
+    <p><strong>Search tips for keyword mode:</strong></p>
+    <ul>
+      <li>Use specific keywords from entry titles and content (e.g., "authentication", "validation", "error handling")</li>
+      <li>Avoid abstract queries like "best practices" — use literal terms</li>
+      <li>Break complex queries into multiple searches with different keywords</li>
+      <li>Use category filtering to narrow results</li>
+    </ul>
+    <p><small class="muted">To switch to GPU mode with semantic search, set <code>CHL_SEARCH_MODE=auto</code> in <code>.env</code>, install ML extras (<code>uv sync --python 3.11 --extra ml</code>), run <code>scripts/setup-gpu.py --download-models</code>, restart the server, and rebuild the FAISS index. See <a href="/doc/manual.md#9-cpu-only-mode" target="_blank">CPU-Only Mode docs</a> for details.</small></p>
+  </div>
 
   <div id="setup" class="w3-container settings-section">
     {% include "partials/settings_onboarding.html" %}
@@ -32,9 +45,6 @@
   {% endif %}
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
-    <div id="queue" class="settings-section">
-      {% include "partials/ops_queue_card.html" %}
-    </div>
     <div id="jobs" class="full-span settings-section">
       {% include "partials/ops_jobs_card.html" %}
     </div>
