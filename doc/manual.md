@@ -25,21 +25,29 @@ The setup scripts initialize your local environment. Choose the appropriate scri
 uv run python scripts/setup-gpu.py
 ```
 
+**What GPU setup does:**
+1. Creates the `data/` directory structure
+2. Initializes the SQLite database (`chl.db`)
+3. Downloads the required embedding and reranker models
+4. Creates the FAISS index directory
+5. Validates model availability
+
 **Command (CPU-only mode):**
 ```bash
 CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
 ```
 
-**When to use:**
-- After first cloning the repository.
-- To re-download models after changing the selection (`CHL_EMBEDDING_REPO`).
-- If your `data/` directory is deleted or corrupted.
+**What CPU-only setup does:**
+1. Verifies `CHL_SEARCH_MODE=sqlite_only` is set
+2. Creates the `data/` directory (no FAISS directory)
+3. Initializes the SQLite database (`chl.db`)
+4. Seeds default categories and sample entries
+5. Validates credential paths (non-fatal if missing)
 
-**What it does:**
-1. Creates the `data/` directory structure.
-2. Initializes the SQLite database (`chl.db`).
-3. Downloads the required embedding and reranker models.
-4. Creates the FAISS index directory.
+**When to use:**
+- After first cloning the repository
+- If your `data/` directory is deleted or corrupted
+- To re-download models after changing selection (GPU mode only)
 
 ### 1.3. Seed Default Content
 After setup, you can seed the database with default categories and example entries.
