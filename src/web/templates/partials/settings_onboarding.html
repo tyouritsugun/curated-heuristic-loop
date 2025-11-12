@@ -16,7 +16,12 @@
         </ul>
         <small class="muted">See <code>.env.sample</code> for complete list of available configuration options. Changes take effect on next import/export operation (no restart needed).</small>
       </li>
-      <li>Run <code>python scripts/setup.py</code> to initialize the database and download models</li>
+      <li>Run the appropriate setup script:
+        <ul>
+          <li>GPU mode: <code>python scripts/setup-gpu.py</code> (downloads ML models)</li>
+          <li>CPU-only mode: <code>CHL_SEARCH_MODE=sqlite_only python scripts/setup-cpu.py</code></li>
+        </ul>
+      </li>
       <li>Start the server and begin using the Settings dashboard</li>
     </ol>
     <p class="muted">See README.md for detailed setup instructions.</p>

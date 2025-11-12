@@ -17,7 +17,7 @@ This plan organizes the CPU-only enablement work into concrete phases. Each phas
   - `sqlite_only`: Force text search; skip embedding/reranker/FAISS initialization entirely.
   - `vector_only` is explicitly deferred and tracked as an enhancement after this work lands.
 - Document the flag and CPU-only workflow in `README.md` and `doc/manual.md`, including the install command (`uv sync --python 3.11`) and the fact that ML extras stay optional.
-- Clarify backward compatibility: FAISS snapshots built on GPU machines are **not** usable in SQLite-only mode. Switching back to `auto` requires reinstalling ML extras, rerunning `scripts/setup.py`, and rebuilding FAISS from scratch.
+- Clarify backward compatibility: FAISS snapshots built on GPU machines are **not** usable in SQLite-only mode. Switching back to `auto` requires reinstalling ML extras, rerunning `scripts/setup-gpu.py`, and rebuilding FAISS from scratch.
 - Capture all known touch points (search service, health, settings diagnostics, logging, MCP prompt, UI templates) in an issue checklist.
 
 **Acceptance:** CLI/docs mention the new flag, expectations for CPU users, and the lack of FAISS snapshot portability when switching modes.
@@ -105,7 +105,7 @@ This plan organizes the CPU-only enablement work into concrete phases. Each phas
 - Mode changes require a server restart. Switching from `sqlite_only` → `auto` involves:
   1. Set `CHL_SEARCH_MODE=auto`.
   2. Install ML extras (`uv sync --python 3.11 --extra ml`).
-  3. Run `scripts/setup.py --download-models`.
+  3. Run `scripts/setup-gpu.py --download-models`.
   4. Restart the API/MCP server.
   5. Rebuild embeddings/FAISS (background worker or `scripts/rebuild_index.py`).
 - Switching from `auto` → `sqlite_only` just requires updating the env var and restarting; FAISS artifacts remain on disk but are ignored until vector mode is re-enabled. Any pending embedding tasks in the worker queue are dropped on restart, which is acceptable because text-only mode no longer processes embeddings.

@@ -56,7 +56,7 @@ def _init_vector_provider(session, config, disable_reranker: bool) -> Optional[S
         )
     except FileNotFoundError as exc:
         log.warning(
-            "Embedding model missing (%s). Run `python scripts/setup.py --download-models`.",
+            "Embedding model missing (%s). Run `python scripts/setup-gpu.py --download-models`.",
             exc,
         )
         return None
@@ -85,7 +85,7 @@ def _init_vector_provider(session, config, disable_reranker: bool) -> Optional[S
             )
         except FileNotFoundError as exc:
             log.warning(
-                "Reranker model missing (%s). Run `python scripts/setup.py --download-models`.",
+                "Reranker model missing (%s). Run `python scripts/setup-gpu.py --download-models`.",
                 exc,
             )
         except RerankerClientError as exc:

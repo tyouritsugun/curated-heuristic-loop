@@ -31,7 +31,7 @@ Search & retrieval:
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
 Model selection (GGUF quantized):
-- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup.py`)
+- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup-gpu.py`)
 - CHL_EMBEDDING_QUANT: Advanced override for embedding quantization (defaults via setup)
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)

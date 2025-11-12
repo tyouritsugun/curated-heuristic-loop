@@ -21,7 +21,7 @@ Output (JSON):
 }
 
 Preconditions:
-  - Run setup first: python scripts/setup.py
+  - Run setup first: python scripts/setup-gpu.py (for GPU mode) or python scripts/setup-cpu.py (for CPU-only mode)
   - For FAISS stats, ML extras must be installed and models downloaded
 """
 import json

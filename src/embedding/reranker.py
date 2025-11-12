@@ -87,7 +87,7 @@ class RerankerClient:
         if not model_path.exists():
             raise FileNotFoundError(
                 f"Model cache not found: {model_path}. "
-                f"Run 'python scripts/setup.py --download-models' first."
+                f"Run 'python scripts/setup-gpu.py --download-models' first."
             )
 
         # Generate filename based on provider convention
@@ -109,7 +109,7 @@ class RerankerClient:
 
         raise FileNotFoundError(
             f"GGUF file not found: {filename} in {model_path}. "
-            f"Run 'python scripts/setup.py --download-models' first."
+            f"Run 'python scripts/setup-gpu.py --download-models' first."
         )
 
     def rerank(

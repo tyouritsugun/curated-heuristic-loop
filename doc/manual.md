@@ -16,11 +16,18 @@ For the fastest setup, please follow the **Quick Start** guide in the main [READ
 See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running CHL without ML dependencies.
 
 ### 1.2. First-Time Setup Script
-The `setup.py` script initializes your local environment.
+The setup scripts initialize your local environment. Choose the appropriate script based on your setup:
+- `setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
+- `setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
 
-**Command:**
+**Command (GPU mode):**
 ```bash
-uv run python scripts/setup.py
+uv run python scripts/setup-gpu.py
+```
+
+**Command (CPU-only mode):**
+```bash
+CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
 ```
 
 **When to use:**
@@ -193,9 +200,9 @@ Set the search mode in `.env`:
 CHL_SEARCH_MODE=sqlite_only
 ```
 
-Run setup (skips model downloads):
+Run setup (no ML model downloads):
 ```bash
-uv run python scripts/setup.py
+CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
 ```
 
 Start the server:
@@ -209,9 +216,7 @@ In CPU-only mode:
 - **Search**: Uses SQLite `LIKE` queries for keyword matching instead of semantic similarity
 - **Duplicate detection**: Uses simple text matching instead of embedding-based similarity
 - **Background worker**: No embedding worker runs; entries are immediately available for search
-- **Web UI**: Settings page shows SQLite-only mode banner; FAISS/model sections are hidden
-- **Health checks**: Report `status: disabled` for FAISS components instead of `degraded`
-- **MCP responses**: Include `degraded=True` with hints to use specific keywords
+- **Vector components**: FAISS, embedding models, and reranker are not initialized
 
 ### 9.4. Search Tips for CPU-Only Mode
 
@@ -227,7 +232,7 @@ Since SQLite text search uses literal keyword matching:
 **From CPU-only to GPU mode:**
 1. Set `CHL_SEARCH_MODE=auto` in `.env`
 2. Install ML extras: `uv sync --python 3.11 --extra ml`
-3. Download models: `uv run python scripts/setup.py --download-models`
+3. Download models: `uv run python scripts/setup-gpu.py --download-models`
 4. Restart the API/MCP server
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
 

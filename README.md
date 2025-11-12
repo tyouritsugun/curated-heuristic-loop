@@ -11,7 +11,7 @@ Choose your installation path based on your hardware and use case:
 - **For GPU users** (≥8 GB VRAM, want semantic search): Follow the [GPU installation](#for-gpu-semantic-search) below to install ML dependencies and enable vector search with FAISS + embeddings.
 - **For CPU-only users** (limited VRAM or keyword search is sufficient): Follow the [CPU-only installation](#for-cpu-only-keyword-search) to run CHL without ML dependencies using SQLite text search.
 
-> **Note on switching modes**: FAISS snapshots built in GPU mode are NOT portable to CPU-only mode. Switching from CPU-only to GPU mode requires reinstalling ML extras, running `scripts/setup.py --download-models`, and rebuilding FAISS from scratch. See [Mode Switching](#mode-switching) for details.
+> **Note on switching modes**: FAISS snapshots built in GPU mode are NOT portable to CPU-only mode. Switching from CPU-only to GPU mode requires reinstalling ML extras, running `scripts/setup-gpu.py --download-models`, and rebuilding FAISS from scratch. See [Mode Switching](#mode-switching) for details.
 
 ### For GPU (Semantic Search)
 
@@ -43,7 +43,7 @@ Choose your installation path based on your hardware and use case:
 
 5. **Run first-time setup** (downloads models and initializes database):
    ```bash
-   uv run python scripts/setup.py --download-models
+   uv run python scripts/setup-gpu.py --download-models
    ```
    > This validates your environment, copies credentials, initializes the database, and downloads embedding/reranker models.
 
@@ -98,9 +98,9 @@ If you don't have a GPU or don't need semantic search, you can run CHL in SQLite
 
 5. **Run first-time setup** (database initialization only):
    ```bash
-   uv run python scripts/setup.py
+   CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
    ```
-   > This initializes the database and validates paths. Model downloads are skipped in sqlite_only mode.
+   > This initializes the database and validates paths. No ML models are downloaded in CPU-only mode.
 
 6. **Start the bundled FastAPI server**:
    ```bash
@@ -109,9 +109,8 @@ If you don't have a GPU or don't need semantic search, you can run CHL in SQLite
    > The `CHL_SEARCH_MODE=sqlite_only` flag disables vector search components and uses SQLite text search exclusively.
 
 7. **Open http://127.0.0.1:8000/settings** to verify configuration:
-   - Configuration status shows SQLite-only mode is active
-   - No FAISS/embedding model sections will be shown
    - Test connection to validate Google Sheets access
+   - Review system configuration
 
 8. **Open http://127.0.0.1:8000/operations** to run import:
    - Click **Run Import** to pull data from Google Sheets
@@ -125,7 +124,7 @@ If you don't have a GPU or don't need semantic search, you can run CHL in SQLite
 **Switching from CPU-only (`sqlite_only`) to GPU (`auto`) mode:**
 1. Set `CHL_SEARCH_MODE=auto` in `.env`
 2. Install ML extras: `uv sync --python 3.11 --extra ml`
-3. Download models: `uv run python scripts/setup.py --download-models`
+3. Download models: `uv run python scripts/setup-gpu.py --download-models`
 4. Restart the API/MCP server
 5. Rebuild embeddings/FAISS via `/operations` or `scripts/rebuild_index.py`
 
@@ -144,7 +143,7 @@ The browser UI now covers all day-to-day administration. Use the CLI pieces only
 - `uv run python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences.
 - `uv run python scripts/export.py` – pushes local SQLite data to Google Sheets (uses `scripts/scripts_config.yaml`). Add `--dry-run` to preview counts.
 - `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data. Pass `--skip-api-coordination` only if the FastAPI server is offline.
-- `uv run python scripts/setup.py [--download-models]` – optional helper that downloads models ahead of time; the web UI works without it, but this can save the first user from waiting.
+- `uv run python scripts/setup-gpu.py [--download-models]` – optional helper that downloads models ahead of time; the web UI works without it, but this can save the first user from waiting.
 
 ### MCP clients (optional)
 
