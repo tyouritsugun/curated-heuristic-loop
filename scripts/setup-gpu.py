@@ -5,9 +5,9 @@ This script initializes the database, downloads ML models (if not cached), and
 prepares the environment for running the MCP server.
 
 Usage:
-    python scripts/setup.py                  # Automatic setup with smallest models (recommended)
-    python scripts/setup.py --download-models # Interactive menu to select model sizes
-    python scripts/setup.py --force-models   # Re-download models (advanced)
+    python scripts/setup-gpu.py                  # Automatic setup with smallest models (recommended)
+    python scripts/setup-gpu.py --download-models # Interactive menu to select model sizes
+    python scripts/setup-gpu.py --force-models   # Re-download models (advanced)
 
 The setup script is fully automatic:
 - Auto-creates data/ directory if missing
@@ -32,10 +32,10 @@ What this script does:
 
 Example:
     # Simple automatic setup (recommended)
-    python scripts/setup.py
+    python scripts/setup-gpu.py
 
     # Force re-download models (if corrupted)
-    python scripts/setup.py --force-models
+    python scripts/setup-gpu.py --force-models
 """
 import os
 import sys
@@ -799,7 +799,7 @@ def print_next_steps():
     print(f"  Embedding: {format_model_display(selection['embedding_repo'], selection['embedding_quant'])}")
     print(f"  Reranker: {format_model_display(selection['reranker_repo'], selection['reranker_quant'])}")
     print("\nTo change models later, run:")
-    print("  python scripts/setup.py --download-models\n")
+    print("  python scripts/setup-gpu.py --download-models\n")
 
     print("For more information, see:")
     print("  - doc/script_commands.md")

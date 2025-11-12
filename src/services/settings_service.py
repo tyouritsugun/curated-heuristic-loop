@@ -479,7 +479,7 @@ class SettingsService:
                 name="database",
                 state="error",
                 headline="Database not found",
-                detail=f"Run setup.py to initialize database at {db_path}",
+                detail=f"Run scripts/setup-gpu.py (GPU mode) or scripts/setup-cpu.py (CPU-only mode) to initialize database at {db_path}",
             )
 
         # Check FAISS index status
