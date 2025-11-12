@@ -113,7 +113,6 @@ def _bootstrap_search(disable_vector: bool, disable_reranker: bool):
     primary = "vector_faiss" if vector_provider else "sqlite_text"
 
     search_service = SearchService(
-        session=session,
         primary_provider=primary,
         fallback_enabled=True,
         vector_provider=vector_provider,

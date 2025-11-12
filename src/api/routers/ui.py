@@ -1,7 +1,6 @@
 """Server-rendered UI endpoints for settings and operations management."""
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import shutil
@@ -27,7 +26,6 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sse_starlette.sse import EventSourceResponse
 
 from src.api.dependencies import (
     get_config,
@@ -53,8 +51,6 @@ WEB_ACTOR = "web-ui"
 ALLOWED_INDEX_FILE_SUFFIXES = frozenset([".index", ".json", ".backup"])  # case-insensitive
 
 logger = logging.getLogger(__name__)
-
-SSE_REFRESH_SECONDS = float(os.getenv("CHL_SSE_REFRESH_SECONDS", "2.0"))
 
 EMBEDDING_CHOICES = [
     {
@@ -1622,68 +1618,6 @@ async def restore_settings_backup(
         message_level="success",
         trigger_event="settings-changed",
     )
-
-
-@router.get("/ui/stream/telemetry")
-async def telemetry_stream(
-    request: Request,
-    settings_service: SettingsService = Depends(get_settings_service),
-    telemetry_service=Depends(get_telemetry_service),
-    operations_service=Depends(get_operations_service),
-    worker_control=Depends(get_worker_control_service),
-    search_service=Depends(get_search_service),
-    config=Depends(get_config),
-    cycles: int = Query(0, ge=0, le=100, description="Number of update cycles before closing (0=infinite)"),
-):
-    from src.api_server import db  # Local import to avoid circular dependency
-
-    async def event_generator():
-        emitted = 0
-        while True:
-            session = db.get_session()
-            try:
-                context = _build_operations_context(
-                    session,
-                    settings_service,
-                    telemetry_service,
-                    operations_service,
-                    worker_control,
-                    search_service,
-                    config,
-                )
-            finally:
-                session.close()
-
-            render_context = {
-                **context,
-                "request": request,
-                "message": None,
-                "message_level": "info",
-                "error": None,
-                "is_partial": True,
-            }
-            # Only render templates that still exist in the UI
-            queue_html = templates.get_template("partials/ops_queue_card.html").render(render_context)
-            jobs_html = templates.get_template("partials/ops_jobs_card.html").render(render_context)
-            controls_html = templates.get_template("partials/ops_operations_card.html").render(render_context)
-
-            # Maintain existing events and provide an alias for legacy 'index' event name
-            yield {"event": "queue", "data": queue_html}
-            yield {"event": "jobs", "data": jobs_html}
-            yield {"event": "controls", "data": controls_html}
-            yield {"event": "index", "data": controls_html}
-
-            emitted += 1
-            if cycles and emitted >= cycles:
-                break
-
-            try:
-                await asyncio.sleep(SSE_REFRESH_SECONDS)
-            except asyncio.CancelledError:  # pragma: no cover - disconnect
-                break
-
-    return EventSourceResponse(event_generator())
-
 
 @router.get("/ui/index/download")
 def download_index_snapshot(

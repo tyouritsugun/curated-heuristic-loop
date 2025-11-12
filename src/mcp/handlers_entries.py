@@ -92,6 +92,7 @@ def make_read_entries_handler(db, config, search_service):
                                 retryable=True,
                             )
                         results = search_service.search(
+                            session=session,
                             query=query,
                             entity_type='experience',
                             category_code=category_code,
@@ -155,6 +156,7 @@ def make_read_entries_handler(db, config, search_service):
                                 retryable=True,
                             )
                         results = search_service.search(
+                            session=session,
                             query=query,
                             entity_type='manual',
                             category_code=category_code,
@@ -260,6 +262,7 @@ def make_write_entry_handler(db, config, search_service):
                     try:
                         if search_service is not None:
                             dup_candidates = search_service.find_duplicates(
+                                session=session,
                                 title=validated.title,
                                 content=validated.playbook,
                                 entity_type='experience',
@@ -364,6 +367,7 @@ def make_write_entry_handler(db, config, search_service):
                     try:
                         if search_service is not None:
                             dup_candidates = search_service.find_duplicates(
+                                session=session,
                                 title=validated.title,
                                 content=validated.content,
                                 entity_type='manual',

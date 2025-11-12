@@ -11,19 +11,48 @@ Options:
     --skip-guidelines   Skip syncing generator/evaluator guidelines
 """
 import argparse
+import importlib.util
 import sys
 from pathlib import Path
 
 # Ensure project root (for src/ and scripts/) is importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.setup import _seed_default_content  # type: ignore
 from src.config import get_config  # type: ignore
+
+_SEED_HELPER = None
+
+
+def _get_seed_helper():
+    """Lazily load _seed_default_content from scripts/setup-gpu.py."""
+    global _SEED_HELPER
+    if _SEED_HELPER is not None:
+        return _SEED_HELPER
+
+    setup_path = PROJECT_ROOT / "scripts" / "setup-gpu.py"
+    if not setup_path.exists():
+        raise RuntimeError(f"Missing setup-gpu.py at {setup_path}")
+
+    spec = importlib.util.spec_from_file_location("scripts.setup_gpu", setup_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load scripts.setup_gpu module spec")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+
+    helper = getattr(module, "_seed_default_content", None)
+    if helper is None:
+        raise RuntimeError("scripts/setup-gpu.py is missing _seed_default_content")
+
+    _SEED_HELPER = helper
+    return helper
 
 
 def _run_seed() -> bool:
     config = get_config()
-    return _seed_default_content(config)
+    helper = _get_seed_helper()
+    return helper(config)
 
 
 def _run_guidelines() -> bool:
