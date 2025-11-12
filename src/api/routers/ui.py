@@ -1365,12 +1365,29 @@ async def update_model_preferences(
     # Invalidate MCP categories cache
     _invalidate_categories_cache_safe()
 
+    # Automatically trigger re-embedding workflow in vector mode
+    # Skip in sqlite_only (CPU-only) mode where vector stack is disabled
+    try:
+        from src.api.dependencies import get_config, get_operations_service
+        cfg = get_config()
+        ops = get_operations_service()
+        if getattr(cfg, "search_mode", "auto") != "sqlite_only" and ops is not None:
+            try:
+                ops.trigger("reembed", payload={}, actor=actor)
+                auto_msg = " Re-embed job queued."
+            except Exception:
+                auto_msg = ""
+        else:
+            auto_msg = ""
+    except Exception:
+        auto_msg = ""
+
     return _respond(
         None,
         request,
         session,
         settings_service,
-        message="Model preferences updated. (Model selection will move to Operations page in Phase 3)",
+        message=f"Model preferences updated.{auto_msg}",
         message_level="success",
         trigger_event="settings-changed",
     )
@@ -1650,9 +1667,11 @@ async def telemetry_stream(
             jobs_html = templates.get_template("partials/ops_jobs_card.html").render(render_context)
             controls_html = templates.get_template("partials/ops_operations_card.html").render(render_context)
 
+            # Maintain existing events and provide an alias for legacy 'index' event name
             yield {"event": "queue", "data": queue_html}
             yield {"event": "jobs", "data": jobs_html}
             yield {"event": "controls", "data": controls_html}
+            yield {"event": "index", "data": controls_html}
 
             emitted += 1
             if cycles and emitted >= cycles:

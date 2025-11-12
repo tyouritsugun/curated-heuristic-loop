@@ -42,53 +42,66 @@ def health_check(
         components["database"] = {"status": "unhealthy", "detail": str(e)}
         overall_status = "unhealthy"
 
-    # Check FAISS index and embedding model via vector provider
-    try:
-        if search_service and hasattr(search_service, 'get_vector_provider'):
-            vector_provider = search_service.get_vector_provider()
+    # Check FAISS/embedding status depending on search_mode
+    if getattr(config, "search_mode", None) == "sqlite_only":
+        # In CPU-only mode, vector components are intentionally disabled
+        components["faiss_index"] = {
+            "status": "disabled",
+            "detail": "Intentional SQLite-only mode",
+        }
+        components["embedding_model"] = {
+            "status": "disabled",
+            "detail": "Intentional SQLite-only mode",
+        }
+        # Do not degrade overall status when disabled by configuration
+    else:
+        # Vector mode: inspect provider availability
+        try:
+            if search_service and hasattr(search_service, 'get_vector_provider'):
+                vector_provider = search_service.get_vector_provider()
 
-            if vector_provider and vector_provider.is_available:
-                # FAISS is available
-                index_size = vector_provider.index_manager.index.ntotal
-                components["faiss_index"] = {
-                    "status": "healthy",
-                    "detail": f"{index_size} vectors"
-                }
+                if vector_provider and vector_provider.is_available:
+                    # FAISS is available
+                    index_size = vector_provider.index_manager.index.ntotal
+                    components["faiss_index"] = {
+                        "status": "healthy",
+                        "detail": f"{index_size} vectors"
+                    }
 
-                # Embedding model is available
-                components["embedding_model"] = {
-                    "status": "healthy",
-                    "detail": "Model loaded and operational"
-                }
+                    # Embedding model is available
+                    components["embedding_model"] = {
+                        "status": "healthy",
+                        "detail": "Model loaded and operational"
+                    }
+                else:
+                    # Vector provider not available, using text search fallback
+                    components["faiss_index"] = {
+                        "status": "degraded",
+                        "detail": "FAISS not available, using text search fallback"
+                    }
+                    components["embedding_model"] = {
+                        "status": "degraded",
+                        "detail": "Embedding model not available"
+                    }
+                    if overall_status == "healthy":
+                        overall_status = "degraded"
             else:
-                # Vector provider not available, using text search fallback
                 components["faiss_index"] = {
                     "status": "degraded",
-                    "detail": "FAISS not available, using text search fallback"
+                    "detail": "Search service not initialized"
                 }
                 components["embedding_model"] = {
                     "status": "degraded",
-                    "detail": "Embedding model not available"
+                    "detail": "Search service not initialized"
                 }
                 if overall_status == "healthy":
                     overall_status = "degraded"
-        else:
-            components["faiss_index"] = {
-                "status": "degraded",
-                "detail": "Search service not initialized"
-            }
-            components["embedding_model"] = {
-                "status": "degraded",
-                "detail": "Search service not initialized"
-            }
+        except Exception as e:
+            logger.info("Vector provider health inspection failed", exc_info=True)
+            components["faiss_index"] = {"status": "degraded", "detail": str(e)}
+            components["embedding_model"] = {"status": "degraded", "detail": str(e)}
             if overall_status == "healthy":
                 overall_status = "degraded"
-    except Exception as e:
-        logger.warning(f"Vector provider health check failed: {e}")
-        components["faiss_index"] = {"status": "degraded", "detail": str(e)}
-        components["embedding_model"] = {"status": "degraded", "detail": str(e)}
-        if overall_status == "healthy":
-            overall_status = "degraded"
 
     # Add timestamp
     timestamp = datetime.now(timezone.utc).isoformat()

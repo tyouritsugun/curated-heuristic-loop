@@ -202,7 +202,8 @@ def make_read_entries_handler(db, config, search_service):
                                 "provider": "direct",
                             })
 
-            return {"meta": {"code": meta_code, "name": meta_name}, "entries": entries}
+            # Include search_mode to help clients adapt UX (e.g., keyword guidance)
+            return {"meta": {"code": meta_code, "name": meta_name, "search_mode": getattr(config, 'search_mode', None)}, "entries": entries}
         except Exception as e:
             return create_error_response("SERVER_ERROR", str(e), retryable=False)
 

@@ -165,6 +165,8 @@ def read_entries(
                         "reason": getattr(r.reason, 'value', str(r.reason)),
                         "provider": r.provider,
                         "rank": r.rank,
+                        "degraded": getattr(r, "degraded", False),
+                        "provider_hint": getattr(r, "hint", None),
                     })
             else:
                 # ID lookup or list all

@@ -362,7 +362,17 @@ def read_entries(
         if limit is not None:
             payload["limit"] = limit
 
-        return _request_api("POST", "/api/v1/entries/read", payload=payload)
+        api_result = _request_api("POST", "/api/v1/entries/read", payload=payload)
+        # Add mode hint for clients in MCP layer without changing HTTP API schema
+        try:
+            mode = getattr(config, "search_mode", None)
+        except Exception:
+            mode = None
+        return {
+            "meta": {"search_mode": mode},
+            "entries": api_result.get("entries", []),
+            "count": api_result.get("count", 0),
+        }
     except MCPError:
         raise
     except Exception as e:  # pragma: no cover - defensive

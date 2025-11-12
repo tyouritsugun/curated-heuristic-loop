@@ -159,3 +159,4 @@ class TelemetrySnapshotResponse(BaseModel):
     worker_pool: Optional[Dict[str, Any]]
     workers: List[Dict[str, Any]]
     jobs: List[Dict[str, Any]]
+    meta: Optional[Dict[str, Any]] = None

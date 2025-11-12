@@ -29,6 +29,7 @@ class TelemetryService:
         worker_probe: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
         interval_seconds: int = 5,
         retention_per_metric: int = 288,
+        meta_provider: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
     ):
         self._session_factory = session_factory
         self._queue_probe = queue_probe
@@ -37,6 +38,8 @@ class TelemetryService:
         self._retention = max(1, retention_per_metric)
         self._task: Optional[asyncio.Task] = None
         self._stop_event: Optional[asyncio.Event] = None
+        # Optional provider for attaching metadata to snapshots (e.g., search_mode)
+        self._meta_provider = meta_provider or (lambda: None)
 
     # ------------------------------------------------------------------
     # Lifecycle management
@@ -96,11 +99,22 @@ class TelemetryService:
         workers = self._current_worker_metrics(session)
         jobs = self._recent_jobs(session, jobs_limit)
 
+        # Attach optional metadata for dashboards (non-critical)
+        meta: Optional[Dict[str, Any]] = None
+        try:
+            meta_candidate = self._meta_provider()
+            if isinstance(meta_candidate, dict):
+                meta = meta_candidate
+        except Exception:
+            # Never fail snapshots due to meta issues
+            logger.debug("telemetry meta_provider failed", exc_info=True)
+
         return {
             "queue": queue,
             "worker_pool": worker_pool,
             "workers": workers,
             "jobs": jobs,
+            "meta": meta,
         }
 
     # ------------------------------------------------------------------

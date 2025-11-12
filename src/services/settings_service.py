@@ -482,12 +482,23 @@ class SettingsService:
                 detail=f"Run scripts/setup-gpu.py (GPU mode) or scripts/setup-cpu.py (CPU-only mode) to initialize database at {db_path}",
             )
 
-        # Check FAISS index status
-        # Index files use model-specific naming: unified_{model_slug}.index
-        # Check if any .index file exists in the faiss_index directory
-        faiss_index_dir = data_path / "faiss_index"
-        index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
-        if index_files:
+        # Check FAISS index status (gate in CPU-only mode)
+        # If CHL_SEARCH_MODE=sqlite_only, vector stack is intentionally disabled
+        search_mode = os.getenv("CHL_SEARCH_MODE", "auto").lower()
+        if search_mode == "sqlite_only":
+            faiss_status = DiagnosticStatus(
+                name="faiss",
+                state="info",
+                headline="Semantic search disabled",
+                detail="CPU-only mode (SQLite keyword search)",
+                validated_at=utc_now(),
+            )
+        else:
+            # Index files use model-specific naming: unified_{model_slug}.index
+            # Check if any .index file exists in the faiss_index directory
+            faiss_index_dir = data_path / "faiss_index"
+            index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
+            if index_files:
             try:
                 from src.storage.schema import FAISSMetadata
                 from sqlalchemy import func
@@ -526,13 +537,13 @@ class SettingsService:
                     headline="FAISS check failed",
                     detail=str(exc),
                 )
-        else:
-            faiss_status = DiagnosticStatus(
-                name="faiss",
-                state="info",
-                headline="FAISS index not built",
-                detail="Build index via Operations page or upload snapshot",
-            )
+            else:
+                faiss_status = DiagnosticStatus(
+                    name="faiss",
+                    state="info",
+                    headline="FAISS index not built",
+                    detail="Build index via Operations page or upload snapshot",
+                )
 
         # Check disk space
         try:

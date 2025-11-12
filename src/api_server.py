@@ -129,6 +129,10 @@ async def lifespan(app: FastAPI):
                 vector_provider=None,
             )
             logger.info("✓ Search service initialized with SQLite text search only")
+            try:
+                metrics.increment("search_mode_sqlite_only", 1)
+            except Exception:
+                pass
         else:
             try:
                 logger.info("Starting search service initialization...")
@@ -282,6 +286,7 @@ async def lifespan(app: FastAPI):
             queue_probe=queue_probe,
             worker_probe=worker_probe,
             interval_seconds=getattr(config, "telemetry_interval", 5),
+            meta_provider=lambda: {"search_mode": getattr(config, "search_mode", None)},
         )
         await telemetry_service.start()
         logger.info("Telemetry service started")
@@ -385,10 +390,17 @@ app.include_router(ui_router)
 app.include_router(docs_router)
 
 
-@app.get("/", include_in_schema=False)
+@app.get("/")
 def root():
-    """Route visitors to the settings dashboard by default."""
-    return RedirectResponse(url="/settings", status_code=307)
+    """Return basic service info for smoke checks.
+
+    UI remains at /settings.
+    """
+    return {
+        "service": "CHL API",
+        "version": "0.2.0",
+        "status": "running",
+    }
 
 
 # Configure logging on module import
