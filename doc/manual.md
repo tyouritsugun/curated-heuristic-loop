@@ -9,6 +9,12 @@ This section guides you through the first-time setup of the CHL environment.
 ### 1.1. Quick Start
 For the fastest setup, please follow the **Quick Start** guide in the main [README.md](../README.md). It will guide you through installing dependencies and starting the web server. The rest of this manual assumes you have completed those steps.
 
+**Choose your installation mode:**
+- **GPU mode** (default): Install with `--extra ml` for semantic search using FAISS and embeddings
+- **CPU-only mode**: Install without ML extras for keyword search using SQLite text matching
+
+See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running CHL without ML dependencies.
+
 ### 1.2. First-Time Setup Script
 The `setup.py` script initializes your local environment.
 
@@ -144,11 +150,14 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Environment Variables
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. See the old `manual.md` for a complete list if needed. Key variables include:
-- `CHL_EXPERIENCE_ROOT`
-- `CHL_DATABASE_PATH`
-- `CHL_EMBEDDING_REPO`
-- `CHL_REVIEW_SHEET_ID`
-- `CHL_PUBLISHED_SHEET_ID`
+- `CHL_EXPERIENCE_ROOT` - Path to data directory
+- `CHL_DATABASE_PATH` - Path to SQLite database file
+- `CHL_SEARCH_MODE` - Search mode (`auto` or `sqlite_only`); see section 9 for details
+- `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
+- `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
+- `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
+
+For a complete list of configuration options, see [src/config.py](../src/config.py).
 
 ## 7. Troubleshooting
 
@@ -159,3 +168,84 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 ## 8. Script Development Guidelines
 
 Follow the structure in `scripts/_template.py` when adding new scripts. Ensure they use `src.config.get_config()` and have clear documentation.
+
+## 9. CPU-Only Mode
+
+CHL can run in CPU-only mode without ML dependencies (FAISS, embeddings, reranker) using SQLite text search instead of semantic search.
+
+### 9.1. When to Use CPU-Only Mode
+
+Use CPU-only mode when:
+- You don't have sufficient GPU VRAM (≥8 GB recommended for GPU mode)
+- You don't need semantic search and keyword matching is sufficient
+- You want to minimize dependencies and resource usage
+- You're running on constrained hardware or in containers
+
+### 9.2. Installation
+
+Install CHL without ML extras:
+```bash
+uv sync --python 3.11
+```
+
+Set the search mode in `.env`:
+```bash
+CHL_SEARCH_MODE=sqlite_only
+```
+
+Run setup (skips model downloads):
+```bash
+uv run python scripts/setup.py
+```
+
+Start the server:
+```bash
+CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
+```
+
+### 9.3. Behavior Differences
+
+In CPU-only mode:
+- **Search**: Uses SQLite `LIKE` queries for keyword matching instead of semantic similarity
+- **Duplicate detection**: Uses simple text matching instead of embedding-based similarity
+- **Background worker**: No embedding worker runs; entries are immediately available for search
+- **Web UI**: Settings page shows SQLite-only mode banner; FAISS/model sections are hidden
+- **Health checks**: Report `status: disabled` for FAISS components instead of `degraded`
+- **MCP responses**: Include `degraded=True` with hints to use specific keywords
+
+### 9.4. Search Tips for CPU-Only Mode
+
+Since SQLite text search uses literal keyword matching:
+- Use specific keywords from entry titles and content
+- Search for exact phrases when possible
+- Break complex queries into multiple searches
+- Use category filtering to narrow results
+- Avoid abstract or conceptual queries (e.g., "best practices" won't match "recommended approaches")
+
+### 9.5. Switching Modes
+
+**From CPU-only to GPU mode:**
+1. Set `CHL_SEARCH_MODE=auto` in `.env`
+2. Install ML extras: `uv sync --python 3.11 --extra ml`
+3. Download models: `uv run python scripts/setup.py --download-models`
+4. Restart the API/MCP server
+5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
+
+**From GPU to CPU-only mode:**
+1. Set `CHL_SEARCH_MODE=sqlite_only` in `.env`
+2. Restart the API/MCP server
+3. FAISS artifacts remain on disk but are ignored
+4. Any pending embedding tasks are dropped on restart
+
+**Important**: FAISS snapshots built in GPU mode are NOT compatible with CPU-only mode. When switching between modes, you must rebuild from scratch in the target mode.
+
+### 9.6. Limitations
+
+CPU-only mode has the following limitations:
+- No semantic search or conceptual matching
+- No embedding-based duplicate detection
+- No reranking of search results
+- Search quality depends on exact keyword matches
+- Cannot import FAISS snapshots from GPU instances
+
+For teams that need semantic search, consider running one GPU instance to build FAISS snapshots, but note that CPU-only instances cannot load these snapshots.

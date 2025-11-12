@@ -4,7 +4,16 @@ Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code
 
 For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detailed operator procedures see [doc/manual.md](doc/manual.md).
 
-## Quick Start (Web UI first)
+## Quick Start
+
+Choose your installation path based on your hardware and use case:
+
+- **For GPU users** (≥8 GB VRAM, want semantic search): Follow the [GPU installation](#for-gpu-semantic-search) below to install ML dependencies and enable vector search with FAISS + embeddings.
+- **For CPU-only users** (limited VRAM or keyword search is sufficient): Follow the [CPU-only installation](#for-cpu-only-keyword-search) to run CHL without ML dependencies using SQLite text search.
+
+> **Note on switching modes**: FAISS snapshots built in GPU mode are NOT portable to CPU-only mode. Switching from CPU-only to GPU mode requires reinstalling ML extras, running `scripts/setup.py --download-models`, and rebuilding FAISS from scratch. See [Mode Switching](#mode-switching) for details.
+
+### For GPU (Semantic Search)
 
 1. **Install [uv](https://docs.astral.sh/uv/)** (one-line installer):
    ```bash
@@ -15,14 +24,14 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    git clone https://github.com/tyouritsugun/curated-heuristic-loop.git
    cd curated-heuristic-loop
    ```
-3. **Sync dependencies (includes FAISS + embedding clients)**:
+3. **Sync dependencies with ML extras** (includes FAISS + embedding clients):
    ```bash
    uv sync --python 3.11 --extra ml
    ```
-   > The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., so vector search and reranking will work effectively.
+   > The ML extra installs `faiss-cpu`, `sentence-transformers`, `llama-cpp-python`, etc., enabling vector search and reranking.
 
 4. **Configure environment**:
-   Apply the google service account and download the json credential file. 
+   Apply the google service account and download the json credential file.
    Prepare the google spreadsheets for import and export, and share them with the account in your google service credential file with read and write permission.
    ```bash
    cp .env.sample .env
@@ -32,16 +41,11 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
    ```
 
-5. **Run first-time setup** (optional but recommended):
+5. **Run first-time setup** (downloads models and initializes database):
    ```bash
-   # Default
-   uv run python scripts/setup.py
-
-   # Recommended if you have GPU VRAM
    uv run python scripts/setup.py --download-models
-
    ```
-   > This validates your environment, copies credentials, initializes the database, and downloads models. 
+   > This validates your environment, copies credentials, initializes the database, and downloads embedding/reranker models.
 
 6. **Start the bundled FastAPI server**:
    ```bash
@@ -60,6 +64,78 @@ For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detai
    - No manual intervention needed - embeddings are generated within seconds of creating/updating entries
 
 > ✅ That's it! All secrets live in `.env` file. Changes to credentials or sheet IDs take effect on next import/export (no restart needed).
+
+### For CPU Only (Keyword Search)
+
+If you don't have a GPU or don't need semantic search, you can run CHL in SQLite-only mode using keyword search:
+
+1. **Install [uv](https://docs.astral.sh/uv/)** (one-line installer):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+2. **Clone the repo and enter it**:
+   ```bash
+   git clone https://github.com/tyouritsugun/curated-heuristic-loop.git
+   cd curated-heuristic-loop
+   ```
+3. **Sync base dependencies** (without ML extras):
+   ```bash
+   uv sync --python 3.11
+   ```
+   > This installs only the base dependencies without embedding models, FAISS, or reranking components.
+
+4. **Configure environment**:
+   Apply the google service account and download the json credential file.
+   Prepare the google spreadsheets for import and export, and share them with the account in your google service credential file with read and write permission.
+   ```bash
+   cp .env.sample .env
+   # Edit .env and fill in:
+   # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
+   # - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
+   # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
+   # - CHL_SEARCH_MODE=sqlite_only  # Force SQLite-only mode
+   ```
+
+5. **Run first-time setup** (database initialization only):
+   ```bash
+   uv run python scripts/setup.py
+   ```
+   > This initializes the database and validates paths. Model downloads are skipped in sqlite_only mode.
+
+6. **Start the bundled FastAPI server**:
+   ```bash
+   CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
+   ```
+   > The `CHL_SEARCH_MODE=sqlite_only` flag disables vector search components and uses SQLite text search exclusively.
+
+7. **Open http://127.0.0.1:8000/settings** to verify configuration:
+   - Configuration status shows SQLite-only mode is active
+   - No FAISS/embedding model sections will be shown
+   - Test connection to validate Google Sheets access
+
+8. **Open http://127.0.0.1:8000/operations** to run import:
+   - Click **Run Import** to pull data from Google Sheets
+   - No background embedding worker runs in SQLite-only mode
+   - Search uses keyword matching instead of semantic similarity
+
+> ⚠️ **Important**: In SQLite-only mode, search uses literal keyword matching (LIKE queries) instead of semantic similarity. This works well for exact phrase searches but won't find conceptually related entries. For best results, use specific keywords from your entry titles and content.
+
+### Mode Switching
+
+**Switching from CPU-only (`sqlite_only`) to GPU (`auto`) mode:**
+1. Set `CHL_SEARCH_MODE=auto` in `.env`
+2. Install ML extras: `uv sync --python 3.11 --extra ml`
+3. Download models: `uv run python scripts/setup.py --download-models`
+4. Restart the API/MCP server
+5. Rebuild embeddings/FAISS via `/operations` or `scripts/rebuild_index.py`
+
+**Switching from GPU (`auto`) to CPU-only (`sqlite_only`) mode:**
+1. Set `CHL_SEARCH_MODE=sqlite_only` in `.env`
+2. Restart the API/MCP server
+3. FAISS artifacts remain on disk but are ignored
+4. Any pending embedding tasks are dropped
+
+> **Important**: FAISS snapshots are NOT portable between modes. Switching modes requires rebuilding from scratch in the target mode.
 
 ## When you also need the CLI/MCP layers
 

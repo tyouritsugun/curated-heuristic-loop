@@ -24,6 +24,9 @@ Core environment variables:
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
 
 Search & retrieval:
+- CHL_SEARCH_MODE: Search mode (default: auto; options: auto, sqlite_only)
+  - auto: Try vector search; fall back to SQLite if initialization fails
+  - sqlite_only: Force text search; skip embedding/reranker/FAISS initialization
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
@@ -121,6 +124,7 @@ class Config:
         self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
 
         # Search & provider settings
+        self.search_mode = os.getenv("CHL_SEARCH_MODE", "auto").lower()
         self.search_timeout_ms = int(os.getenv("CHL_SEARCH_TIMEOUT_MS", "5000"))
         self.search_fallback_retries = int(os.getenv("CHL_SEARCH_FALLBACK_RETRIES", "1"))
 
@@ -196,8 +200,13 @@ class Config:
 
     def _validate_search_config(self):
         """Validate search-related configuration with helpful error messages"""
-        # Validate search provider
-        # No extra validation needed; inline is the only mode
+        # Validate search mode
+        valid_modes = ("auto", "sqlite_only")
+        if self.search_mode not in valid_modes:
+            raise ValueError(
+                f"Invalid CHL_SEARCH_MODE='{self.search_mode}'. "
+                f"Must be one of: {', '.join(valid_modes)}"
+            )
 
         # Validate thresholds are in [0.0, 1.0]
         if not (0.0 <= self.duplicate_threshold_update <= 1.0):
@@ -265,15 +274,16 @@ class Config:
                 f"Invalid CHL_TOPK_RERANK={self.topk_rerank}. Must be > 0."
             )
 
-        # Create FAISS index directory if it doesn't exist
-        faiss_path = Path(self.faiss_index_path)
-        if not faiss_path.exists():
-            try:
-                faiss_path.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                raise ValueError(
-                    f"Cannot create FAISS index directory '{self.faiss_index_path}': {e}"
-                ) from e
+        # Create FAISS index directory if it doesn't exist (skip in sqlite_only mode)
+        if self.search_mode != "sqlite_only":
+            faiss_path = Path(self.faiss_index_path)
+            if not faiss_path.exists():
+                try:
+                    faiss_path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    raise ValueError(
+                        f"Cannot create FAISS index directory '{self.faiss_index_path}': {e}"
+                    ) from e
 
     def _validate_faiss_config(self):
         """Validate FAISS persistence configuration"""

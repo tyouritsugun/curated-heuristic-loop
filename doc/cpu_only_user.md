@@ -1,48 +1,193 @@
-# CPU-Only Enablement Plan
+# CPU-Only Implementation Checklist
 
-This note documents how we can let users without a CUDA-capable GPU (or without the ML extras installed) run the CHL MCP stack in a *SQLite-search-only* mode. The goal is to keep the MCP tools usable (list/read/write/update) while skipping embedding, reranking, and FAISS maintenance.
+This document tracks all code touch points for implementing CPU-only mode across the CHL codebase. Use this as a reference when working through Phases 1-4 of the implementation plan.
 
-## Goals
-- Allow a CPU-only user to install and start the MCP/API server without pulling the `ml` optional dependencies from `pyproject.toml`.
-- Skip all embedding/reranking touch points while keeping the database/API/web dashboards functional.
-- Ensure MCP `read_entries` queries keep working through the existing `SQLiteTextProvider` fallback (see `src/search/sqlite_provider.py`), with clear “degraded search” hints surfaced to clients.
-- Provide an explicit runbook and configuration flag so the user (and telemetry/health endpoints) know the instance is intentionally in SQLite-only mode, rather than “vector search failed unexpectedly”.
+## Status Legend
+- ✅ Complete - Implementation finished and verified
+- 🚧 In Progress - Currently being worked on
+- ⏸️ Pending - Not started yet
+- ❌ Blocked - Waiting on dependencies
 
-## Current behavior recap
-- `uv sync --python 3.11 --extra ml` installs `llama-cpp-python`, `faiss-cpu`, etc. (`pyproject.toml`). Without that extra, `src/embedding/client.py` and `src/embedding/reranker.py` fail to import `llama_cpp` during instantiation and the API server logs an error before falling back to text search.
-- `SearchService` (`src/search/service.py`) already registers `SQLiteTextProvider` and uses it whenever the vector provider is missing or throws `SearchProviderError`. `SQLiteTextProvider` marks results as `degraded=True` with a hint, and `read_entries` propagates those fields in the MCP payload (`src/mcp/handlers_entries.py`).
-- Duplicate detection during `write_entry`/`update_entry` also flows through `SearchService.find_duplicates`, so it already degrades to simple LIKE matching.
-- Health checks (`src/api/routers/health.py`) expose FAISS/embedding status as `degraded` when vector search is offline, but they cannot currently distinguish “intentional SQLite-only mode” from “unexpected failure”.
-- The background embedding worker (`src/services/background_worker.py`) is created only if an `EmbeddingClient` exists, so it no-ops automatically today, but the UI/operations panels still expect FAISS snapshots to exist.
+## Phase 0: Baseline Alignment ✅
 
-## Proposed work plan
+**Goal:** Establish shared terminology and guardrails before touching code.
 
-### 1. Installation/profile updates
-- Add a **CPU-only quick start** block to `README.md`/`doc/manual.md` that instructs users to run `uv sync --python 3.11` (no `--extra ml`) and to pass `--skip-models` when running `scripts/setup.py`.
-- Extend `scripts/setup.py` so model-download steps are skipped automatically when a new `--sqlite-only` flag (or env `CHL_FORCE_SQLITE=1`) is set, instead of failing when HuggingFace caches are absent.
-- Document that the user only needs the base dependencies plus `faiss-cpu` if they ever want to import snapshots (optional).
+- ✅ Define `CHL_SEARCH_MODE` in `src/config.py` (lines 127, 203-209, 278-286)
+- ✅ Update `README.md` with CPU-only quick start (lines 7-138)
+- ✅ Update `doc/manual.md` with CPU-only workflow (section 9)
+- ✅ Document backward compatibility and FAISS portability caveats
+- ✅ Create this touch points checklist
 
-### 2. Explicit SQLite-only runtime mode
-- Introduce a config switch (e.g., `CHL_SEARCH_MODE=sqlite_only`) in `src/config.py`. When enabled, skip importing/instantiating `EmbeddingClient`, FAISS, reranker, and worker logic inside `src/api_server.py`.
-- Update `SearchService` initialization so `primary_provider` is forced to `sqlite_text` when the flag is on. Today the service already falls back, but forcing it prevents repeated error logs and wasted retries.
-- Surface the flag in `/settings` so operators know the search pipeline is intentionally degraded.
+**Acceptance:** CLI/docs mention the new flag, expectations for CPU users, and lack of FAISS snapshot portability.
 
-### 3. UX and observability
-- Update `/health` and the operations dashboard to display “Intentional SQLite mode” instead of a generic “degraded” warning when the new flag is present. This avoids noisy alerts for machines that will never host FAISS.
-- In the MCP responses, keep the existing `degraded` + `provider_hint`, but add a short note telling assistants that semantic ranking is disabled so they should issue narrower keyword queries.
-- Consider adding an operations banner (maybe in `src/web/templates/settings.html` and `/operations`) that hides FAISS upload/rebuild actions when SQLite-only mode is active.
+## Phase 1: Configuration & Server Bootstrap ✅
 
-### 4. Content sharing path
-- Document how teams with GPUs can periodically publish FAISS snapshots + embeddings so CPU-only users can periodically download them into `data/faiss_index/`. Long term we could add a cli helper (`scripts/download_snapshot.py`) that fetches the latest artifact from S3 and unpacks it without needing the ML stack.
-- Make sure the MCP/UI clearly communicates when the installed FAISS snapshot is stale versus absent. That can key off the metadata already stored by `ThreadSafeFAISSManager`.
+**Goal:** Make the backend respect `CHL_SEARCH_MODE=sqlite_only` without noisy warnings.
 
-### 5. Testing and validation
-- Add a smoke test configuration (pytest marker) that runs the API server with `CHL_SEARCH_MODE=sqlite_only`, verifying that `/health`, `read_entries(query=...)`, and `write_entry` still succeed and that duplicate hints come from the text provider.
-- Update CI docs so we run at least one suite without the `ml` extra to guarantee we do not accidentally reintroduce hard dependencies on llama-cpp or PyTorch.
+### src/api_server.py
+- ✅ Wrap embedding client initialization behind mode check (line 123-131)
+- ✅ Wrap FAISS initialization behind mode check (lines 158-186)
+- ✅ Wrap reranker initialization behind mode check (lines 188-200)
+- ✅ Wrap background worker setup behind mode check (lines 231-273)
+- ✅ Skip all ML imports and initialization when `search_mode=sqlite_only` (lines 132-278)
+- ✅ Log single info message: "Search mode=sqlite_only; vector components disabled." (line 124)
+- ✅ Force `primary_provider=sqlite_text` when in sqlite_only mode (line 126)
 
-## Acceptance checklist
-- [ ] CPU-only install instructions published (`README.md`, `doc/manual.md`, this page).
-- [ ] `CHL_SEARCH_MODE=sqlite_only` bypasses ML initialization and produces clean logs.
-- [ ] Settings/health/operations surfaces label the mode clearly, and MCP responses keep degraded hints.
-- [ ] Smoke tests (and optionally a GitHub Actions job) cover the SQLite-only configuration.
-- [ ] Optional: artifact sharing story documented so CPU users can still benefit from GPU-built FAISS indexes later.
+### src/search/service.py
+- ✅ SearchService accepts forced `primary_provider=sqlite_text` parameter
+- ✅ Verified `get_vector_provider()` returns `None` when vector_provider=None passed
+
+### src/config.py
+- ✅ Parse `CHL_SEARCH_MODE` environment variable (line 127)
+- ✅ Validate valid values: `auto`, `sqlite_only` (lines 203-209)
+- ✅ Skip FAISS directory creation when `search_mode=sqlite_only` (lines 278-286)
+
+### Testing
+- ✅ Config loads correctly with `CHL_SEARCH_MODE=sqlite_only`
+- ✅ FAISS directory is NOT created in sqlite_only mode
+- ✅ FAISS directory IS created in auto mode
+- ✅ Invalid mode values are rejected with clear error message
+- ✅ SearchService initializes with sqlite_text provider only in sqlite_only mode
+- ✅ No vector_faiss provider is registered in sqlite_only mode
+
+**Acceptance:** Starting server with `CHL_SEARCH_MODE=sqlite_only` produces no warnings, `/settings` loads without errors. ✅ (code changes complete, UI testing in Phase 2)
+
+## Phase 2: UI and Documentation Changes ⏸️
+
+**Goal:** Make the SQLite-only posture obvious in dashboards and docs.
+
+### Documentation
+- ✅ `README.md`: Restructured Quick Start with GPU/CPU paths (lines 7-138)
+- ✅ `doc/manual.md`: Added section 9 on CPU-only mode
+- ✅ Document mode switching and FAISS portability
+
+### MCP Guidance Files
+- ⏸️ Create `evaluator_cpu.md` in project root (next to `generator.md`/`evaluator.md`)
+- ⏸️ Document keyword search constraints and search strategy guidance
+
+### src/api/routers/guidelines.py
+- ⏸️ Inject `config` via `Depends(get_config)`
+- ⏸️ Branch on `config.search_mode` when `guide_type="evaluator"`
+- ⏸️ Serve `evaluator_cpu.md` when `search_mode="sqlite_only"`
+- ⏸️ Serve standard `evaluator.md` when `search_mode="auto"`
+
+### Seeding Scripts
+- ⏸️ Update `scripts/seed_default_content.py` to read and seed `evaluator_cpu.md`
+- ⏸️ Update `scripts/sync_guidelines.py` to handle both evaluator variants
+- ⏸️ Update `GUIDE_TITLE_MAP` (or equivalent) for "Evaluator (CPU-only)"
+
+### Settings UI
+- ⏸️ Create `src/web/templates/settings_cpu.html` template
+- ⏸️ Route picks template dynamically based on `config.search_mode`
+- ⏸️ CPU template omits FAISS/model sections
+- ⏸️ CPU template surfaces keyword-search instructions
+- ⏸️ CPU template links to CPU docs
+- ⏸️ Show "Search Mode" banner in both templates
+- ⏸️ Ensure validation panels don't render "missing model files" errors in SQLite-only mode
+
+### Operations UI
+- ⏸️ Dim or hide FAISS upload/rebuild buttons when `search_mode=sqlite_only`
+- ⏸️ Show appropriate message about SQLite-only mode
+
+### Cleanup (Optional)
+- ⏸️ Document or remove unused `src/mcp/handlers_guidelines.py` module
+
+**Acceptance:** Operators see clear banner about SQLite-only mode, no bogus validation failures, docs explain mode switching.
+
+## Phase 3: Observability & API Behavior ⏸️
+
+**Goal:** Keep clients informed while preventing noisy alerts.
+
+### src/api/routers/health.py
+- ⏸️ When `search_mode=sqlite_only`, report `components["faiss_index"] = {"status": "disabled", "detail": "Intentional SQLite-only mode"}`
+- ⏸️ Emit HTTP 200 (healthy) if database is fine, even without FAISS
+- ⏸️ Keep current behavior when `search_mode=auto` and FAISS is missing (degraded)
+
+### Telemetry/Logging
+- ⏸️ Gate repetitive "vector provider not available" warnings
+- ⏸️ Emit once at startup or not at all in SQLite mode
+- ⏸️ Consider adding metric flag: `search_mode_sqlite_only=1`
+
+### src/mcp/handlers_entries.py
+- ⏸️ Confirm `degraded=True` surfaces from `SQLiteTextProvider`
+- ⏸️ Confirm `provider_hint` is included in responses
+- ⏸️ Include `meta.search_mode` in responses
+- ⏸️ Reinforce keyword guidance via `provider_hint` when fallback is active
+- ⏸️ Document that automatic query rewriting is NOT used (keep UX predictable)
+
+**Acceptance:** Health checks don't page for "missing FAISS" in text mode; MCP clients get consistent hints about fallback provider.
+
+## Phase 4: Tests & Release Hygiene ⏸️
+
+**Goal:** Guard against regressions and socialize the change.
+
+### Test Coverage
+- ⏸️ Add pytest marker `@pytest.mark.sqlite_only`
+- ⏸️ Test: bring up API server with `CHL_SEARCH_MODE=sqlite_only`
+- ⏸️ Test: hit `/health` endpoint
+- ⏸️ Test: exercise `read_entries(query=...)`
+- ⏸️ Test: exercise `write_entry` with duplicate hints
+- ⏸️ Test: assert FAISS directories are not created
+- ⏸️ Test: `Config` initializes cleanly with `sqlite_only`
+- ⏸️ Test: invalid `CHL_SEARCH_MODE` values raise clear errors
+- ⏸️ Test: FAISS directory creation is skipped in SQLite-only mode
+
+### CI Configuration
+- ⏸️ Run at least one CI job without `ml` extra
+- ⏸️ Ensure no implicit llama-cpp imports remain
+
+### Release Documentation
+- ⏸️ Update CHANGELOG (if maintained) to highlight new mode
+- ⏸️ Document lack of vector snapshot compatibility guarantees
+- ⏸️ Create follow-up work items for optional enhancements
+
+**Acceptance:** Automated coverage exists for new mode, documentation published, config validation works correctly in both modes.
+
+## Touch Points Summary
+
+### Files Modified (Phase 0)
+1. `src/config.py` - Added CHL_SEARCH_MODE parsing and validation
+2. `README.md` - Added CPU-only quick start and mode switching docs
+3. `doc/manual.md` - Added section 9 on CPU-only mode
+4. `doc/cpu_only_user.md` - This checklist
+
+### Files Modified (Phase 1)
+1. `src/api_server.py` - Conditional ML component initialization (lines 121-278)
+   - Wrap all ML imports and initialization behind `config.search_mode` check
+   - Force `primary_provider=sqlite_text` in sqlite_only mode
+   - Skip embedding client, FAISS, reranker, and worker initialization
+2. `src/search/service.py` - No changes needed (already supports forced primary provider)
+
+### Files to Modify (Phase 2)
+1. `evaluator_cpu.md` - New CPU-specific evaluator guidance
+2. `src/api/routers/guidelines.py` - Dynamic guideline selection
+3. `scripts/seed_default_content.py` - Seed CPU evaluator guide
+4. `scripts/sync_guidelines.py` - Handle both evaluator variants
+5. `src/web/templates/settings_cpu.html` - New CPU-only settings template
+6. `src/web/templates/settings.html` - Add search mode banner
+7. Settings route handler - Dynamic template selection
+8. Operations template - Conditional FAISS button visibility
+
+### Files to Modify (Phase 3)
+1. `src/api/routers/health.py` - Distinguish intentional vs accidental degradation
+2. `src/mcp/handlers_entries.py` - Ensure degraded hints surface correctly
+3. Logging configuration - Gate repetitive warnings
+
+### Files to Create (Phase 4)
+1. Test file with `@pytest.mark.sqlite_only` tests
+2. Config validation tests
+3. CI configuration updates
+4. CHANGELOG entry
+
+## Phase Execution Order
+
+1. **Phase 0** (Complete) → **Phase 1** (Backend runtime)
+2. **Phase 1** → **Phase 2** (UI/docs) and **Phase 3** (observability) in parallel
+3. **Phase 2** + **Phase 3** → **Phase 4** (tests)
+
+## Notes
+
+- Mode changes require server restart
+- FAISS artifacts remain on disk when switching to `sqlite_only` but are ignored
+- Pending embedding tasks are dropped on restart in `sqlite_only` mode
+- Consider health endpoint warning if `config.search_mode="sqlite_only"` but vector provider is still active (optional future enhancement)
