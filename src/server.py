@@ -78,15 +78,6 @@ TOOL_INDEX = [
         },
     },
     {
-        "name": "delete_entry",
-        "description": "Delete a manual entry (experiences cannot be deleted via MCP).",
-        "example": {
-            "entity_type": "manual",
-            "category_code": "PGS",
-            "entry_id": "MNL-PGS-20250115-104200123456"
-        },
-    },
-    {
         "name": "get_guidelines",
         "description": "Return the generator or evaluator workflow manual seeded in GLN.",
         "example": {"guide_type": "generator"}
@@ -309,7 +300,6 @@ def init_server():
     mcp.tool()(read_entries)
     mcp.tool()(write_entry)
     mcp.tool()(update_entry)
-    mcp.tool()(delete_entry)
     mcp.tool()(get_guidelines)
 
     try:
@@ -475,31 +465,6 @@ def update_entry(
         raise
     except Exception as e:  # pragma: no cover - defensive
         logger.exception(f"Unexpected error in update_entry: {e}")
-        raise MCPError(f"Unexpected error: {e}")
-
-
-def delete_entry(
-    entity_type: str,
-    category_code: str,
-    entry_id: str
-) -> Dict[str, Any]:
-    """
-    Delete a manual entry from a category (experiences cannot be deleted).
-
-    Example:
-        delete_entry('manual', 'PGS', 'MNL-PGS-20250115-104200123456')
-    """
-    try:
-        payload = {
-            "entity_type": entity_type,
-            "category_code": category_code,
-            "entry_id": entry_id,
-        }
-        return _request_api("DELETE", "/api/v1/entries/delete", payload=payload)
-    except MCPError:
-        raise
-    except Exception as e:  # pragma: no cover - defensive
-        logger.exception(f"Unexpected error in delete_entry: {e}")
         raise MCPError(f"Unexpected error: {e}")
 
 

@@ -13,8 +13,6 @@ from src.api.models import (
     WriteEntryResponse,
     UpdateEntryRequest,
     UpdateEntryResponse,
-    DeleteEntryRequest,
-    DeleteEntryResponse,
 )
 from src.storage.repository import (
     CategoryRepository,
@@ -537,54 +535,4 @@ def update_entry(
         raise
     except Exception as e:
         logger.exception("Error updating entry")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/delete", response_model=DeleteEntryResponse)
-def delete_entry(
-    request: DeleteEntryRequest,
-    session: Session = Depends(get_db_session),
-):
-    """Delete an entry (manuals only)."""
-    try:
-        # Validate category
-        cat_repo = CategoryRepository(session)
-        category = cat_repo.get_by_code(request.category_code)
-        if not category:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Category '{request.category_code}' not found"
-            )
-
-        if request.entity_type == "experience":
-            raise HTTPException(
-                status_code=400,
-                detail="Delete is not supported for experiences"
-            )
-
-        # Manual delete
-        man_repo = CategoryManualRepository(session)
-        manual = man_repo.get_by_id(request.entry_id)
-        if not manual:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Manual '{request.entry_id}' not found"
-            )
-        if manual.category_code != request.category_code:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Manual '{request.entry_id}' belongs to category '{manual.category_code}', not '{request.category_code}'"
-            )
-
-        man_repo.delete(request.entry_id)
-        return DeleteEntryResponse(
-            success=True,
-            entry_id=request.entry_id,
-            message="Manual deleted successfully"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Error deleting entry")
         raise HTTPException(status_code=500, detail=str(e))

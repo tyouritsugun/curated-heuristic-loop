@@ -45,13 +45,6 @@ class UpdateEntryRequest(BaseModel):
     force_contextual: bool = False
 
 
-class DeleteEntryRequest(BaseModel):
-    """Request model for deleting an entry."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
-    category_code: str
-    entry_id: str
-
-
 class EntryResponse(BaseModel):
     """Response model for a single entry."""
     id: str
@@ -88,13 +81,6 @@ class UpdateEntryResponse(BaseModel):
     entry_id: str
     # Return the updated entry for better UX
     entry: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-
-
-class DeleteEntryResponse(BaseModel):
-    """Response model for deleting an entry."""
-    success: bool
-    entry_id: str
     message: Optional[str] = None
 
 

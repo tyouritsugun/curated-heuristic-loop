@@ -423,44 +423,6 @@ class CHLAPIClient:
         except requests.HTTPError as e:
             raise APIOperationError(f"Failed to update entry: {e}") from e
 
-    def delete_entry(
-        self,
-        entity_type: str,
-        category_code: str,
-        entry_id: str,
-        timeout: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """Delete an entry.
-
-        Args:
-            entity_type: "experience" or "manual"
-            category_code: Category code
-            entry_id: Entry ID to delete
-            timeout: Request timeout in seconds
-
-        Returns:
-            Result dictionary
-
-        Raises:
-            APIOperationError: If request fails
-        """
-        payload = {
-            "entity_type": entity_type,
-            "category_code": category_code,
-            "entry_id": entry_id
-        }
-
-        try:
-            response = self.session.delete(
-                f"{self.base_url}/api/v1/entries/delete",
-                json=payload,
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Failed to delete entry: {e}") from e
-
     # Index Operations
 
     def get_index_status(self, timeout: Optional[int] = None) -> Dict[str, Any]:
