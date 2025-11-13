@@ -3,7 +3,7 @@ import httpx
 import logging
 import time
 from typing import Dict, Any, Optional, Callable
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, retry_if_exception
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from src.mcp.errors import (
     MCPServerError,

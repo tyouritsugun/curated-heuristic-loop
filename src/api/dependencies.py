@@ -53,12 +53,6 @@ def get_config():
     return config
 
 
-def get_faiss_lock():
-    """Provide global FAISS lock for thread-safe operations."""
-    from src.api_server import faiss_lock
-    return faiss_lock
-
-
 def get_settings_service():
     """Provide initialized SettingsService instance."""
     from src.api_server import settings_service

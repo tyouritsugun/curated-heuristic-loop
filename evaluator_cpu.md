@@ -11,6 +11,7 @@ Switch to this playbook **only after** the user confirms the Generator's work is
 ### 2. Inspect the library before writing
 **CPU-only search constraints:**
 - Use specific keywords from titles and content (e.g., "authentication", "validation", "error handling")
+- Expand each query with close synonyms/aliases (e.g., "auth OR login OR sign-in") so the SQLite provider’s OR clauses capture more rows
 - Avoid abstract queries like "best practices" or "recommended approaches"
 - Break complex queries into multiple searches with different keywords
 - Use category filtering to narrow results
@@ -62,8 +63,8 @@ If you cannot safely modify the library (tool unavailable, unsure about the edit
 ### Decision checklist
 - Does the insight belong in CHL, or is it purely project-specific noise?
 - Is it best captured as a single atomic experience, a manual addition, or an update to something that already exists?
-- Did you search with **multiple keyword variations** to check for duplicates?
-- Are your titles and summaries keyword-rich for future discoverability?
+- Did you search with **multiple keyword variations and synonym bundles** to check for duplicates?
+- Are your titles and summaries keyword-rich (include synonyms/aliases) for future discoverability?
 - Are you leaving behind a clear audit trail (citations, motivations, next steps)?
 
 Remember: you are part of an iterative loop. The better you document successes, pitfalls, and missing patterns now, the easier it is for curators to maintain a high-quality library for the next sprint. In CPU-only mode, keyword-rich documentation is especially important for retrieval.

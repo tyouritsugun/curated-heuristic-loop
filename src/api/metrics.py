@@ -43,12 +43,6 @@ class SimpleMetrics:
                 }
             }
 
-    def reset(self):
-        """Reset all metrics (useful for testing)."""
-        with self._lock:
-            self._counters.clear()
-            self._histograms.clear()
-
 
 # Global metrics instance
 metrics = SimpleMetrics()

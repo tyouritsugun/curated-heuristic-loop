@@ -1,5 +1,8 @@
 """SQLite text search provider using LIKE-based matching"""
 from typing import List, Optional
+import re
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..storage.schema import Experience, CategoryManual
@@ -93,6 +96,10 @@ class SQLiteTextProvider(SearchProvider):
         except Exception as e:
             raise SearchProviderError(f"SQLite text search failed: {e}") from e
 
+    def _tokenize(self, query: str) -> List[str]:
+        tokens = [token.strip() for token in re.split(r"[\s,]+", query) if token.strip()]
+        return tokens[:5]
+
     def _search_experiences(
         self, session: Session, query: str, category_code: Optional[str], limit: int
     ) -> List[tuple]:
@@ -102,10 +109,18 @@ class SQLiteTextProvider(SearchProvider):
             List of (experience, updated_at) tuples
         """
         pattern = f"%{query}%"
+        tokens = self._tokenize(query)
 
-        q = session.query(Experience, Experience.updated_at).filter(
-            (Experience.title.like(pattern)) | (Experience.playbook.like(pattern))
-        )
+        filters = [
+            or_(Experience.title.like(pattern), Experience.playbook.like(pattern))
+        ]
+        for token in tokens:
+            token_pattern = f"%{token}%"
+            filters.append(
+                or_(Experience.title.ilike(token_pattern), Experience.playbook.ilike(token_pattern))
+            )
+
+        q = session.query(Experience, Experience.updated_at).filter(or_(*filters))
 
         if category_code:
             q = q.filter(Experience.category_code == category_code)
@@ -121,12 +136,26 @@ class SQLiteTextProvider(SearchProvider):
             List of (manual, updated_at) tuples
         """
         pattern = f"%{query}%"
+        tokens = self._tokenize(query)
 
-        q = session.query(CategoryManual, CategoryManual.updated_at).filter(
-            (CategoryManual.title.like(pattern))
-            | (CategoryManual.content.like(pattern))
-            | (CategoryManual.summary.like(pattern))
-        )
+        filters = [
+            or_(
+                CategoryManual.title.like(pattern),
+                CategoryManual.content.like(pattern),
+                CategoryManual.summary.like(pattern),
+            )
+        ]
+        for token in tokens:
+            token_pattern = f"%{token}%"
+            filters.append(
+                or_(
+                    CategoryManual.title.ilike(token_pattern),
+                    CategoryManual.content.ilike(token_pattern),
+                    CategoryManual.summary.ilike(token_pattern),
+                )
+            )
+
+        q = session.query(CategoryManual, CategoryManual.updated_at).filter(or_(*filters))
 
         if category_code:
             q = q.filter(CategoryManual.category_code == category_code)

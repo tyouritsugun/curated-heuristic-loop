@@ -59,6 +59,7 @@ class ReadEntriesResponse(BaseModel):
     """Response model for reading entries."""
     entries: List[Dict[str, Any]]
     count: int
+    meta: Optional[Dict[str, Any]] = None
 
 
 class WriteEntryResponse(BaseModel):

@@ -27,6 +27,22 @@ logger = logging.getLogger(__name__)
 EntityType = Literal["experience", "manual"]
 
 
+def _runtime_search_mode(config, search_service) -> Optional[str]:
+    """Return the effective search mode seen by MCP clients."""
+    config_mode = getattr(config, "search_mode", None)
+    if config_mode and config_mode.lower() != "auto":
+        return config_mode
+    try:
+        if search_service and (
+            getattr(search_service, "primary_provider_name", "") == "sqlite_text"
+            and search_service.get_vector_provider() is None
+        ):
+            return "sqlite_only"
+    except Exception:
+        pass
+    return config_mode or "auto"
+
+
 def _validate_entity_type(entity_type: str) -> Optional[str]:
     if entity_type not in ("experience", "manual"):
         return f"Unknown entity_type '{entity_type}'. Use 'experience' or 'manual'."
@@ -205,7 +221,14 @@ def make_read_entries_handler(db, config, search_service):
                             })
 
             # Include search_mode to help clients adapt UX (e.g., keyword guidance)
-            return {"meta": {"code": meta_code, "name": meta_name, "search_mode": getattr(config, 'search_mode', None)}, "entries": entries}
+            return {
+                "meta": {
+                    "code": meta_code,
+                    "name": meta_name,
+                    "search_mode": _runtime_search_mode(config, search_service),
+                },
+                "entries": entries,
+            }
         except Exception as e:
             return create_error_response("SERVER_ERROR", str(e), retryable=False)
 

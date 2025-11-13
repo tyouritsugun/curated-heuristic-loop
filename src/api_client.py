@@ -108,31 +108,6 @@ class CHLAPIClient:
             logger.debug(f"Health check failed: {e}")
             return False
 
-    def get_health_status(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Get detailed health status.
-
-        Args:
-            timeout: Request timeout in seconds
-
-        Returns:
-            Health status dictionary
-
-        Raises:
-            APIConnectionError: If server is not reachable
-            APIOperationError: If request fails
-        """
-        try:
-            response = self.session.get(
-                f"{self.base_url}/health",
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.ConnectionError as e:
-            raise APIConnectionError(f"Cannot connect to API server: {e}") from e
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Health check failed: {e}") from e
-
     # Worker Coordination
 
     def pause_workers(self, timeout: Optional[int] = None) -> bool:
@@ -225,50 +200,6 @@ class CHLAPIClient:
         except Exception as e:
             logger.warning(f"Failed to drain queue: {e}")
             return False
-
-    def get_queue_status(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Get embedding queue status.
-
-        Args:
-            timeout: Request timeout in seconds
-
-        Returns:
-            Queue status dictionary with queue depth and worker info
-
-        Raises:
-            APIOperationError: If request fails
-        """
-        try:
-            response = self.session.get(
-                f"{self.base_url}/admin/queue/status",
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Failed to get queue status: {e}") from e
-
-    def retry_failed_embeddings(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Retry all failed embeddings.
-
-        Args:
-            timeout: Request timeout in seconds
-
-        Returns:
-            Result dictionary with reset counts
-
-        Raises:
-            APIOperationError: If request fails
-        """
-        try:
-            response = self.session.post(
-                f"{self.base_url}/admin/queue/retry-failed",
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Failed to retry failed embeddings: {e}") from e
 
     # Entry Operations
 
@@ -424,50 +355,6 @@ class CHLAPIClient:
             raise APIOperationError(f"Failed to update entry: {e}") from e
 
     # Index Operations
-
-    def get_index_status(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Get FAISS index status.
-
-        Args:
-            timeout: Request timeout in seconds
-
-        Returns:
-            Index status dictionary
-
-        Raises:
-            APIOperationError: If request fails
-        """
-        try:
-            response = self.session.get(
-                f"{self.base_url}/admin/index/status",
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Failed to get index status: {e}") from e
-
-    def save_index(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Force save FAISS index.
-
-        Args:
-            timeout: Request timeout in seconds
-
-        Returns:
-            Result dictionary
-
-        Raises:
-            APIOperationError: If request fails
-        """
-        try:
-            response = self.session.post(
-                f"{self.base_url}/admin/index/save",
-                timeout=timeout or self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.HTTPError as e:
-            raise APIOperationError(f"Failed to save index: {e}") from e
 
     def rebuild_index(self, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Trigger FAISS index rebuild.

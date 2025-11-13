@@ -38,6 +38,17 @@ def _make_preview(text: str | None, limit: int = 320) -> tuple[str | None, bool]
     return trimmed[:limit].rstrip() + "...", True
 
 
+def _runtime_search_mode(config, search_service):
+    mode = getattr(config, "search_mode", "auto")
+    if mode != "auto":
+        return mode
+    provider_name = getattr(search_service, "primary_provider_name", None)
+    vector_available = bool(getattr(search_service, "get_vector_provider", lambda: None)())
+    if provider_name == "sqlite_text" and not vector_available:
+        return "sqlite_only"
+    return mode
+
+
 @router.post("/read", response_model=ReadEntriesResponse)
 def read_entries(
     request: ReadEntriesRequest,
@@ -191,7 +202,12 @@ def read_entries(
                         "provider": "direct",
                     })
 
-        return ReadEntriesResponse(entries=entries, count=len(entries))
+        meta = {
+            "category": {"code": category.code, "name": category.name},
+            "search_mode": _runtime_search_mode(config, search_service),
+        }
+
+        return ReadEntriesResponse(entries=entries, count=len(entries), meta=meta)
 
     except HTTPException:
         raise

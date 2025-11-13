@@ -1303,14 +1303,17 @@ async def run_operation_from_ui(
                 error=f"Invalid payload JSON: {exc.msg}",
             )
 
+    def _target_for(op: str) -> str:
+        return (
+            "partials/config_status_card.html"
+            if op in {"import", "export", "guidelines"}
+            else "partials/ops_operations_card.html"
+        )
+
     try:
         operations_service.trigger(operation_type, parsed_payload, actor)
     except OperationConflict as exc:
-        target_template = (
-            "partials/config_status_card.html"
-            if operation_type in ("import", "export")
-            else "partials/ops_operations_card.html"
-        )
+        target_template = _target_for(operation_type)
         return _render_operation_result(
             target_template,
             request,
@@ -1322,11 +1325,7 @@ async def run_operation_from_ui(
             error=str(exc),
         )
     except ValueError as exc:
-        target_template = (
-            "partials/config_status_card.html"
-            if operation_type in ("import", "export")
-            else "partials/ops_operations_card.html"
-        )
+        target_template = _target_for(operation_type)
         return _render_operation_result(
             target_template,
             request,
@@ -1338,11 +1337,7 @@ async def run_operation_from_ui(
             error=str(exc),
         )
 
-    target_template = (
-        "partials/config_status_card.html"
-        if operation_type in ("import", "export")
-        else "partials/ops_operations_card.html"
-    )
+    target_template = _target_for(operation_type)
     return _render_operation_result(
         target_template,
         request,

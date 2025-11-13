@@ -35,7 +35,6 @@ Model selection (GGUF quantized):
 - CHL_EMBEDDING_QUANT: Advanced override for embedding quantization (defaults via setup)
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)
-- CHL_EMBEDDING_MODEL_AUTO_MIGRATE: Auto-rebuild on model change (default: 0)
 
 Thresholds:
 - CHL_DUPLICATE_THRESHOLD_UPDATE: Similarity threshold for updates (default: 0.85, range: 0.0-1.0)
@@ -144,7 +143,6 @@ class Config:
         self.reranker_quant = os.getenv("CHL_RERANKER_QUANT", default_reranker_quant)
 
         # Model migration settings
-        self.embedding_model_auto_migrate = os.getenv("CHL_EMBEDDING_MODEL_AUTO_MIGRATE", "0") == "1"
 
         # Threshold settings
         self.duplicate_threshold_update = float(os.getenv("CHL_DUPLICATE_THRESHOLD_UPDATE", "0.85"))

@@ -77,6 +77,7 @@ class OperationsService:
                 self._handlers["index"] = self._index_handler
                 self._handlers["sync"] = self._sync_handler
                 self._handlers["reembed"] = self._reembed_handler
+                self._handlers["guidelines"] = self._guidelines_handler
                 return
             logger.warning(
                 "OperationsService mode 'scripts' requested but scripts directory '%s' is missing. "
@@ -91,6 +92,7 @@ class OperationsService:
         self._handlers.setdefault("index", self._noop_handler)
         self._handlers.setdefault("sync", self._noop_handler)
         self._handlers.setdefault("reembed", self._noop_handler)
+        self._handlers.setdefault("guidelines", self._noop_handler)
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -327,6 +329,19 @@ class OperationsService:
             command.append("--dry-run")
         if config := payload.get("config"):
             command.extend(["--config", str(config)])
+        return self._run_script(command, payload)
+
+    def _guidelines_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Refresh generator/evaluator manuals from markdown sources."""
+        del session
+        payload = payload or {}
+        command = [
+            sys.executable,
+            str(self._scripts_dir / "seed_default_content.py"),
+            "--skip-seed",
+        ]
+        if payload.get("skip_guidelines"):
+            command.append("--skip-guidelines")
         return self._run_script(command, payload)
 
     def _index_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
