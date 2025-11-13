@@ -3,10 +3,9 @@
   id="ops-jobs-card"
   class="card ops-card"
   hx-get="/ui/operations/jobs"
-  hx-trigger="ops-refresh from:body"
+  hx-trigger="ops-refresh from:body, sse:controls"
   hx-target="this"
   hx-swap="outerHTML"
-  sse-swap="jobs"
 >
   <header>
     <div>

@@ -16,10 +16,9 @@
   id="ops-queue-card"
   class="card ops-card"
   hx-get="/ui/operations/queue"
-  hx-trigger="ops-refresh from:body, every 1s"
+  hx-trigger="ops-refresh from:body, sse:queue, every 1s"
   hx-target="this"
   hx-swap="outerHTML"
-  sse-swap="queue"
 >
   <header>
     <div>

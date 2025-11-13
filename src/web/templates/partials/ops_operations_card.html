@@ -2,10 +2,9 @@
   id="ops-controls-card"
   class="card ops-card"
   hx-get="/ui/operations/controls"
-  hx-trigger="ops-refresh from:body, every 3s"
+  hx-trigger="ops-refresh from:body, sse:controls, every 3s"
   hx-target="this"
   hx-swap="outerHTML"
-  sse-swap="controls"
 >
   <header>
     <div>
