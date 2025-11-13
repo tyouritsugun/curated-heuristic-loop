@@ -115,6 +115,7 @@ If you don't have a GPU or don't need semantic search, you can run CHL in SQLite
 8. **Open http://127.0.0.1:8000/operations** to run import:
    - Click **Run Import** to pull data from Google Sheets
    - No background embedding worker runs in SQLite-only mode
+   - Import/export scripts automatically skip worker queue coordination because there is no worker pool in this mode
    - Search uses keyword matching instead of semantic similarity
 
 > ⚠️ **Important**: In SQLite-only mode, search uses literal keyword matching (LIKE queries) instead of semantic similarity. This works well for exact phrase searches but won't find conceptually related entries. For best results, use specific keywords from your entry titles and content.
@@ -142,7 +143,7 @@ The browser UI now covers all day-to-day administration. Use the CLI pieces only
 
 - `uv run python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences.
 - `uv run python scripts/export.py` – pushes local SQLite data to Google Sheets (uses `scripts/scripts_config.yaml`). Add `--dry-run` to preview counts.
-- `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data. Pass `--skip-api-coordination` only if the FastAPI server is offline.
+- `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). In `sqlite_only` mode the script detects there is no worker queue and skips coordination automatically. Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data. Pass `--skip-api-coordination` only if the FastAPI server is offline.
 - `uv run python scripts/setup-gpu.py [--download-models]` – optional helper that downloads models ahead of time; the web UI works without it, but this can save the first user from waiting.
 
 ### MCP clients (optional)

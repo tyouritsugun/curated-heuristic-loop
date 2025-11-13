@@ -1,5 +1,12 @@
 {% set config_status = env_config_status %}
-<section id="config-status-card" class="card">
+<section
+  id="config-status-card"
+  class="card"
+  hx-get="/ui/settings/config-status"
+  hx-trigger="ops-refresh from:body, every 5s"
+  hx-target="this"
+  hx-swap="outerHTML"
+>
   <header>
     <div>
       <h2>Configuration Status</h2>

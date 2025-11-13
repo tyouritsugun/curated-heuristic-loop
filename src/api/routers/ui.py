@@ -1,6 +1,7 @@
 """Server-rendered UI endpoints for settings and operations management."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -23,7 +24,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -396,6 +397,7 @@ def _build_settings_context(
 ):
     snapshot = settings_service.snapshot(session)
     diagnostics = settings_service.diagnostics(session)
+    diagnostics_dict = {name: status.to_dict() for name, status in diagnostics.items()}
     context = {
         "request": request,
         "snapshot": snapshot,
@@ -403,13 +405,13 @@ def _build_settings_context(
         "message_level": message_level,
         "error": error,
         "secrets_root": str(settings_service.secrets_root),
-        "diagnostics": {name: status.to_dict() for name, status in diagnostics.items()},
+        "diagnostics": diagnostics_dict,
         "audit_entries": _recent_audit_entries(session),
         "active_page": "settings",
         "default_scripts_config_path": str(_default_scripts_config_path()),
         "embedding_choices": EMBEDDING_CHOICES,
         "reranker_choices": RERANKER_CHOICES,
-        "env_config_status": _get_env_config_status(),
+        "env_config_status": _get_env_config_status(snapshot=snapshot, diagnostics=diagnostics_dict),
     }
     return context
 
@@ -707,13 +709,20 @@ def _get_model_info() -> dict:
     return model_info
 
 
-def _get_env_config_status() -> dict:
+def _get_env_config_status(
+    *,
+    snapshot: Optional[dict] = None,
+    diagnostics: Optional[dict] = None,
+) -> dict:
     """Read configuration from environment variables for display.
 
     Returns a dict with configuration status suitable for template rendering.
     """
     import os
     from pathlib import Path
+
+    diagnostics = diagnostics or {}
+    snapshot = snapshot or {}
 
     credentials_path = os.getenv("GOOGLE_CREDENTIAL_PATH", "")
     import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "")
@@ -737,6 +746,10 @@ def _get_env_config_status() -> dict:
     credentials_status = "Not configured"
     credentials_detail = None
     cred_file = None
+
+    if not credentials_path:
+        cred_snapshot = snapshot.get("credentials") or {}
+        credentials_path = cred_snapshot.get("path") or ""
 
     if credentials_path:
         cred_file = Path(credentials_path)
@@ -770,16 +783,52 @@ def _get_env_config_status() -> dict:
             credentials_status = "File not found"
             credentials_detail = str(cred_file)
 
-    # Overall state
-    if credentials_state == "ok" and import_sheet_id and export_sheet_id:
+    # Fall back to snapshot data when .env isn't populated yet
+    sheets_snapshot = snapshot.get("sheets") or {}
+    if not import_sheet_id:
+        import_sheet_id = (
+            sheets_snapshot.get("import_spreadsheet_id")
+            or sheets_snapshot.get("experiences_sheet_id")
+            or sheets_snapshot.get("manuals_sheet_id")
+            or sheets_snapshot.get("category_sheet_id")
+            or ""
+        )
+    if not export_sheet_id:
+        export_sheet_id = (
+            sheets_snapshot.get("export_spreadsheet_id")
+            or sheets_snapshot.get("experiences_sheet_id")
+            or sheets_snapshot.get("manuals_sheet_id")
+            or sheets_snapshot.get("category_sheet_id")
+            or ""
+        )
+
+    # Optionally align with diagnostics (which already handle CPU/GPU nuances)
+    cred_diag = diagnostics.get("credentials") if diagnostics else None
+    sheets_diag = diagnostics.get("sheets") if diagnostics else None
+    if cred_diag:
+        credentials_state = cred_diag.get("state", credentials_state)
+        credentials_status = cred_diag.get("headline", credentials_status)
+        credentials_detail = cred_diag.get("detail", credentials_detail)
+    if sheets_diag:
+        sheets_state = sheets_diag.get("state", "error")
+        if sheets_diag.get("state") == "ok":
+            import_sheet_id = import_sheet_id or (sheets_diag.get("detail") or "configured")
+            export_sheet_id = export_sheet_id or (sheets_diag.get("detail") or "configured")
+    else:
+        sheets_state = "ok" if import_sheet_id and export_sheet_id else "error"
+
+    # Determine overall health/headline
+    credentials_ready = credentials_state != "error"
+    sheets_ready = sheets_state != "error"
+    if credentials_state == "ok" and sheets_state == "ok":
         overall_state = "ok"
         overall_headline = "Configuration ready"
-    elif not credentials_path or not import_sheet_id or not export_sheet_id:
+    elif not credentials_ready or not sheets_ready:
         overall_state = "error"
         overall_headline = "Missing configuration"
     else:
         overall_state = "warn"
-        overall_headline = "Configuration incomplete"
+        overall_headline = "Configuration warning"
 
     # Model information from Config or model_selection.json
     model_info = _get_model_info()
@@ -833,6 +882,96 @@ def settings_page(
     # Select template based on search mode
     template_name = "settings_cpu.html" if config.search_mode == "sqlite_only" else "settings.html"
     return templates.TemplateResponse(template_name, context)
+
+
+@router.get("/ui/settings/config-status", response_class=HTMLResponse)
+def settings_config_status_card(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+):
+    """HTMX endpoint to refresh the configuration status card."""
+    return _render_operation_result(
+        "partials/config_status_card.html",
+        request,
+        session,
+        settings_service,
+        telemetry_service,
+        operations_service,
+        worker_control,
+    )
+
+
+@router.get("/ui/stream/telemetry")
+async def telemetry_stream(
+    request: Request,
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+    search_service=Depends(get_search_service),
+    config=Depends(get_config),
+):
+    """Server-sent events stream powering dashboard live updates."""
+    from src.api_server import db  # Local import to avoid circulars at module import time
+
+    try:
+        cycles_param = request.query_params.get("cycles")
+        max_cycles = int(cycles_param) if cycles_param is not None else None
+    except ValueError:
+        max_cycles = None
+
+    try:
+        interval_param = request.query_params.get("interval")
+        interval_seconds = float(interval_param) if interval_param is not None else 2.0
+    except ValueError:
+        interval_seconds = 2.0
+    interval_seconds = max(0.5, interval_seconds)
+
+    session_factory = db.get_session
+
+    async def event_generator():
+        cycles = 0
+        while True:
+            if await request.is_disconnected():
+                break
+
+            session = session_factory()
+            try:
+                context = _build_operations_context(
+                    session,
+                    settings_service,
+                    telemetry_service,
+                    operations_service,
+                    worker_control,
+                    search_service,
+                    config,
+                )
+            finally:
+                session.close()
+
+            snapshot = context.get("snapshot") or {}
+            queue_payload = snapshot.get("queue") or {}
+            index_payload = context.get("index_info") or {}
+            controls_payload = {
+                "worker_status": context.get("worker_status"),
+                "job_summaries": context.get("job_summaries"),
+                "jobs": context.get("jobs"),
+            }
+
+            yield f"event: queue\ndata: {json.dumps(queue_payload, ensure_ascii=False)}\n\n"
+            yield f"event: index\ndata: {json.dumps(index_payload or {}, ensure_ascii=False)}\n\n"
+            yield f"event: controls\ndata: {json.dumps(controls_payload, ensure_ascii=False)}\n\n"
+
+            cycles += 1
+            if max_cycles is not None and cycles >= max_cycles:
+                break
+            await asyncio.sleep(interval_seconds)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/operations", response_class=HTMLResponse)

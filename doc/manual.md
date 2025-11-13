@@ -230,6 +230,7 @@ In CPU-only mode:
 - **Duplicate detection**: Uses simple text matching instead of embedding-based similarity
 - **Background worker**: No embedding worker runs; entries are immediately available for search
 - **Vector components**: FAISS, embedding models, and reranker are not initialized
+- **Imports**: `scripts/import.py` automatically skips worker coordination because `/admin/queue/*` endpoints are unavailable without the embedding worker
 
 ### 9.4. Search Tips for CPU-Only Mode
 

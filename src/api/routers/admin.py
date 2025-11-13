@@ -1,10 +1,16 @@
 """Admin endpoints for index management and monitoring"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import logging
 
-from src.api.dependencies import get_db_session, get_search_service, get_config
+from src.api.dependencies import (
+    get_config,
+    get_db_session,
+    get_search_service,
+    get_worker_control_service,
+)
+from src.services.worker_control import WorkerUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +185,56 @@ def trigger_save(
         )
 
 
+def _require_worker_pool(operation, worker_control, session: Session, actor: str):
+    try:
+        return operation(session=session, actor=actor)
+    except WorkerUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Worker pool not initialized") from exc
+
+
+@router.get("/queue/status")
+def queue_status(
+    session: Session = Depends(get_db_session),
+    worker_control=Depends(get_worker_control_service),
+) -> Dict[str, Any]:
+    """Return embedding queue + worker status."""
+    return worker_control.status(session)
+
+
+@router.post("/queue/pause")
+def queue_pause(
+    session: Session = Depends(get_db_session),
+    worker_control=Depends(get_worker_control_service),
+    actor: str = Query("admin-api"),
+) -> Dict[str, str]:
+    """Pause background worker pool (if running)."""
+    return _require_worker_pool(worker_control.pause, worker_control, session, actor)
+
+
+@router.post("/queue/resume")
+def queue_resume(
+    session: Session = Depends(get_db_session),
+    worker_control=Depends(get_worker_control_service),
+    actor: str = Query("admin-api"),
+) -> Dict[str, str]:
+    """Resume background worker pool (if paused)."""
+    return _require_worker_pool(worker_control.resume, worker_control, session, actor)
+
+
+@router.post("/queue/drain")
+def queue_drain(
+    session: Session = Depends(get_db_session),
+    worker_control=Depends(get_worker_control_service),
+    timeout: int = Query(300, ge=1, le=3600),
+    actor: str = Query("admin-api"),
+) -> Dict[str, Any]:
+    """Drain embedding queue (best-effort)."""
+    def drain_op(session: Session, actor: str):
+        return worker_control.drain(session, timeout=timeout, actor=actor)
+
+    return _require_worker_pool(drain_op, worker_control, session, actor)
+
+
 @router.post("/queue/retry-failed")
 def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
     """
@@ -208,4 +264,3 @@ def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
             "total": exp_count + man_count,
         }
     }
-

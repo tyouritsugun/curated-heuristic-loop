@@ -298,7 +298,16 @@ def main() -> None:
     # This ensures pending embeddings are processed before clearing the database
     api_client = None
     api_coordinated = False
-    if not args.skip_api_coordination:
+    search_mode = os.getenv("CHL_SEARCH_MODE", "auto").lower()
+    skip_reason: Optional[str] = None
+    if args.skip_api_coordination:
+        skip_reason = "--skip-api-coordination flag set"
+    elif search_mode == "sqlite_only":
+        skip_reason = "CHL_SEARCH_MODE=sqlite_only (no worker queue)"
+
+    if skip_reason:
+        logger.info("Skipping worker coordination: %s", skip_reason)
+    else:
         logger.info("Checking for running API server at %s", args.api_url)
         api_client = CHLAPIClient(args.api_url)
         if api_client.check_health():

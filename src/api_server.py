@@ -1,7 +1,7 @@
 """FastAPI server entrypoint for CHL API."""
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -391,11 +391,14 @@ app.include_router(docs_router)
 
 
 @app.get("/")
-def root():
+def root(request: Request):
     """Return basic service info for smoke checks.
 
     UI remains at /settings.
     """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and "application/json" not in accept:
+        return RedirectResponse(url="/settings", status_code=307)
     return {
         "service": "CHL API",
         "version": "0.2.0",
@@ -411,6 +414,14 @@ configure_logging()
 static_dir = Path(__file__).resolve().parent / "web" / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+favicon_path = static_dir / "favicon.ico"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Serve the dashboard favicon."""
+    return FileResponse(favicon_path)
 
 
 if __name__ == "__main__":

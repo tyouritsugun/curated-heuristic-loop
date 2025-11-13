@@ -303,13 +303,16 @@ class OperationsService:
 
         # Auto-trigger sync job if import succeeded
         if result.get("exit_code") == 0:
-            try:
-                logger.info("Import succeeded, triggering automatic sync job...")
-                self.trigger(job_type="sync", payload={}, actor="system:auto_import")
-            except OperationConflict:
-                logger.warning("Sync job already running, skipping automatic trigger")
-            except Exception as e:
-                logger.error(f"Failed to trigger automatic sync job: {e}")
+            if self._vector_mode_enabled():
+                try:
+                    logger.info("Import succeeded, triggering automatic sync job...")
+                    self.trigger(job_type="sync", payload={}, actor="system:auto_import")
+                except OperationConflict:
+                    logger.warning("Sync job already running, skipping automatic trigger")
+                except Exception as e:
+                    logger.error(f"Failed to trigger automatic sync job: {e}")
+            else:
+                logger.info("Import succeeded; skipping automatic sync (sqlite_only mode)")
 
         return result
 
@@ -339,6 +342,15 @@ class OperationsService:
         """Run sync_embeddings.py followed by rebuild_index.py"""
         del session
         payload = payload or {}
+
+        if not self._vector_mode_enabled():
+            logger.info("Sync requested but search_mode=sqlite_only; skipping embedding tasks.")
+            return {
+                "phase": "skipped",
+                "message": "Semantic components disabled; nothing to sync in sqlite_only mode.",
+                "sync_result": {"exit_code": 0, "skipped": True},
+                "index_result": None,
+            }
 
         # Step 1: Pause background workers to avoid DB write contention
         paused = False
@@ -412,6 +424,16 @@ class OperationsService:
         payload = payload or {}
         logger.info("Starting re-embed operation...")
 
+        if not self._vector_mode_enabled():
+            logger.info("Re-embed requested but search_mode=sqlite_only; skipping.")
+            return {
+                "phase": "skipped",
+                "message": "Semantic components disabled; switch to CHL_SEARCH_MODE=auto to re-embed.",
+                "experience_count": 0,
+                "manual_count": 0,
+                "total_count": 0,
+            }
+
         # Step 1: Count entities
         exp_count = session.query(Experience).count()
         manual_count = session.query(CategoryManual).count()
@@ -450,6 +472,10 @@ class OperationsService:
             "total_count": total_count,
             "message": f"Marked {total_count} entities for re-embedding. Background worker will process queue."
         }
+
+    def _vector_mode_enabled(self) -> bool:
+        """Return True when vector search components are active."""
+        return os.getenv("CHL_SEARCH_MODE", "auto").lower() != "sqlite_only"
 
     def _simulate_delay(self, payload: Optional[Dict[str, Any]]) -> None:
         if not payload:

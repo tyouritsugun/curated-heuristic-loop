@@ -42,6 +42,9 @@ This document tracks all code touch points for implementing CPU-only mode across
 - ✅ Validate valid values: `auto`, `sqlite_only` (lines 203-209)
 - ✅ Skip FAISS directory creation when `search_mode=sqlite_only` (lines 278-286)
 
+### scripts/import.py
+- ✅ Automatically skip worker coordination when `CHL_SEARCH_MODE=sqlite_only` to avoid hitting `/admin/queue/*`
+
 ### Testing
 - ✅ Config loads correctly with `CHL_SEARCH_MODE=sqlite_only`
 - ✅ FAISS directory is NOT created in sqlite_only mode
