@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional
 
 from src.search.service import SearchService
@@ -12,7 +13,10 @@ from src.search.thread_safe_faiss import (
 from src.search.vector_provider import VectorFAISSProvider
 from src.embedding.client import EmbeddingClient
 from src.embedding.reranker import RerankerClient
+from sqlalchemy import func
+
 from src.services.background_worker import BackgroundEmbeddingWorker, WorkerPool
+from src.storage.schema import FAISSMetadata, utc_now
 
 from ..base import ModeRuntime, OperationsModeAdapter
 
@@ -24,6 +28,64 @@ class VectorOperationsAdapter:
 
     def can_run_vector_jobs(self) -> bool:
         return True
+
+
+class VectorDiagnosticsAdapter:
+    """Diagnostics adapter that inspects FAISS artifacts when vector mode is active."""
+
+    def faiss_status(self, data_path, session):
+        faiss_index_dir = Path(data_path) / "faiss_index"
+        if not faiss_index_dir.exists():
+            return {
+                "state": "info",
+                "headline": "FAISS index not built",
+                "detail": "Build index via Operations page or upload snapshot",
+            }
+
+        index_files = list(faiss_index_dir.glob("*.index"))
+        if not index_files:
+            return {
+                "state": "info",
+                "headline": "FAISS index not built",
+                "detail": "Build index via Operations page or upload snapshot",
+            }
+
+        try:
+            vector_count = (
+                session.query(func.count(FAISSMetadata.id))
+                .filter(FAISSMetadata.deleted == False)  # noqa: E712 - SQLAlchemy comparison
+                .scalar()
+                or 0
+            )
+        except Exception as exc:  # pragma: no cover - diagnostics shouldn't crash
+            return {
+                "state": "warn",
+                "headline": "FAISS check failed",
+                "detail": str(exc),
+            }
+
+        validated_at = utc_now()
+        if vector_count > 0:
+            index_size_mb = index_files[0].stat().st_size / (1024 * 1024)
+            latest_entry = (
+                session.query(FAISSMetadata)
+                .order_by(FAISSMetadata.created_at.desc())
+                .first()
+            )
+            built_date = latest_entry.created_at[:10] if latest_entry and latest_entry.created_at else "N/A"
+            return {
+                "state": "ok",
+                "headline": "FAISS index ready",
+                "detail": f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
+                "validated_at": validated_at,
+            }
+
+        return {
+            "state": "warn",
+            "headline": "FAISS metadata missing",
+            "detail": "Index files exist but metadata table is empty. Rebuild index to sync state.",
+            "validated_at": validated_at,
+        }
 
 
 def _build_embedding_stack(config: Any, db: Any) -> tuple[
@@ -220,4 +282,5 @@ def build_runtime(config: Any, db: Any, worker_control_service: Any) -> ModeRunt
         background_worker=background_worker,
         worker_pool=worker_pool,
         operations_adapter=VectorOperationsAdapter(),
+        diagnostics_adapter=VectorDiagnosticsAdapter(),
     )

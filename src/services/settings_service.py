@@ -84,14 +84,19 @@ class SettingsService:
     SHEETS_KEY = "settings.sheets"
     MODELS_KEY = "settings.models"
 
-    def __init__(self, session_factory, secrets_root: str):
+    def __init__(self, session_factory, secrets_root: str, mode_runtime: Optional[Any] = None):
         self._session_factory = session_factory
         self._secrets_root = Path(secrets_root).resolve()
+        self._mode_runtime = mode_runtime
 
     @property
     def secrets_root(self) -> Path:
         """Return the managed secrets root directory used for relative paths."""
         return self._secrets_root
+
+    def set_mode_runtime(self, mode_runtime: Any) -> None:
+        """Attach the active ModeRuntime after server startup."""
+        self._mode_runtime = mode_runtime
 
     # ------------------------------------------------------------------
     # Public API
@@ -482,78 +487,8 @@ class SettingsService:
                 detail=f"Run scripts/setup-gpu.py (GPU mode) or scripts/setup-cpu.py (CPU-only mode) to initialize database at {db_path}",
             )
 
-        # Check FAISS index status (gate in CPU-only mode)
-        # In sqlite_only mode, vector stack is intentionally disabled
-        try:
-            from src.config import SearchMode
-            mode = SearchMode.from_env(os.getenv("CHL_SEARCH_MODE"))
-        except ValueError as exc:
-            faiss_status = DiagnosticStatus(
-                name="faiss",
-                state="error",
-                headline="Invalid search mode",
-                detail=str(exc),
-            )
-        else:
-            if mode is SearchMode.SQLITE_ONLY:
-                faiss_status = DiagnosticStatus(
-                    name="faiss",
-                    state="info",
-                    headline="Semantic search disabled",
-                    detail="CPU-only mode (SQLite keyword search)",
-                    validated_at=utc_now(),
-                )
-            else:
-                # Index files use model-specific naming: unified_{model_slug}.index
-                # Check if any .index file exists in the faiss_index directory
-                faiss_index_dir = data_path / "faiss_index"
-                index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
-                if index_files:
-                    try:
-                        from src.storage.schema import FAISSMetadata
-                        from sqlalchemy import func
-                        # Count non-deleted vectors in metadata table
-                        vector_count = session.query(func.count(FAISSMetadata.id)).filter(
-                            FAISSMetadata.deleted == False
-                        ).scalar() or 0
-
-                        if vector_count > 0:
-                            # Use the first index file found
-                            index_size_mb = index_files[0].stat().st_size / (1024 * 1024)
-                            # Get most recent creation timestamp
-                            latest_entry = session.query(FAISSMetadata).order_by(
-                                FAISSMetadata.created_at.desc()
-                            ).first()
-                            built_date = latest_entry.created_at[:10] if latest_entry and latest_entry.created_at else 'N/A'
-
-                            faiss_status = DiagnosticStatus(
-                                name="faiss",
-                                state="ok",
-                                headline="FAISS index ready",
-                                detail=f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
-                                validated_at=utc_now(),
-                            )
-                        else:
-                            faiss_status = DiagnosticStatus(
-                                name="faiss",
-                                state="warn",
-                                headline="FAISS metadata missing",
-                                detail="Index files exist but metadata table is empty. Rebuild index via Operations page to sync.",
-                            )
-                    except Exception as exc:
-                        faiss_status = DiagnosticStatus(
-                            name="faiss",
-                            state="warn",
-                            headline="FAISS check failed",
-                            detail=str(exc),
-                        )
-                else:
-                    faiss_status = DiagnosticStatus(
-                        name="faiss",
-                        state="info",
-                        headline="FAISS index not built",
-                        detail="Build index via Operations page or upload snapshot",
-                    )
+        # Check FAISS index status via mode-specific diagnostics adapter
+        faiss_status = self._diagnose_faiss(session)
 
         # Check disk space
         try:
@@ -607,6 +542,43 @@ class SettingsService:
         else:
             candidate_path = candidate_path.resolve()
         return candidate_path
+
+    def _diagnose_faiss(self, session: Session) -> DiagnosticStatus:
+        adapter = None
+        if hasattr(self, "_mode_runtime"):
+            runtime = getattr(self, "_mode_runtime", None)
+            if runtime is not None:
+                adapter = getattr(runtime, "diagnostics_adapter", None)
+
+        if adapter and hasattr(adapter, "faiss_status"):
+            try:
+                payload = adapter.faiss_status(self._secrets_root, session)
+            except Exception as exc:  # pragma: no cover - diagnostics failures degrade gracefully
+                return DiagnosticStatus(
+                    name="faiss",
+                    state="warn",
+                    headline="FAISS diagnostics failed",
+                    detail=str(exc),
+                )
+
+            if isinstance(payload, DiagnosticStatus):
+                return payload
+
+            if isinstance(payload, dict):
+                return DiagnosticStatus(
+                    name="faiss",
+                    state=payload.get("state", "info"),
+                    headline=payload.get("headline", "FAISS status"),
+                    detail=payload.get("detail"),
+                    validated_at=payload.get("validated_at"),
+                )
+
+        return DiagnosticStatus(
+            name="faiss",
+            state="warn",
+            headline="FAISS diagnostics unavailable",
+            detail="Mode diagnostics adapter not configured; restart the server after initialization.",
+        )
 
     def _managed_credentials_dir(self) -> Path:
         path = self._secrets_root / "credentials"

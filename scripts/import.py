@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -13,7 +14,7 @@ from logging.handlers import RotatingFileHandler
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from _config_loader import (
     DEFAULT_CONFIG_PATH,
@@ -134,6 +135,51 @@ def _configure_logging(log_path: Path, level: int, name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.debug("Logging configured. Writing to %s", log_path)
     return logger
+
+
+def _log_queue_coordination_event(
+    logger: logging.Logger,
+    stage: str,
+    *,
+    source: str,
+    **fields: Any,
+) -> None:
+    payload = {
+        "event": "queue_coordination",
+        "source": source,
+        "stage": stage,
+    }
+    for key, value in fields.items():
+        if value is not None:
+            payload[key] = value
+    logger.info("queue_coordination %s", json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _confirm_queue_timeout(
+    logger: logging.Logger,
+    assume_yes: bool,
+    remaining: Optional[int],
+    status: Optional[str],
+) -> bool:
+    remaining_label = "unknown" if remaining is None else str(remaining)
+    status_label = status or "timeout"
+    if assume_yes:
+        logger.warning(
+            "Queue drain incomplete (status=%s, remaining=%s); continuing due to --yes",
+            status_label,
+            remaining_label,
+        )
+        return True
+
+    prompt = (
+        f"Queue still has {remaining_label} pending/processing items after drain "
+        f"(status={status_label}). Continue anyway? [y/N]: "
+    )
+    response = input(prompt).strip().lower()
+    proceed = response in {"y", "yes"}
+    if not proceed:
+        logger.info("User aborted import after queue drain timeout (status=%s)", status_label)
+    return proceed
 
 
 def main() -> None:
@@ -305,24 +351,80 @@ def main() -> None:
     elif search_mode == "sqlite_only":
         skip_reason = "CHL_SEARCH_MODE=sqlite_only (no worker queue)"
 
+    queue_timeout_env = os.getenv("CHL_QUEUE_DRAIN_TIMEOUT")
+    queue_timeout = 300
+    if queue_timeout_env:
+        try:
+            queue_timeout = max(1, int(queue_timeout_env))
+        except ValueError:
+            logger.warning(
+                "Invalid CHL_QUEUE_DRAIN_TIMEOUT=%s, defaulting to 300s",
+                queue_timeout_env,
+            )
+
     if skip_reason:
         logger.info("Skipping worker coordination: %s", skip_reason)
+        _log_queue_coordination_event(
+            logger,
+            "skip",
+            source="scripts/import.py",
+            reason=skip_reason,
+        )
     else:
         logger.info("Checking for running API server at %s", args.api_url)
         api_client = CHLAPIClient(args.api_url)
         if api_client.check_health():
             logger.info("API server detected, coordinating with background workers...")
-            # Pause workers
-            if api_client.pause_workers():
-                # Wait for pending jobs to complete
-                if api_client.drain_queue(timeout=300):
-                    api_coordinated = True
-                else:
-                    logger.warning("Queue drain incomplete, proceeding anyway")
+            drain_summary = api_client.wait_for_queue_drain(timeout=queue_timeout)
+            last_result = drain_summary.get("last_result") or {}
+            _log_queue_coordination_event(
+                logger,
+                "drain",
+                source="scripts/import.py",
+                success=drain_summary.get("success"),
+                attempts=drain_summary.get("attempts"),
+                stable_reads=drain_summary.get("stable_reads"),
+                initial_remaining=drain_summary.get("initial_remaining"),
+                final_remaining=drain_summary.get("final_remaining"),
+                elapsed=last_result.get("elapsed"),
+                status=last_result.get("status"),
+            )
+            drained = bool(drain_summary.get("success"))
+            final_remaining = drain_summary.get("final_remaining")
+            last_status = (last_result or {}).get("status")
+            if not drained:
+                proceed = _confirm_queue_timeout(logger, args.yes, final_remaining, last_status)
+                _log_queue_coordination_event(
+                    logger,
+                    "drain_decision",
+                    source="scripts/import.py",
+                    proceed=proceed,
+                    remaining=final_remaining,
+                    status=last_status,
+                )
+                if not proceed:
+                    print("Import aborted.")
+                    return
+            pause_success = api_client.pause_workers()
+            if pause_success:
+                api_coordinated = True
             else:
-                logger.warning("Failed to pause workers, proceeding anyway")
+                logger.warning("Failed to pause workers, proceeding without clean isolation")
+            _log_queue_coordination_event(
+                logger,
+                "pause",
+                source="scripts/import.py",
+                paused=pause_success,
+                drained=drained,
+            )
         else:
             logger.info("API server not running, skipping worker coordination")
+            _log_queue_coordination_event(
+                logger,
+                "skip",
+                source="scripts/import.py",
+                reason="api_unreachable",
+            )
 
     sheets = SheetsClient(str(credentials_path))
     logger.info("Using Google credentials from %s (%s)", credentials_path, credentials_source)
@@ -456,7 +558,13 @@ def main() -> None:
         # Resume workers if they were paused (Phase 4 legacy hook)
         if api_coordinated and api_client:
             logger.info("Resuming background workers...")
-            api_client.resume_workers()
+            resumed = api_client.resume_workers()
+            _log_queue_coordination_event(
+                logger,
+                "resume",
+                source="scripts/import.py",
+                resumed=resumed,
+            )
 def _worksheet_config(
     scope: dict,
     *,

@@ -1496,20 +1496,18 @@ async def update_model_preferences(
     # Invalidate MCP categories cache
     _invalidate_categories_cache_safe()
 
-    # Automatically trigger re-embedding workflow in vector mode
-    # Skip in sqlite_only (CPU-only) mode where vector stack is disabled
+    auto_msg = ""
+    # Automatically trigger re-embedding workflow; OperationsService adapter handles mode gating
     try:
-        from src.api.dependencies import get_config, get_operations_service
-        cfg = get_config()
+        from src.api.dependencies import get_operations_service
+
         ops = get_operations_service()
-        if getattr(cfg, "search_mode", "auto") != "sqlite_only" and ops is not None:
+        if ops is not None:
             try:
                 ops.trigger("reembed", payload={}, actor=actor)
-                auto_msg = " Re-embed job queued."
+                auto_msg = " Re-embed job requested."
             except Exception:
                 auto_msg = ""
-        else:
-            auto_msg = ""
     except Exception:
         auto_msg = ""
 

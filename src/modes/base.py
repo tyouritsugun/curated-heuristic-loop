@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Any, TYPE_CHECKING, Dict, Tuple, Protocol
 import logging
 
@@ -22,6 +23,14 @@ class OperationsModeAdapter(Protocol):
         ...
 
 
+class DiagnosticsModeAdapter(Protocol):
+    """Mode-specific diagnostics for FAISS/semantic components."""
+
+    def faiss_status(self, data_path: Path, session: Any) -> Dict[str, Any]:
+        """Return FAISS diagnostic payload compatible with settings UI."""
+        ...
+
+
 @dataclass
 class ModeRuntime:
     """Container for mode-specific runtime components.
@@ -35,6 +44,7 @@ class ModeRuntime:
     background_worker: Optional[Any]
     worker_pool: Optional[Any]
     operations_adapter: Optional[OperationsModeAdapter] = None
+    diagnostics_adapter: Optional[DiagnosticsModeAdapter] = None
 
     def health_components(self, config) -> Tuple[Dict[str, Dict[str, str]], bool]:
         """Return FAISS/embedding health components and whether they degrade overall status.
@@ -129,4 +139,5 @@ def build_mode_runtime(config, db, worker_control_service) -> ModeRuntime:
             thread_safe_faiss=None,
             background_worker=None,
             worker_pool=None,
+            diagnostics_adapter=None,
         )

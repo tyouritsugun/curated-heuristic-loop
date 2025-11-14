@@ -5,6 +5,7 @@ from typing import Any
 
 from src.search.service import SearchService
 from src.api.metrics import metrics
+from src.storage.schema import utc_now
 
 from ..base import ModeRuntime, OperationsModeAdapter
 
@@ -16,6 +17,19 @@ class SqliteOnlyOperationsAdapter:
 
     def can_run_vector_jobs(self) -> bool:
         return False
+
+
+class SqliteOnlyDiagnosticsAdapter:
+    """Diagnostics adapter that reports semantic components as disabled."""
+
+    def faiss_status(self, data_path, session):  # noqa: D401 - simple adapter
+        del data_path, session
+        return {
+            "state": "info",
+            "headline": "Semantic search disabled",
+            "detail": "CPU-only mode (SQLite keyword search)",
+            "validated_at": utc_now(),
+        }
 
 
 def build_runtime(config: Any, db: Any, worker_control_service: Any) -> ModeRuntime:
@@ -46,5 +60,5 @@ def build_runtime(config: Any, db: Any, worker_control_service: Any) -> ModeRunt
         background_worker=None,
         worker_pool=None,
         operations_adapter=SqliteOnlyOperationsAdapter(),
+        diagnostics_adapter=SqliteOnlyDiagnosticsAdapter(),
     )
-

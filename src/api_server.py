@@ -126,6 +126,12 @@ async def lifespan(app: FastAPI):
         background_worker = mode_runtime.background_worker
         worker_pool = mode_runtime.worker_pool
 
+        try:
+            if hasattr(settings_service, "set_mode_runtime"):
+                settings_service.set_mode_runtime(mode_runtime)
+        except Exception:
+            logger.debug("Failed to attach mode runtime to settings service", exc_info=True)
+
         # Attach mode-specific operations adapter (CPU-only vs vector-capable)
         try:
             adapter = getattr(mode_runtime, "operations_adapter", None)

@@ -22,6 +22,20 @@ from src.storage.schema import AuditLog, JobHistory, OperationLock, utc_now
 
 logger = logging.getLogger(__name__)
 
+QUEUE_COORD_SOURCE_SYNC = "operations_service.sync"
+
+
+def _log_queue_coordination(stage: str, **fields):
+    payload = {
+        "event": "queue_coordination",
+        "source": QUEUE_COORD_SOURCE_SYNC,
+        "stage": stage,
+    }
+    for key, value in fields.items():
+        if value is not None:
+            payload[key] = value
+    logger.info("queue_coordination %s", json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
 
 class OperationConflict(Exception):
     """Raised when an operation lock cannot be acquired."""
@@ -375,19 +389,47 @@ class OperationsService:
                 "index_result": None,
             }
 
-        # Step 1: Pause background workers to avoid DB write contention
+        # Step 1: Drain + pause background workers to avoid DB write contention
         paused = False
         client = None
+        queue_timeout = 300
+        timeout_env = os.getenv("CHL_QUEUE_DRAIN_TIMEOUT")
+        if timeout_env:
+            try:
+                queue_timeout = max(1, int(timeout_env))
+            except ValueError:
+                logger.warning("Invalid CHL_QUEUE_DRAIN_TIMEOUT=%s, defaulting to 300s", timeout_env)
         try:
-            # Import lazily to avoid hard dependency on requests at server import time
             from src.api_client import CHLAPIClient  # type: ignore
+
             client = CHLAPIClient(os.getenv("CHL_API_URL", "http://localhost:8000"))
             if client.check_health():
-                if client.pause_workers():
-                    paused = True
-                    client.drain_queue(timeout=300)
-        except Exception:
-            # Coordination is best-effort; continue even if it fails
+                drain_summary = client.wait_for_queue_drain(timeout=queue_timeout)
+                last_result = drain_summary.get("last_result") or {}
+                _log_queue_coordination(
+                    "drain",
+                    success=drain_summary.get("success"),
+                    attempts=drain_summary.get("attempts"),
+                    stable_reads=drain_summary.get("stable_reads"),
+                    initial_remaining=drain_summary.get("initial_remaining"),
+                    final_remaining=drain_summary.get("final_remaining"),
+                    elapsed=last_result.get("elapsed"),
+                    status=last_result.get("status"),
+                )
+                if not drain_summary.get("success"):
+                    logger.warning(
+                        "Queue drain incomplete before sync (remaining=%s)",
+                        drain_summary.get("final_remaining"),
+                    )
+                pause_success = client.pause_workers()
+                paused = pause_success
+                _log_queue_coordination("pause", paused=pause_success)
+                if not pause_success:
+                    logger.warning("Failed to pause workers before sync; continuing anyway")
+            else:
+                _log_queue_coordination("skip", reason="api_unreachable")
+        except Exception as exc:  # noqa: BLE001 - best-effort coordination
+            _log_queue_coordination("error", reason=str(exc))
             client = None
 
         # Step 2: Sync embeddings
@@ -422,9 +464,10 @@ class OperationsService:
         # Step 4: Resume workers
         try:
             if paused and client is not None:
-                client.resume_workers()
-        except Exception:
-            pass
+                resumed = client.resume_workers()
+                _log_queue_coordination("resume", resumed=resumed)
+        except Exception as exc:  # noqa: BLE001
+            _log_queue_coordination("error", reason=f"resume_failed: {exc}")
 
         return {
             "phase": "complete",

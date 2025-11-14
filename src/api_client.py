@@ -164,42 +164,144 @@ class CHLAPIClient:
             logger.warning(f"Failed to resume workers: {e}")
             return False
 
-    def drain_queue(self, timeout: int = 300) -> bool:
-        """Wait for embedding queue to drain.
-
-        Args:
-            timeout: Maximum wait time in seconds
-
-        Returns:
-            True if drained successfully, False otherwise
-        """
+    def drain_queue(self, timeout: int = 300) -> Dict[str, Any]:
+        """Wait for embedding queue to drain and return extended metadata."""
+        result: Dict[str, Any] = {
+            "success": False,
+            "status": "error",
+            "elapsed": None,
+            "remaining": None,
+            "message": None,
+        }
         try:
             logger.info(f"Waiting for embedding queue to drain (max {timeout}s)...")
             response = self.session.post(
                 f"{self.base_url}/admin/queue/drain",
                 params={"timeout": timeout},
-                timeout=timeout + 10  # Add buffer to request timeout
+                timeout=timeout + 10,
             )
             if response.status_code == 200:
-                result = response.json()
-                if result.get("status") == "drained":
-                    logger.info(f"Queue drained in {result.get('elapsed', 0):.1f}s")
-                    return True
+                payload = response.json()
+                status = payload.get("status") or "unknown"
+                result.update(
+                    status=status,
+                    elapsed=payload.get("elapsed"),
+                    remaining=payload.get("remaining"),
+                    success=status == "drained",
+                )
+                if result["success"]:
+                    logger.info(f"Queue drained in {payload.get('elapsed', 0):.1f}s")
                 else:
-                    remaining = result.get("remaining", "unknown")
                     logger.warning(
-                        f"Queue drain timeout after {timeout}s ({remaining} jobs remaining)"
+                        "Queue drain returned status=%s (remaining=%s)",
+                        status,
+                        payload.get("remaining"),
                     )
-                    return False
             elif response.status_code == 503:
+                result.update(
+                    success=True,
+                    status="skipped",
+                    message="Worker pool not initialized",
+                )
                 logger.info("Worker pool not initialized (nothing to drain)")
-                return True
             else:
-                logger.warning(f"Failed to drain queue: HTTP {response.status_code}")
-                return False
-        except Exception as e:
-            logger.warning(f"Failed to drain queue: {e}")
-            return False
+                result["message"] = f"HTTP {response.status_code}"
+                logger.warning("Failed to drain queue: HTTP %s", response.status_code)
+        except Exception as exc:  # noqa: BLE001 - best-effort logging
+            result["message"] = str(exc)
+            logger.warning("Failed to drain queue: %s", exc)
+        return result
+
+    def queue_status(self, timeout: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Fetch queue + worker status snapshot."""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/admin/queue/status",
+                timeout=timeout or 5,
+            )
+            if response.status_code == 200:
+                return response.json()
+            logger.warning("Failed to fetch queue status: HTTP %s", response.status_code)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Queue status fetch failed: %s", exc)
+            return None
+
+    @staticmethod
+    def queue_active_total(snapshot: Optional[Dict[str, Any]]) -> Optional[int]:
+        """Return pending+processing total from a queue snapshot (if available)."""
+        if not snapshot:
+            return None
+        queue_block = snapshot.get("queue") if isinstance(snapshot, dict) else None
+        if not isinstance(queue_block, dict):
+            queue_block = snapshot if isinstance(snapshot, dict) else None
+        if not isinstance(queue_block, dict):
+            return None
+        pending = queue_block.get("pending")
+        processing = queue_block.get("processing")
+        total = 0
+        found = False
+        if isinstance(pending, dict) and isinstance(pending.get("total"), int):
+            total += pending["total"]
+            found = True
+        if isinstance(processing, dict) and isinstance(processing.get("total"), int):
+            total += processing["total"]
+            found = True
+        return total if found else None
+
+    def wait_for_queue_drain(
+        self,
+        timeout: int = 300,
+        max_attempts: int = 3,
+        stable_reads: int = 2,
+    ) -> Dict[str, Any]:
+        """Iteratively drain queue until it remains empty for multiple checks."""
+        history: List[Dict[str, Any]] = []
+        summary: Dict[str, Any] = {
+            "success": False,
+            "attempts": 0,
+            "stable_reads": 0,
+            "initial_remaining": None,
+            "final_remaining": None,
+            "last_result": None,
+            "history": history,
+        }
+
+        snapshot = self.queue_status()
+        initial_remaining = self.queue_active_total(snapshot)
+        summary["initial_remaining"] = initial_remaining
+        if initial_remaining == 0:
+            summary["success"] = True
+            summary["final_remaining"] = 0
+            return summary
+
+        while summary["attempts"] < max_attempts:
+            summary["attempts"] += 1
+            result = self.drain_queue(timeout=timeout)
+            snapshot = self.queue_status()
+            remaining = self.queue_active_total(snapshot)
+            history.append(
+                {
+                    "attempt": summary["attempts"],
+                    "result": result,
+                    "remaining": remaining,
+                }
+            )
+            summary["last_result"] = result
+            summary["final_remaining"] = remaining
+            if not result.get("success"):
+                break
+            if remaining == 0:
+                summary["stable_reads"] += 1
+                if summary["stable_reads"] >= stable_reads:
+                    summary["success"] = True
+                    break
+            elif remaining is None and result.get("success"):
+                summary["success"] = True
+                break
+            else:
+                summary["stable_reads"] = 0
+        return summary
 
     # Entry Operations
 
