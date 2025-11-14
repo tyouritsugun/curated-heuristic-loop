@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
-from src.api.dependencies import get_db_session, get_search_service, get_config
+from src.api.dependencies import get_db_session, get_search_service, get_config, get_mode_runtime
 from src.api.models import HealthResponse
 from src.api.metrics import metrics
 from datetime import datetime, timezone
@@ -17,7 +17,8 @@ router = APIRouter(prefix="/health", tags=["health"])
 def health_check(
     config=Depends(get_config),
     session: Session = Depends(get_db_session),
-    search_service=Depends(get_search_service)
+    search_service=Depends(get_search_service),
+    mode_runtime=Depends(get_mode_runtime),
 ):
     """
     Health check endpoint reporting system status.
@@ -42,66 +43,12 @@ def health_check(
         components["database"] = {"status": "unhealthy", "detail": str(e)}
         overall_status = "unhealthy"
 
-    # Check FAISS/embedding status depending on search_mode
-    if getattr(config, "search_mode", None) == "sqlite_only":
-        # In CPU-only mode, vector components are intentionally disabled
-        components["faiss_index"] = {
-            "status": "disabled",
-            "detail": "Intentional SQLite-only mode",
-        }
-        components["embedding_model"] = {
-            "status": "disabled",
-            "detail": "Intentional SQLite-only mode",
-        }
-        # Do not degrade overall status when disabled by configuration
-    else:
-        # Vector mode: inspect provider availability
-        try:
-            if search_service and hasattr(search_service, 'get_vector_provider'):
-                vector_provider = search_service.get_vector_provider()
-
-                if vector_provider and vector_provider.is_available:
-                    # FAISS is available
-                    index_size = vector_provider.index_manager.index.ntotal
-                    components["faiss_index"] = {
-                        "status": "healthy",
-                        "detail": f"{index_size} vectors"
-                    }
-
-                    # Embedding model is available
-                    components["embedding_model"] = {
-                        "status": "healthy",
-                        "detail": "Model loaded and operational"
-                    }
-                else:
-                    # Vector provider not available, using text search fallback
-                    components["faiss_index"] = {
-                        "status": "degraded",
-                        "detail": "FAISS not available, using text search fallback"
-                    }
-                    components["embedding_model"] = {
-                        "status": "degraded",
-                        "detail": "Embedding model not available"
-                    }
-                    if overall_status == "healthy":
-                        overall_status = "degraded"
-            else:
-                components["faiss_index"] = {
-                    "status": "degraded",
-                    "detail": "Search service not initialized"
-                }
-                components["embedding_model"] = {
-                    "status": "degraded",
-                    "detail": "Search service not initialized"
-                }
-                if overall_status == "healthy":
-                    overall_status = "degraded"
-        except Exception as e:
-            logger.info("Vector provider health inspection failed", exc_info=True)
-            components["faiss_index"] = {"status": "degraded", "detail": str(e)}
-            components["embedding_model"] = {"status": "degraded", "detail": str(e)}
-            if overall_status == "healthy":
-                overall_status = "degraded"
+    # Check FAISS/embedding status via mode runtime (CPU vs vector-capable)
+    if mode_runtime is not None:
+        faiss_components, degraded = mode_runtime.health_components(config)
+        components.update(faiss_components)
+        if degraded and overall_status == "healthy":
+            overall_status = "degraded"
 
     # Add timestamp
     timestamp = datetime.now(timezone.utc).isoformat()

@@ -15,8 +15,8 @@ from pathlib import Path
 
 from src.config import Config
 from src.storage.database import Database
-from src.search.service import SearchService
 from src.api.metrics import metrics
+from src.modes import build_mode_runtime
 
 # Import routers
 from src.api.routers.health import router as health_router
@@ -49,6 +49,7 @@ worker_control_service = None
 telemetry_service = None
 background_worker = None  # BackgroundEmbeddingWorker instance
 worker_pool = None  # WorkerPool wrapper
+mode_runtime = None  # ModeRuntime instance with search/worker wiring
 
 
 class JSONFormatter(logging.Formatter):
@@ -81,7 +82,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     global config, db, search_service, thread_safe_faiss
     global settings_service, operations_service, worker_control_service, telemetry_service
-    global background_worker, worker_pool
+    global background_worker, worker_pool, mode_runtime
 
     logger.info("Starting CHL API server...")
 
@@ -109,7 +110,7 @@ async def lifespan(app: FastAPI):
             finally:
                 session.close()
 
-        # Initialize background embedding worker (will be set up after FAISS loads)
+        # Initialize background embedding worker (will be set up by mode runtime)
         background_worker = None
         worker_pool = None
 
@@ -118,168 +119,21 @@ async def lifespan(app: FastAPI):
                 return worker_pool.get_status()
             return None
 
-        # Initialize search service (sessionless for thread-safety)
-        # Skip ML components if running in sqlite_only mode
-        if config.search_mode == "sqlite_only":
-            logger.info("Search mode=sqlite_only; vector components disabled.")
-            search_service = SearchService(
-                primary_provider="sqlite_text",
-                fallback_enabled=False,
-                max_retries=0,
-                vector_provider=None,
-            )
-            logger.info("✓ Search service initialized with SQLite text search only")
-            try:
-                metrics.increment("search_mode_sqlite_only", 1)
-            except Exception:
-                pass
-        else:
-            try:
-                logger.info("Starting search service initialization...")
-                from src.embedding.client import EmbeddingClient
-                from src.search.thread_safe_faiss import initialize_faiss_with_recovery, ThreadSafeFAISSManager
-                from src.search.vector_provider import VectorFAISSProvider
-                from src.embedding.reranker import RerankerClient
+        # Initialize search service and related components via mode runtime
+        mode_runtime = build_mode_runtime(config, db, worker_control_service)
+        search_service = mode_runtime.search_service
+        thread_safe_faiss = mode_runtime.thread_safe_faiss
+        background_worker = mode_runtime.background_worker
+        worker_pool = mode_runtime.worker_pool
 
-                # Try to initialize embedding components
-                embedding_client = None
-                faiss_manager = None
-                reranker_client = None
-                vector_provider = None
-
-                try:
-                    logger.info(f"Loading embedding client: {config.embedding_model}")
-                    embedding_client = EmbeddingClient(
-                        model_repo=config.embedding_repo,
-                        quantization=config.embedding_quant,
-                        n_gpu_layers=0  # CPU-only
-                    )
-                    logger.info(f"✓ Embedding client loaded successfully: {config.embedding_model}")
-                except Exception as e:
-                    logger.error(f"✗ Embedding client initialization failed: {e}", exc_info=True)
-                    logger.warning(f"Embedding client not available: {e}")
-
-                if embedding_client:
-                    try:
-                        logger.info("Initializing FAISS index with recovery...")
-                        # Use recovery logic to load FAISS index with automatic fallback
-                        with db.session_scope() as temp_session:
-                            faiss_manager = initialize_faiss_with_recovery(
-                                config, temp_session, embedding_client,
-                                session_factory=db.get_session  # For ongoing metadata operations
-                            )
-
-                        if faiss_manager:
-                            # Wrap in ThreadSafeFAISSManager for concurrency control
-                            thread_safe_faiss = ThreadSafeFAISSManager(
-                                faiss_manager=faiss_manager,
-                                save_policy=config.faiss_save_policy,
-                                save_interval=config.faiss_save_interval,
-                                rebuild_threshold=config.faiss_rebuild_threshold,
-                            )
-                            logger.info(
-                                f"✓ ThreadSafeFAISSManager initialized: policy={config.faiss_save_policy}, "
-                                f"threshold={config.faiss_rebuild_threshold}, vectors={faiss_manager.index.ntotal}"
-                            )
-                        else:
-                            logger.warning("✗ FAISS index recovery returned None, will use text search fallback")
-                    except Exception as e:
-                        logger.error(f"✗ FAISS initialization failed with exception: {e}", exc_info=True)
-                        logger.warning(f"FAISS initialization failed: {e}")
-                else:
-                    logger.info("Skipping FAISS initialization (no embedding client)")
-
-                if embedding_client and thread_safe_faiss:
-                    try:
-                        logger.info(f"Loading reranker: {config.reranker_model}")
-                        reranker_client = RerankerClient(
-                            model_repo=config.reranker_repo,
-                            quantization=config.reranker_quant,
-                            n_gpu_layers=0
-                        )
-                        logger.info(f"✓ Reranker loaded: {config.reranker_model}")
-                    except Exception as e:
-                        logger.warning(f"✗ Reranker not available: {e}")
-                else:
-                    logger.info("Skipping reranker initialization (missing embedding client or FAISS)")
-
-                if embedding_client and thread_safe_faiss:
-                    try:
-                        logger.info("Creating vector provider...")
-                        vector_provider = VectorFAISSProvider(
-                            index_manager=thread_safe_faiss,
-                            embedding_client=embedding_client,
-                            model_name=config.embedding_model,
-                            reranker_client=reranker_client,
-                            topk_retrieve=getattr(config, "topk_retrieve", 100),
-                            topk_rerank=getattr(config, "topk_rerank", 40),
-                        )
-                        logger.info(f"✓ Vector provider initialized, is_available={vector_provider.is_available}")
-                    except Exception as e:
-                        logger.error(f"✗ Vector provider initialization failed: {e}", exc_info=True)
-                        logger.warning(f"Vector provider initialization failed: {e}")
-                else:
-                    logger.info("Skipping vector provider initialization (missing embedding client or FAISS)")
-
-                primary_provider = "vector_faiss" if (vector_provider and vector_provider.is_available) else "sqlite_text"
-                logger.info(f"Determined primary provider: {primary_provider}")
-
-                search_service = SearchService(
-                    primary_provider=primary_provider,
-                    fallback_enabled=True,
-                    max_retries=getattr(config, "search_fallback_retries", 1),
-                    vector_provider=vector_provider,
-                )
-                logger.info(f"✓ Search service initialized with primary provider: {primary_provider}")
-
-                # Initialize background embedding worker if we have embedding client
-                if embedding_client:
-                    try:
-                        from src.services.background_worker import BackgroundEmbeddingWorker, WorkerPool
-
-                        # Get configuration for worker
-                        poll_interval = float(os.getenv("CHL_WORKER_POLL_INTERVAL", "5.0"))
-                        batch_size = int(os.getenv("CHL_WORKER_BATCH_SIZE", "10"))
-                        auto_start = os.getenv("CHL_WORKER_AUTO_START", "1") != "0"
-
-                        background_worker = BackgroundEmbeddingWorker(
-                            session_factory=db.get_session,
-                            embedding_client=embedding_client,
-                            model_name=config.embedding_model,
-                            faiss_manager=thread_safe_faiss,  # May be None, worker handles this
-                            poll_interval=poll_interval,
-                            batch_size=batch_size,
-                            max_tokens=8000,  # Default max tokens for manual content
-                        )
-
-                        # Wrap in WorkerPool for compatibility with existing code
-                        worker_pool = WorkerPool(background_worker)
-
-                        # Update worker_control_service to use our worker pool
-                        worker_control_service.set_pool_getter(lambda: worker_pool)
-
-                        # Auto-start worker if enabled
-                        if auto_start:
-                            background_worker.start()
-                            logger.info(
-                                f"Background embedding worker started "
-                                f"(poll_interval={poll_interval}s, batch_size={batch_size})"
-                            )
-                        else:
-                            logger.info(
-                                "Background embedding worker initialized but not started "
-                                "(CHL_WORKER_AUTO_START=0)"
-                            )
-
-                    except Exception as e:
-                        logger.warning(f"Background worker initialization failed: {e}")
-                        background_worker = None
-                        worker_pool = None
-
-            except Exception as e:
-                logger.error(f"✗ Search service initialization completely failed: {e}", exc_info=True)
-                logger.warning(f"Search service initialization failed: {e}")
-                search_service = None
+        # Attach mode-specific operations adapter (CPU-only vs vector-capable)
+        try:
+            adapter = getattr(mode_runtime, "operations_adapter", None)
+            if adapter is not None and hasattr(operations_service, "set_mode_adapter"):
+                operations_service.set_mode_adapter(adapter)
+        except Exception:
+            # Operations can still function without an adapter; log at debug level
+            logger.debug("Failed to attach operations mode adapter", exc_info=True)
 
         telemetry_service = TelemetryService(
             session_factory=db.get_session,

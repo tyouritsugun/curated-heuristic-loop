@@ -56,6 +56,7 @@ class OperationsService:
         self._handlers: Dict[str, OperationHandler] = {}
         # Hard cap duration for external scripts (seconds)
         self._timeout_seconds = self._load_timeout_config()
+        self._operations_adapter: Optional[Any] = None
         self._register_builtin_handlers()
 
     # ------------------------------------------------------------------
@@ -63,6 +64,10 @@ class OperationsService:
     # ------------------------------------------------------------------
     def register_handler(self, name: str, handler: OperationHandler) -> None:
         self._handlers[name] = handler
+
+    def set_mode_adapter(self, adapter: Any) -> None:
+        """Attach a mode-specific adapter for vector-capable operations."""
+        self._operations_adapter = adapter
 
     def _register_builtin_handlers(self):
         """Register default handlers based on the configured mode."""
@@ -305,7 +310,9 @@ class OperationsService:
 
         # Auto-trigger sync job if import succeeded
         if result.get("exit_code") == 0:
-            if self._vector_mode_enabled():
+            adapter = getattr(self, "_operations_adapter", None)
+            vector_enabled = bool(adapter is None or adapter.can_run_vector_jobs())
+            if vector_enabled:
                 try:
                     logger.info("Import succeeded, triggering automatic sync job...")
                     self.trigger(job_type="sync", payload={}, actor="system:auto_import")
@@ -314,7 +321,7 @@ class OperationsService:
                 except Exception as e:
                     logger.error(f"Failed to trigger automatic sync job: {e}")
             else:
-                logger.info("Import succeeded; skipping automatic sync (sqlite_only mode)")
+                logger.info("Import succeeded; skipping automatic sync (vector jobs disabled by mode)")
 
         return result
 
@@ -358,11 +365,12 @@ class OperationsService:
         del session
         payload = payload or {}
 
-        if not self._vector_mode_enabled():
-            logger.info("Sync requested but search_mode=sqlite_only; skipping embedding tasks.")
+        adapter = getattr(self, "_operations_adapter", None)
+        if adapter is not None and not adapter.can_run_vector_jobs():
+            logger.info("Sync requested but vector jobs disabled by mode; skipping embedding tasks.")
             return {
                 "phase": "skipped",
-                "message": "Semantic components disabled; nothing to sync in sqlite_only mode.",
+                "message": "Semantic components disabled; nothing to sync in current mode.",
                 "sync_result": {"exit_code": 0, "skipped": True},
                 "index_result": None,
             }
@@ -439,11 +447,12 @@ class OperationsService:
         payload = payload or {}
         logger.info("Starting re-embed operation...")
 
-        if not self._vector_mode_enabled():
-            logger.info("Re-embed requested but search_mode=sqlite_only; skipping.")
+        adapter = getattr(self, "_operations_adapter", None)
+        if adapter is not None and not adapter.can_run_vector_jobs():
+            logger.info("Re-embed requested but vector jobs disabled by mode; skipping.")
             return {
                 "phase": "skipped",
-                "message": "Semantic components disabled; switch to CHL_SEARCH_MODE=auto to re-embed.",
+                "message": "Semantic components disabled; switch to a vector-enabled mode to re-embed.",
                 "experience_count": 0,
                 "manual_count": 0,
                 "total_count": 0,
@@ -487,10 +496,6 @@ class OperationsService:
             "total_count": total_count,
             "message": f"Marked {total_count} entities for re-embedding. Background worker will process queue."
         }
-
-    def _vector_mode_enabled(self) -> bool:
-        """Return True when vector search components are active."""
-        return os.getenv("CHL_SEARCH_MODE", "auto").lower() != "sqlite_only"
 
     def _simulate_delay(self, payload: Optional[Dict[str, Any]]) -> None:
         if not payload:

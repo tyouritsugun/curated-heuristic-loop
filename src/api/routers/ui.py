@@ -1004,7 +1004,8 @@ def operations_page(
             "search_mode": config.search_mode,
         }
     )
-    return templates.TemplateResponse("operations.html", context)
+    template_name = "operations_cpu.html" if config.search_mode == "sqlite_only" else "operations_gpu.html"
+    return templates.TemplateResponse(template_name, context)
 
 
 @router.get("/ui/operations/queue", response_class=HTMLResponse)

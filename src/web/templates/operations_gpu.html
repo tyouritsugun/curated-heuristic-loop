@@ -4,11 +4,7 @@
   <header class="page-header">
     <div>
       <h1>Operations &amp; Monitoring</h1>
-      {% if search_mode == 'sqlite_only' %}
-        <div class="status-pill info" style="display: inline-block; margin-left: 1rem;">CPU-Only Mode (Keyword Search)</div>
-      {% else %}
-        <div class="status-pill ok" style="display: inline-block; margin-left: 1rem;">Semantic Search Enabled</div>
-      {% endif %}
+      <div class="status-pill ok" style="display: inline-block; margin-left: 1rem;">Semantic Search Enabled</div>
     </div>
     <div class="actions">
       <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
@@ -18,7 +14,7 @@
   {% include "partials/flash.html" %}
 
   <div id="operations-onboarding-card" class="operations-section">
-    {% include "partials/ops_onboarding.html" %}
+    {% include "partials/ops_onboarding_gpu.html" %}
   </div>
 
   {% set cred_diag = diagnostics.credentials %}
@@ -30,12 +26,9 @@
   {% endif %}
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
-    {% if search_mode != 'sqlite_only' %}
     <div id="ops-models-card" class="operations-section">
       {% include "partials/ops_models_card.html" %}
     </div>
-    {% endif %}
-
     <div id="ops-queue-card" class="operations-section">
       {% include "partials/ops_queue_card.html" %}
     </div>
@@ -54,7 +47,6 @@
         el.textContent = text;
       }
 
-      // Prefer events from the SSE extension if available
       document.body.addEventListener('htmx:sseOpen', function () {
         setSseState('ok', 'Live');
       });
@@ -91,7 +83,8 @@
       }
 
       window.addEventListener('hashchange', handleHashChange);
-      handleHashChange(); // Show initial section
+      handleHashChange();
     });
   </script>
 {% endblock %}
+

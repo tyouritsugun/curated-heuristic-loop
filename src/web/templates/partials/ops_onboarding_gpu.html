@@ -1,26 +1,10 @@
 <section class="card onboarding-card" id="operations-onboarding-card">
   <header>
     <div>
-      <h2>How to use this page</h2>
+      <h2>How to use this page (Semantic / GPU)</h2>
       <p class="muted">Each card mirrors an API endpoint, so everything you do here is logged and protected by the same safety checks.</p>
     </div>
   </header>
-  {% if search_mode == 'sqlite_only' %}
-  <ol>
-    <li>
-      <strong>Start with data operations.</strong> Use Import to pull from Google Sheets and Export to push local edits out.
-      Each trigger records the actor, lock status, and result in Job History.
-    </li>
-    <li>
-      <strong>Watch queue + telemetry.</strong> The SSE stream refreshes queue status and recent jobs without reloading the page.
-      If SSE is blocked, press the "Refresh" buttons on each card.
-    </li>
-    <li>
-      <strong>Search uses keyword matching.</strong> In CPU-only mode, entries are immediately available for search after import.
-      Use specific keywords from titles and content. See <a href="/docs/manual#9-cpu-only-mode" target="_blank">CPU-Only Mode docs</a> for search tips.
-    </li>
-  </ol>
-  {% else %}
   <ol>
     <li>
       <strong>Start with data operations.</strong> Use Import to pull from Google Sheets and Export to push local edits out.
@@ -39,5 +23,5 @@
       This is the safest way to move vectors between machines.
     </li>
   </ol>
-  {% endif %}
 </section>
+

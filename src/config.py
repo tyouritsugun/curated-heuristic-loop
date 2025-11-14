@@ -65,6 +65,7 @@ import os
 import json
 import logging
 from pathlib import Path
+from enum import Enum
 import re
 from dotenv import load_dotenv
 
@@ -95,6 +96,31 @@ def _load_model_selection() -> dict:
     return {}
 
 
+class SearchMode(str, Enum):
+    """Execution/search mode for CHL.
+
+    Backed by string values for compatibility with existing comparisons.
+    """
+
+    AUTO = "auto"
+    SQLITE_ONLY = "sqlite_only"
+
+    @classmethod
+    def from_env(cls, value: str | None) -> "SearchMode":
+        """Parse CHL_SEARCH_MODE from an environment value.
+
+        Normalizes case and raises a clear ValueError on invalid values.
+        """
+        raw = (value or cls.AUTO.value).strip().lower()
+        try:
+            return cls(raw)
+        except ValueError:
+            valid = ", ".join(m.value for m in cls)
+            raise ValueError(
+                f"Invalid CHL_SEARCH_MODE='{raw}'. Must be one of: {valid}"
+            )
+
+
 class Config:
     """Configuration holder for CHL MCP Server
 
@@ -123,7 +149,8 @@ class Config:
         self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
 
         # Search & provider settings
-        self.search_mode = os.getenv("CHL_SEARCH_MODE", "auto").lower()
+        # Store enum internally but expose string value via property for compatibility.
+        self._search_mode = SearchMode.from_env(os.getenv("CHL_SEARCH_MODE"))
         self.search_timeout_ms = int(os.getenv("CHL_SEARCH_TIMEOUT_MS", "5000"))
         self.search_fallback_retries = int(os.getenv("CHL_SEARCH_FALLBACK_RETRIES", "1"))
 
@@ -180,7 +207,32 @@ class Config:
         self._validate_paths()
         self._validate_search_config()
         self._validate_faiss_config()
-    
+
+    # ------------------------------------------------------------------
+    # Search mode helpers
+    # ------------------------------------------------------------------
+    @property
+    def search_mode(self) -> str:
+        """Return current search mode as a lowercase string.
+
+        Kept for backward compatibility with existing code that compares against
+        literal strings like "auto" or "sqlite_only".
+        """
+        return self._search_mode.value
+
+    @property
+    def search_mode_enum(self) -> SearchMode:
+        """Return current search mode as a SearchMode enum."""
+        return self._search_mode
+
+    def is_cpu_only(self) -> bool:
+        """True when running in SQLite-only (CPU) mode."""
+        return self._search_mode is SearchMode.SQLITE_ONLY
+
+    def is_semantic_enabled(self) -> bool:
+        """True when semantic/vector components are enabled or may be enabled."""
+        return self._search_mode is not SearchMode.SQLITE_ONLY
+
     def _validate_paths(self):
         """Validate that configured paths exist"""
         exp_root = Path(self.experience_root)
@@ -198,14 +250,6 @@ class Config:
 
     def _validate_search_config(self):
         """Validate search-related configuration with helpful error messages"""
-        # Validate search mode
-        valid_modes = ("auto", "sqlite_only")
-        if self.search_mode not in valid_modes:
-            raise ValueError(
-                f"Invalid CHL_SEARCH_MODE='{self.search_mode}'. "
-                f"Must be one of: {', '.join(valid_modes)}"
-            )
-
         # Validate thresholds are in [0.0, 1.0]
         if not (0.0 <= self.duplicate_threshold_update <= 1.0):
             raise ValueError(
@@ -273,7 +317,7 @@ class Config:
             )
 
         # Create FAISS index directory if it doesn't exist (skip in sqlite_only mode)
-        if self.search_mode != "sqlite_only":
+        if self._search_mode is not SearchMode.SQLITE_ONLY:
             faiss_path = Path(self.faiss_index_path)
             if not faiss_path.exists():
                 try:

@@ -483,67 +483,77 @@ class SettingsService:
             )
 
         # Check FAISS index status (gate in CPU-only mode)
-        # If CHL_SEARCH_MODE=sqlite_only, vector stack is intentionally disabled
-        search_mode = os.getenv("CHL_SEARCH_MODE", "auto").lower()
-        if search_mode == "sqlite_only":
+        # In sqlite_only mode, vector stack is intentionally disabled
+        try:
+            from src.config import SearchMode
+            mode = SearchMode.from_env(os.getenv("CHL_SEARCH_MODE"))
+        except ValueError as exc:
             faiss_status = DiagnosticStatus(
                 name="faiss",
-                state="info",
-                headline="Semantic search disabled",
-                detail="CPU-only mode (SQLite keyword search)",
-                validated_at=utc_now(),
+                state="error",
+                headline="Invalid search mode",
+                detail=str(exc),
             )
         else:
-            # Index files use model-specific naming: unified_{model_slug}.index
-            # Check if any .index file exists in the faiss_index directory
-            faiss_index_dir = data_path / "faiss_index"
-            index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
-            if index_files:
-                try:
-                    from src.storage.schema import FAISSMetadata
-                    from sqlalchemy import func
-                    # Count non-deleted vectors in metadata table
-                    vector_count = session.query(func.count(FAISSMetadata.id)).filter(
-                        FAISSMetadata.deleted == False
-                    ).scalar() or 0
-
-                    if vector_count > 0:
-                        # Use the first index file found
-                        index_size_mb = index_files[0].stat().st_size / (1024 * 1024)
-                        # Get most recent creation timestamp
-                        latest_entry = session.query(FAISSMetadata).order_by(
-                            FAISSMetadata.created_at.desc()
-                        ).first()
-                        built_date = latest_entry.created_at[:10] if latest_entry and latest_entry.created_at else 'N/A'
-
-                        faiss_status = DiagnosticStatus(
-                            name="faiss",
-                            state="ok",
-                            headline="FAISS index ready",
-                            detail=f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
-                            validated_at=utc_now(),
-                        )
-                    else:
-                        faiss_status = DiagnosticStatus(
-                            name="faiss",
-                            state="warn",
-                            headline="FAISS metadata missing",
-                            detail="Index files exist but metadata table is empty. Rebuild index via Operations page to sync.",
-                        )
-                except Exception as exc:
-                    faiss_status = DiagnosticStatus(
-                        name="faiss",
-                        state="warn",
-                        headline="FAISS check failed",
-                        detail=str(exc),
-                    )
-            else:
+            if mode is SearchMode.SQLITE_ONLY:
                 faiss_status = DiagnosticStatus(
                     name="faiss",
                     state="info",
-                    headline="FAISS index not built",
-                    detail="Build index via Operations page or upload snapshot",
+                    headline="Semantic search disabled",
+                    detail="CPU-only mode (SQLite keyword search)",
+                    validated_at=utc_now(),
                 )
+            else:
+                # Index files use model-specific naming: unified_{model_slug}.index
+                # Check if any .index file exists in the faiss_index directory
+                faiss_index_dir = data_path / "faiss_index"
+                index_files = list(faiss_index_dir.glob("*.index")) if faiss_index_dir.exists() else []
+                if index_files:
+                    try:
+                        from src.storage.schema import FAISSMetadata
+                        from sqlalchemy import func
+                        # Count non-deleted vectors in metadata table
+                        vector_count = session.query(func.count(FAISSMetadata.id)).filter(
+                            FAISSMetadata.deleted == False
+                        ).scalar() or 0
+
+                        if vector_count > 0:
+                            # Use the first index file found
+                            index_size_mb = index_files[0].stat().st_size / (1024 * 1024)
+                            # Get most recent creation timestamp
+                            latest_entry = session.query(FAISSMetadata).order_by(
+                                FAISSMetadata.created_at.desc()
+                            ).first()
+                            built_date = latest_entry.created_at[:10] if latest_entry and latest_entry.created_at else 'N/A'
+
+                            faiss_status = DiagnosticStatus(
+                                name="faiss",
+                                state="ok",
+                                headline="FAISS index ready",
+                                detail=f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
+                                validated_at=utc_now(),
+                            )
+                        else:
+                            faiss_status = DiagnosticStatus(
+                                name="faiss",
+                                state="warn",
+                                headline="FAISS metadata missing",
+                                detail="Index files exist but metadata table is empty. Rebuild index via Operations page to sync.",
+                            )
+                    except Exception as exc:
+                        faiss_status = DiagnosticStatus(
+                            name="faiss",
+                            state="warn",
+                            headline="FAISS check failed",
+                            detail=str(exc),
+                        )
+                else:
+                    faiss_status = DiagnosticStatus(
+                        name="faiss",
+                        state="info",
+                        headline="FAISS index not built",
+                        detail="Build index via Operations page or upload snapshot",
+                    )
 
         # Check disk space
         try:

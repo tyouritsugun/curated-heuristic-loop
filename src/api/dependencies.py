@@ -75,3 +75,9 @@ def get_telemetry_service():
     """Provide TelemetryService singleton."""
     from src.api_server import telemetry_service
     return telemetry_service
+
+
+def get_mode_runtime():
+    """Provide ModeRuntime singleton with search/worker wiring."""
+    from src.api_server import mode_runtime
+    return mode_runtime
