@@ -10,7 +10,7 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 import logging
 
 from fastapi import (
@@ -37,6 +37,7 @@ from src.api.dependencies import (
     get_telemetry_service,
     get_worker_control_service,
 )
+from src.services import gpu_installer
 from src.services.settings_service import SettingValidationError, SettingsService
 from src.services.operations_service import OperationConflict, JobNotFoundError
 from src.services.worker_control import WorkerUnavailableError
@@ -413,7 +414,27 @@ def _build_settings_context(
         "reranker_choices": RERANKER_CHOICES,
         "env_config_status": _get_env_config_status(snapshot=snapshot, diagnostics=diagnostics_dict),
     }
+    context.update(_build_gpu_runtime_context())
     return context
+
+
+def _build_gpu_runtime_context() -> Dict[str, object]:
+    priority_raw = os.getenv("CHL_GPU_PRIORITY")
+    priority = gpu_installer.parse_gpu_priority(priority_raw)
+    state = gpu_installer.load_gpu_state()
+    suffix = gpu_installer.recommended_wheel_suffix(state) if state else None
+    prereq = gpu_installer.prerequisite_check(state)
+    prereq_status = prereq.get("status") if isinstance(prereq, dict) else "unknown"
+    install_allowed = bool(suffix) and prereq_status in {"ok", "warn"}
+    return {
+        "gpu_state": state,
+        "gpu_priority": priority,
+        "gpu_priority_raw": priority_raw,
+        "gpu_recommended_suffix": suffix,
+        "gpu_install_supported": install_allowed,
+        "gpu_backend_override": os.getenv("CHL_GPU_BACKEND"),
+        "gpu_prereq": prereq,
+    }
 
 
 def _render_full(
@@ -457,6 +478,27 @@ def _render_partial(
     )
     context["is_partial"] = True
     return templates.TemplateResponse(template_name, context)
+
+
+def _render_gpu_card(
+    request: Request,
+    *,
+    message: Optional[str] = None,
+    message_level: str = "info",
+    log: Optional[str] = None,
+    prompt: Optional[str] = None,
+):
+    context = _build_gpu_runtime_context()
+    context.update(
+        {
+            "request": request,
+            "gpu_message": message,
+            "gpu_message_level": message_level,
+            "gpu_log": log,
+            "gpu_prompt_text": prompt,
+        }
+    )
+    return templates.TemplateResponse("partials/settings_gpu_runtime.html", context)
 
 
 def _respond(
@@ -882,6 +924,101 @@ def settings_page(
     # Select template based on search mode
     template_name = "settings_cpu.html" if config.search_mode == "sqlite_only" else "settings.html"
     return templates.TemplateResponse(template_name, context)
+
+
+@router.get("/ui/settings/gpu/card", response_class=HTMLResponse)
+def settings_gpu_card(request: Request):
+    return _render_gpu_card(request)
+
+
+@router.post("/ui/settings/gpu/detect", response_class=HTMLResponse)
+def settings_gpu_detect(request: Request):
+    priority = gpu_installer.parse_gpu_priority(os.getenv("CHL_GPU_PRIORITY"))
+    backend_override = os.getenv("CHL_GPU_BACKEND")
+    try:
+        state, cached = gpu_installer.ensure_gpu_state(priority, backend_override, True)
+        source = "cached" if cached else "detected"
+        message = f"{state.get('backend', 'cpu')} backend {source} successfully."
+        level = "success"
+        log = None
+    except gpu_installer.GPUInstallerError as exc:
+        return _render_gpu_card(request, message=str(exc), message_level="error")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GPU detection failed")
+        return _render_gpu_card(request, message=str(exc), message_level="error")
+
+    return _render_gpu_card(request, message=message, message_level=level, log=log)
+
+
+@router.post("/ui/settings/gpu/install", response_class=HTMLResponse)
+def settings_gpu_install(request: Request):
+    priority = gpu_installer.parse_gpu_priority(os.getenv("CHL_GPU_PRIORITY"))
+    backend_override = os.getenv("CHL_GPU_BACKEND")
+    try:
+        state, _ = gpu_installer.ensure_gpu_state(priority, backend_override, False)
+    except gpu_installer.GPUInstallerError as exc:
+        return _render_gpu_card(request, message=str(exc), message_level="error")
+
+    backend = (state or {}).get("backend", "cpu")
+    suffix = gpu_installer.recommended_wheel_suffix(state) if state else None
+    prereq = gpu_installer.prerequisite_check(state)
+    prereq_status = prereq.get("status") if isinstance(prereq, dict) else "unknown"
+
+    if prereq_status not in {"ok", "warn"}:
+        return _render_gpu_card(
+            request,
+            message=prereq.get("message"),
+            message_level="warn",
+        )
+
+    if backend == "cpu" or not suffix:
+        return _render_gpu_card(
+            request,
+            message="No GPU backend detected. Install GPU drivers or set CHL_GPU_BACKEND before retrying.",
+            message_level="warn",
+        )
+
+    success, install_log = gpu_installer.install_llama_cpp(state)
+    if not success:
+        return _render_gpu_card(
+            request,
+            message="GPU wheel installation failed",
+            message_level="error",
+            log=install_log,
+        )
+
+    verify_ok, verify_log = gpu_installer.verify_llama_install(state)
+    if verify_ok:
+        return _render_gpu_card(
+            request,
+            message="GPU runtime installed and verified",
+            message_level="success",
+            log=install_log,
+        )
+
+    combined_log = (install_log or "") + ("\n" + verify_log if verify_log else "")
+    return _render_gpu_card(
+        request,
+        message="Installed GPU wheel but verification failed. See log for details.",
+        message_level="warn",
+        log=combined_log,
+    )
+
+
+@router.post("/ui/settings/gpu/support-prompt", response_class=HTMLResponse)
+def settings_gpu_support_prompt(request: Request):
+    state = gpu_installer.load_gpu_state()
+    prereq = gpu_installer.prerequisite_check(state)
+    verify_log = None
+    if state and state.get("status") == "needs_attention":
+        verify_log = state.get("install_log")
+    prompt = gpu_installer.build_support_prompt(state, prereq, verify_log=verify_log)
+    return _render_gpu_card(
+        request,
+        message="Copy the prompt below and paste it into ChatGPT, Claude, or another assistant to get the latest driver steps.",
+        message_level="info",
+        prompt=prompt,
+    )
 
 
 @router.get("/ui/settings/config-status", response_class=HTMLResponse)

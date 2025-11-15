@@ -45,8 +45,6 @@ import logging
 import subprocess
 import shutil
 import platform
-import re
-import ctypes
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,6 +59,7 @@ from src.storage.repository import (
     CategoryManualRepository,
 )
 from src.storage.schema import Experience, CategoryManual
+from src.services import gpu_installer
 
 # Configure logging
 logging.basicConfig(
@@ -71,25 +70,10 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
-GPU_STATE_PATH = PROJECT_ROOT / "data" / "gpu_state.json"
+GPU_STATE_PATH = gpu_installer.GPU_STATE_PATH
 
-SUPPORTED_GPU_BACKENDS = ("metal", "cuda", "rocm", "cpu")
-DEFAULT_GPU_PRIORITY = ("metal", "cuda", "rocm", "cpu")
-
-# Compatibility lookup tables (ordered lowest→highest preference)
-CUDA_COMPAT_MATRIX = [
-    ((11, 8), "cu118"),
-    ((12, 0), "cu120"),
-    ((12, 1), "cu121"),
-    ((12, 2), "cu122"),
-    ((12, 4), "cu124"),
-]
-
-ROCM_COMPAT_MATRIX = [
-    ((5, 6), "rocm5.6"),
-    ((5, 7), "rocm5.7"),
-    ((6, 0), "rocm6.0"),
-]
+SUPPORTED_GPU_BACKENDS = gpu_installer.SUPPORTED_GPU_BACKENDS
+DEFAULT_GPU_PRIORITY = gpu_installer.DEFAULT_GPU_PRIORITY
 
 # Supported GGUF model options (repo, quantization, VRAM requirement, description)
 EMBEDDING_MODELS = [
@@ -190,278 +174,15 @@ def _env_flag(name: str) -> bool:
 
 
 def parse_gpu_priority(value: str | None) -> list[str]:
-    if not value:
-        ordered = list(DEFAULT_GPU_PRIORITY)
-    else:
-        tokens = [token.strip().lower() for token in value.split(",") if token.strip()]
-        ordered = []
-        for token in tokens:
-            if token in SUPPORTED_GPU_BACKENDS and token not in ordered:
-                ordered.append(token)
-        for backend in DEFAULT_GPU_PRIORITY:
-            if backend not in ordered:
-                ordered.append(backend)
-    return ordered
+    return gpu_installer.parse_gpu_priority(value)
 
 
 def load_gpu_state() -> dict | None:
-    if not GPU_STATE_PATH.exists():
-        return None
-    try:
-        with GPU_STATE_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
-    except json.JSONDecodeError as exc:
-        logger.warning("Ignoring invalid GPU state file %s: %s", GPU_STATE_PATH, exc)
-    except Exception as exc:  # noqa: BLE001 - best-effort loading
-        logger.warning("Failed to read GPU state file %s: %s", GPU_STATE_PATH, exc)
-    return None
+    return gpu_installer.load_gpu_state(GPU_STATE_PATH)
 
 
 def save_gpu_state(state: dict) -> None:
-    GPU_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with GPU_STATE_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(state, fh, indent=2)
-
-
-def _parse_version_tuple(raw: str | None) -> tuple[int, int] | None:
-    if not raw:
-        return None
-    match = re.search(r"(\d+)\.(\d+)", raw)
-    if not match:
-        return None
-    return int(match.group(1)), int(match.group(2))
-
-
-def determine_cuda_wheel(version: str | None) -> tuple[str, list[str]]:
-    diagnostics: list[str] = []
-    version_tuple = _parse_version_tuple(version)
-    if not version_tuple:
-        diagnostics.append("CUDA version unavailable; defaulting to cu124 wheel")
-        return CUDA_COMPAT_MATRIX[-1][1], diagnostics
-
-    for boundary, suffix in reversed(CUDA_COMPAT_MATRIX):
-        if version_tuple >= boundary:
-            if version_tuple != boundary:
-                diagnostics.append(
-                    f"Detected CUDA {version} not in compatibility table; using {suffix}"
-                )
-            return suffix, diagnostics
-
-    diagnostics.append(
-        f"Detected CUDA {version} older than supported set; using {CUDA_COMPAT_MATRIX[0][1]}"
-    )
-    return CUDA_COMPAT_MATRIX[0][1], diagnostics
-
-
-def determine_rocm_wheel(version: str | None) -> tuple[str, list[str]]:
-    diagnostics: list[str] = []
-    version_tuple = _parse_version_tuple(version)
-    if not version_tuple:
-        diagnostics.append("ROCm version unavailable; defaulting to rocm6.0 wheel")
-        return ROCM_COMPAT_MATRIX[-1][1], diagnostics
-
-    for boundary, suffix in reversed(ROCM_COMPAT_MATRIX):
-        if version_tuple >= boundary:
-            if version_tuple != boundary:
-                diagnostics.append(
-                    f"Detected ROCm {version} not in compatibility table; using {suffix}"
-                )
-            return suffix, diagnostics
-
-    diagnostics.append(
-        f"Detected ROCm {version} older than supported set; using {ROCM_COMPAT_MATRIX[0][1]}"
-    )
-    return ROCM_COMPAT_MATRIX[0][1], diagnostics
-
-
-def detect_metal_backend() -> dict | None:
-    diagnostics: list[str] = []
-    system = platform.system()
-    machine = platform.machine().lower()
-    if system != "Darwin":
-        return None
-    if machine not in {"arm64", "aarch64"}:
-        diagnostics.append("Metal requires Apple Silicon (arm64)")
-        return None
-    mac_version = platform.mac_ver()[0] or "unknown"
-    return {
-        "backend": "metal",
-        "version": mac_version,
-        "wheel": "metal",
-        "diagnostics": diagnostics,
-        "detected_via": "platform",
-    }
-
-
-def detect_cuda_backend() -> dict | None:
-    diagnostics: list[str] = []
-    detected = False
-    cuda_version: str | None = None
-    driver_version: str | None = None
-    smi_path = shutil.which("nvidia-smi")
-    if smi_path:
-        try:
-            result = subprocess.run(
-                [smi_path],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                detected = True
-                cuda_match = re.search(r"CUDA Version:\s*([0-9.]+)", result.stdout)
-                driver_match = re.search(r"Driver Version:\s*([0-9.]+)", result.stdout)
-                if cuda_match:
-                    cuda_version = cuda_match.group(1)
-                if driver_match:
-                    driver_version = driver_match.group(1)
-            else:
-                diagnostics.append(
-                    f"nvidia-smi exited with code {result.returncode}: {result.stderr.strip()}"
-                )
-        except subprocess.TimeoutExpired:
-            diagnostics.append("nvidia-smi timed out while probing GPU")
-        except FileNotFoundError:
-            pass
-
-    if not detected:
-        version_path = Path("/proc/driver/nvidia/version")
-        if version_path.exists():
-            try:
-                driver_version = version_path.read_text(encoding="utf-8", errors="ignore").strip()
-            except Exception:  # noqa: BLE001 - best effort
-                driver_version = None
-            detected = True
-            diagnostics.append("Detected NVIDIA driver via /proc/driver/nvidia/version")
-
-    if not detected:
-        dev_path = Path("/dev")
-        if dev_path.exists():
-            for candidate in dev_path.glob("nvidia*"):
-                detected = True
-                diagnostics.append(f"Detected NVIDIA device node: {candidate}")
-                break
-
-    if not detected and os.getenv("NVIDIA_VISIBLE_DEVICES"):
-        detected = True
-        diagnostics.append("NVIDIA_VISIBLE_DEVICES present (container GPU passthrough)")
-
-    if not detected:
-        try:
-            ctypes.CDLL("libcuda.so")
-            detected = True
-            diagnostics.append("Loaded libcuda.so via ctypes")
-        except OSError:
-            pass
-
-    if not detected:
-        return None
-
-    wheel_suffix, wheel_notes = determine_cuda_wheel(cuda_version)
-    diagnostics.extend(wheel_notes)
-    return {
-        "backend": "cuda",
-        "version": cuda_version,
-        "wheel": wheel_suffix,
-        "driver_version": driver_version,
-        "diagnostics": diagnostics,
-        "detected_via": "nvidia-smi" if smi_path else "devices",
-    }
-
-
-def detect_rocm_backend() -> dict | None:
-    diagnostics: list[str] = []
-    detected = False
-    rocm_version: str | None = None
-    rocminfo_path = shutil.which("rocminfo")
-    if rocminfo_path:
-        try:
-            result = subprocess.run(
-                [rocminfo_path],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                detected = True
-                match = re.search(r"ROCm\s+Version:\s*([0-9.]+)", result.stdout)
-                if match:
-                    rocm_version = match.group(1)
-            else:
-                diagnostics.append(
-                    f"rocminfo exited with code {result.returncode}: {result.stderr.strip()}"
-                )
-        except subprocess.TimeoutExpired:
-            diagnostics.append("rocminfo timed out while probing GPU")
-        except FileNotFoundError:
-            pass
-
-    if not detected:
-        dri_path = Path("/dev/dri")
-        has_render_nodes = dri_path.exists() and any(dri_path.glob("render*"))
-        if Path("/dev/kfd").exists() or has_render_nodes:
-            detected = True
-            diagnostics.append("Detected ROCm device nodes (/dev/kfd or /dev/dri/render*)")
-
-    if not detected and (os.getenv("ROCM_VISIBLE_DEVICES") or os.getenv("HIP_VISIBLE_DEVICES")):
-        detected = True
-        diagnostics.append("ROCm visibility env vars present")
-
-    if not detected:
-        try:
-            ctypes.CDLL("libhip_hcc.so")
-            detected = True
-            diagnostics.append("Loaded libhip_hcc.so via ctypes")
-        except OSError:
-            pass
-
-    if not detected:
-        return None
-
-    wheel_suffix, wheel_notes = determine_rocm_wheel(rocm_version)
-    diagnostics.extend(wheel_notes)
-    return {
-        "backend": "rocm",
-        "version": rocm_version,
-        "wheel": wheel_suffix,
-        "diagnostics": diagnostics,
-        "detected_via": "rocminfo" if rocminfo_path else "devices",
-    }
-
-
-def detect_cpu_backend() -> dict:
-    return {
-        "backend": "cpu",
-        "version": None,
-        "wheel": "cpu",
-        "diagnostics": [
-            "No supported GPU backend detected; defaulting to CPU wheel"
-        ],
-        "detected_via": "fallback",
-    }
-
-
-DETECTORS = {
-    "metal": detect_metal_backend,
-    "cuda": detect_cuda_backend,
-    "rocm": detect_rocm_backend,
-    "cpu": detect_cpu_backend,
-}
-
-
-def detect_gpu_backend(priority: list[str]) -> dict:
-    for backend in priority:
-        detector = DETECTORS.get(backend)
-        if not detector:
-            continue
-        result = detector()
-        if result:
-            return result
-    return detect_cpu_backend()
+    gpu_installer.save_gpu_state(state, GPU_STATE_PATH)
 
 
 # Issue #241 – GPU detection & wheel selection groundwork
@@ -470,71 +191,7 @@ def ensure_gpu_state(
     backend_override: str | None,
     force_detect: bool,
 ) -> tuple[dict, bool]:
-    cached_state = load_gpu_state()
-    if backend_override:
-        backend_override = backend_override.lower()
-        if backend_override not in SUPPORTED_GPU_BACKENDS:
-            raise ValueError(
-                f"Invalid backend override '{backend_override}'. "
-                f"Supported: {', '.join(SUPPORTED_GPU_BACKENDS)}"
-            )
-        override_wheel = "cpu"
-        diagnostics = ["Override set via CLI/ENV"]
-        version = None
-        if backend_override == "cuda":
-            override_wheel, wheel_notes = determine_cuda_wheel(None)
-            diagnostics.extend(wheel_notes)
-        elif backend_override == "rocm":
-            override_wheel, wheel_notes = determine_rocm_wheel(None)
-            diagnostics.extend(wheel_notes)
-        elif backend_override == "metal":
-            override_wheel = "metal"
-            version = platform.mac_ver()[0] or None
-        elif backend_override == "cpu":
-            override_wheel = "cpu"
-            version = "n/a"
-
-        state = {
-            "backend": backend_override,
-            "version": version,
-            "wheel": override_wheel,
-            "status": "override",
-            "override": backend_override,
-            "priority": priority,
-            "detected_at": _utcnow_iso(),
-            "verified_at": None,
-            "diagnostics": diagnostics,
-        }
-        save_gpu_state(state)
-        return state, False
-
-    if cached_state and not force_detect:
-        cached_priority = cached_state.get("priority")
-        if isinstance(cached_priority, list) and cached_priority != priority:
-            logger.info(
-                "GPU priority changed from %s to %s; re-running detection",
-                cached_priority,
-                priority,
-            )
-        else:
-            cached_state.setdefault("status", "cached")
-            cached_state.setdefault("priority", priority)
-            return cached_state, True
-
-    result = detect_gpu_backend(priority)
-    state = {
-        "backend": result.get("backend", "cpu"),
-        "version": result.get("version"),
-        "wheel": result.get("wheel", "cpu"),
-        "driver_version": result.get("driver_version"),
-        "status": "detected",
-        "priority": priority,
-        "detected_at": _utcnow_iso(),
-        "verified_at": None,
-        "diagnostics": result.get("diagnostics", []),
-    }
-    save_gpu_state(state)
-    return state, False
+    return gpu_installer.ensure_gpu_state(priority, backend_override, force_detect, state_path=GPU_STATE_PATH)
 
 
 def print_gpu_detection_summary(state: dict, cached: bool, priority: list[str]) -> None:

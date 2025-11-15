@@ -75,6 +75,8 @@ def configure_logging():
     handler.setFormatter(JSONFormatter())
     logging.root.handlers = [handler]
     logging.root.setLevel(logging.INFO)
+    # Suppress noisy access logs (HTMX polling) unless warnings/errors occur
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
