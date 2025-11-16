@@ -347,7 +347,11 @@ class SettingsService:
 
         sections.append(self._diagnose_credentials(credentials))
         sections.append(self._diagnose_sheets(sheets))
-        sections.append(self._diagnose_models(models))
+
+        # Only include models diagnostic in GPU/auto mode
+        is_cpu_mode = self._config and getattr(self._config, "search_mode", None) == "cpu"
+        if not is_cpu_mode:
+            sections.append(self._diagnose_models(models))
 
         # Attach mode-specific diagnostics if the runtime provides them
         adapter = getattr(self._mode_runtime, "diagnostics_adapter", None) if self._mode_runtime else None
@@ -502,7 +506,23 @@ class SettingsService:
         )
 
     def _diagnose_credentials(self, settings: Optional[CredentialSettings]) -> DiagnosticStatus:
-        if settings is None or not settings.path:
+        # Check environment variable first (preferred for CPU mode)
+        import os
+        from src.common.config.config import PROJECT_ROOT
+        credentials_path = os.getenv("GOOGLE_CREDENTIAL_PATH")
+        validated_at = None
+
+        if credentials_path:
+            # Using .env configuration - resolve relative to project root
+            path = Path(credentials_path)
+            if not path.is_absolute():
+                path = (PROJECT_ROOT / path).resolve()
+            validated_at = utc_now()
+        elif settings is not None and settings.path:
+            # Fallback to database settings
+            path = Path(settings.path)
+            validated_at = settings.validated_at
+        else:
             return DiagnosticStatus(
                 name="credentials",
                 state="warn",
@@ -510,14 +530,14 @@ class SettingsService:
                 detail="Set GOOGLE_CREDENTIAL_PATH in .env to configure API access.",
                 validated_at=None,
             )
-        path = Path(settings.path)
+
         if not path.exists():
             return DiagnosticStatus(
                 name="credentials",
                 state="error",
                 headline="Credential file missing",
                 detail=f"Expected credential file at {path}, but it does not exist.",
-                validated_at=settings.validated_at,
+                validated_at=validated_at,
             )
         try:
             st = path.stat()
@@ -527,7 +547,7 @@ class SettingsService:
                 state="error",
                 headline="Unable to read credential file",
                 detail=str(exc),
-                validated_at=settings.validated_at,
+                validated_at=validated_at,
             )
         if not stat.S_ISREG(st.st_mode):
             return DiagnosticStatus(
@@ -535,7 +555,7 @@ class SettingsService:
                 state="error",
                 headline="Credential path is not a file",
                 detail=f"Expected a file at {path}, but found something else.",
-                validated_at=settings.validated_at,
+                validated_at=validated_at,
             )
         # Basic sanity checks pass
         return DiagnosticStatus(
@@ -543,11 +563,66 @@ class SettingsService:
             state="ok",
             headline="Credentials configured",
             detail=None,
-            validated_at=settings.validated_at,
+            validated_at=validated_at,
         )
 
     def _diagnose_sheets(self, settings: Optional[SheetSettings]) -> DiagnosticStatus:
-        if settings is None:
+        # Check environment variables first (preferred for CPU mode)
+        import os
+        import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "").strip()
+        export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "").strip()
+        validated_at = None
+
+        if import_sheet_id or export_sheet_id:
+            # Using .env configuration
+            validated_at = utc_now()
+            if import_sheet_id and export_sheet_id:
+                return DiagnosticStatus(
+                    name="sheets",
+                    state="ok",
+                    headline="Sheets configured",
+                    detail=None,
+                    validated_at=validated_at,
+                )
+            else:
+                missing = []
+                if not import_sheet_id:
+                    missing.append("IMPORT_SPREADSHEET_ID")
+                if not export_sheet_id:
+                    missing.append("EXPORT_SPREADSHEET_ID")
+                return DiagnosticStatus(
+                    name="sheets",
+                    state="warn",
+                    headline="Sheets partially configured",
+                    detail=f"Set {' and '.join(missing)} in .env to complete configuration.",
+                    validated_at=validated_at,
+                )
+        elif settings is not None:
+            # Fallback to database settings
+            validated_at = settings.validated_at
+            missing = []
+            if not settings.category_sheet_id:
+                missing.append("categories")
+            if not settings.experiences_sheet_id:
+                missing.append("experiences")
+            if not settings.manuals_sheet_id:
+                missing.append("manuals")
+            if missing:
+                return DiagnosticStatus(
+                    name="sheets",
+                    state="error",
+                    headline="Sheets configuration incomplete",
+                    detail=f"Missing sheet IDs for: {', '.join(sorted(missing))}.",
+                    validated_at=validated_at,
+                )
+            return DiagnosticStatus(
+                name="sheets",
+                state="ok",
+                headline="Sheets configured",
+                detail=None,
+                validated_at=validated_at,
+            )
+        else:
             return DiagnosticStatus(
                 name="sheets",
                 state="warn",
@@ -558,29 +633,6 @@ class SettingsService:
                 ),
                 validated_at=None,
             )
-        # Basic sanity check for sheet IDs
-        missing = []
-        if not settings.category_sheet_id:
-            missing.append("categories")
-        if not settings.experiences_sheet_id:
-            missing.append("experiences")
-        if not settings.manuals_sheet_id:
-            missing.append("manuals")
-        if missing:
-            return DiagnosticStatus(
-                name="sheets",
-                state="error",
-                headline="Sheets configuration incomplete",
-                detail=f"Missing sheet IDs for: {', '.join(sorted(missing))}.",
-                validated_at=settings.validated_at,
-            )
-        return DiagnosticStatus(
-            name="sheets",
-            state="ok",
-            headline="Sheets configured",
-            detail=None,
-            validated_at=settings.validated_at,
-        )
 
     def _diagnose_models(self, settings: Optional[ModelSettings]) -> DiagnosticStatus:
         if settings is None:

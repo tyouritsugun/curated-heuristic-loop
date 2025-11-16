@@ -366,25 +366,67 @@ class OperationsService:
     # Operation Handlers (direct service calls)
     # ------------------------------------------------------------------
     def _import_sheets_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Import data from Google Sheets into the database."""
+        """Import data from Google Sheets into the database.
+
+        Supports two modes:
+        1. With payload: Import data from provided rows (called by scripts/import.py)
+        2. Without payload: Fetch data from Google Sheets and import (called from UI)
+        """
         from src.api.services.import_service import ImportService
-        
+        import os
+        from pathlib import Path
+
         try:
             # Get sheets data from payload (sent by HTTP client)
             categories_rows = payload.get("categories") or []
             experiences_rows = payload.get("experiences") or []
             manuals_rows = payload.get("manuals") or []
 
+            # If no payload provided, fetch from Google Sheets directly
             if not categories_rows:
+                logger.info("No payload provided, fetching data from Google Sheets")
+
+                # Get credentials and spreadsheet ID from environment
+                credentials_env = os.getenv("GOOGLE_CREDENTIAL_PATH")
+                spreadsheet_id = os.getenv("IMPORT_SPREADSHEET_ID")
+
+                if not credentials_env:
+                    raise ValueError("GOOGLE_CREDENTIAL_PATH not set in .env file")
+                if not spreadsheet_id:
+                    raise ValueError("IMPORT_SPREADSHEET_ID not set in .env file")
+
+                # Resolve credentials path relative to project root
+                from src.common.config.config import PROJECT_ROOT
+                credentials_path = Path(credentials_env)
+                if not credentials_path.is_absolute():
+                    credentials_path = (PROJECT_ROOT / credentials_path).resolve()
+
+                if not credentials_path.exists():
+                    raise ValueError(f"Credential file not found: {credentials_path}")
+
+                # Fetch data from Google Sheets
+                from src.common.storage.sheets_client import SheetsClient
+                sheets_client = SheetsClient(str(credentials_path))
+
+                # Fetch from configured worksheets
+                categories_rows = sheets_client.read_worksheet(spreadsheet_id, "Categories")
+                experiences_rows = sheets_client.read_worksheet(spreadsheet_id, "Experiences")
+                manuals_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
+
                 logger.info(
-                    "Import payload missing categories; treating as compatibility no-op"
+                    "Fetched from Google Sheets: %d categories, %d experiences, %d manuals",
+                    len(categories_rows),
+                    len(experiences_rows),
+                    len(manuals_rows),
                 )
-                return {
-                    "success": True,
-                    "counts": {"categories": 0, "experiences": 0, "manuals": 0},
-                    "message": "Import skipped (no payload provided). Use scripts/import.py to submit data.",
-                }
-            
+
+                if not categories_rows:
+                    return {
+                        "success": True,
+                        "counts": {"categories": 0, "experiences": 0, "manuals": 0},
+                        "message": "No data found in Google Sheets",
+                    }
+
             # Import via service
             import_service = ImportService(self._data_path, self._faiss_index_path)
             counts = import_service.import_from_sheets(
@@ -393,9 +435,9 @@ class OperationsService:
                 experiences_rows=experiences_rows,
                 manuals_rows=manuals_rows,
             )
-            
+
             logger.info("Import completed: %s", counts)
-            
+
             # Auto-trigger sync job if import succeeded and GPU mode is enabled
             if self._mode_adapter and self._mode_adapter.can_run_vector_jobs():
                 try:
@@ -405,16 +447,19 @@ class OperationsService:
                     logger.warning("Sync job already running, skipping automatic trigger")
                 except Exception as e:
                     logger.error(f"Failed to trigger automatic sync job: {e}")
-            
+
             return {
                 "success": True,
                 "counts": counts,
                 "message": f"Imported {counts['experiences']} experiences, {counts['manuals']} manuals, {counts['categories']} categories"
             }
-            
+
         except Exception as exc:
             logger.exception("Import failed")
-            raise ValueError(f"Import operation failed: {exc}") from exc
+            # Extract just the error type and first line of message for UI display
+            error_type = type(exc).__name__
+            error_msg = str(exc).split('\n')[0][:200]  # First line, max 200 chars
+            raise ValueError(f"Import failed ({error_type}): {error_msg}") from exc
 
     def _sync_embeddings_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
         """Sync embeddings for pending/failed entities."""

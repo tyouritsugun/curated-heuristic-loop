@@ -28,9 +28,9 @@ class CpuDiagnosticsAdapter(DiagnosticsModeAdapter):
     def faiss_status(self, data_path, session) -> dict:  # noqa: D401 - simple adapter
         del data_path, session
         return {
-            "state": "info",
-            "headline": "Semantic search disabled",
-            "detail": "CPU-only mode (SQLite keyword search)",
+            "state": "ok",
+            "headline": "Keyword search active",
+            "detail": "CPU-only mode using SQLite keyword search",
             "validated_at": utc_now(),
         }
 

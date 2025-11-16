@@ -212,37 +212,76 @@ def _normalize_diagnostics(payload: Optional[Dict[str, Any]]) -> Dict[str, Dict[
     return {}
 
 
-def _summarize_job_runs(jobs, last_runs_by_type) -> list[dict]:
-    last_runs_by_type = last_runs_by_type or {}
-    summaries = []
-    for job in jobs:
-        summaries.append(
-            {
-                "id": job.id,
-                "type": job.job_type,
-                "status": job.status,
-                "status_class": _job_status_class(job.status),
-                "created_at": _format_timestamp(job.created_at),
-                "updated_at": _format_timestamp(job.updated_at),
-                "duration": _format_duration(job.created_at, job.updated_at),
-                "detail": (job.error_message or job.result) if job.status == "failed" else job.result,
-            }
-        )
+def _summarize_job_runs(jobs, last_runs_by_type) -> dict:
+    """Convert job runs into a dictionary of summaries indexed by job type.
 
+    Returns a dict like: {'import': {...}, 'export': {...}, 'guidelines': {...}}
+    where each value contains summary info about that job type.
+    """
+    last_runs_by_type = last_runs_by_type or {}
+    summaries_by_type = {}
+
+    # Process recent jobs list first
+    for job in jobs:
+        # jobs are dictionaries from _serialize_job
+        job_type = job.get("job_type")
+        job_status = job.get("status")
+        error_detail = job.get("error", "")
+        result = job.get("result", {})
+        result_text = result.get("raw") if isinstance(result, dict) and "raw" in result else str(result) if result else None
+
+        summary = {
+            "id": job.get("job_id"),
+            "type": job_type,
+            "status": job_status,
+            "status_class": _job_status_class(job_status),
+            "status_label": job_status.title() if job_status else "Unknown",
+            "pill_class": _job_status_class(job_status),
+            "created_at": _format_timestamp(job.get("created_at")),
+            "updated_at": _format_timestamp(job.get("finished_at") or job.get("started_at") or job.get("created_at")),
+            "duration": _format_duration(job.get("created_at"), job.get("finished_at") or job.get("started_at")),
+            "description": error_detail if job_status == "failed" else result_text,
+            "detail": error_detail if job_status == "failed" else result_text,
+            "is_active": job_status in ("running", "queued"),
+        }
+
+        # Only store the most recent job for each type
+        if job_type and job_type not in summaries_by_type:
+            summaries_by_type[job_type] = summary
+
+    # Fill in any job types from last_runs_by_type that weren't in recent jobs
     for job_type, run in last_runs_by_type.items():
-        summaries.append(
-            {
-                "id": run.id if run else None,
-                "type": job_type,
-                "status": run.status if run else "never",
-                "status_class": _job_status_class(run.status) if run else "warn",
-                "created_at": _format_timestamp(getattr(run, "created_at", None)),
-                "updated_at": _format_timestamp(getattr(run, "updated_at", None)),
-                "duration": _format_duration(getattr(run, "created_at", None), getattr(run, "updated_at", None)),
-                "detail": getattr(run, "result", None),
-            }
-        )
-    return summaries
+        if job_type in summaries_by_type:
+            # Already have a more recent entry
+            continue
+
+        # run is also a dictionary from _serialize_job
+        if run:
+            run_status = run.get("status")
+            error_detail = run.get("error", "")
+            result = run.get("result", {})
+            result_text = result.get("raw") if isinstance(result, dict) and "raw" in result else str(result) if result else None
+        else:
+            run_status = "never"
+            error_detail = None
+            result_text = None
+
+        summaries_by_type[job_type] = {
+            "id": run.get("job_id") if run else None,
+            "type": job_type,
+            "status": run_status,
+            "status_class": _job_status_class(run_status) if run else "warn",
+            "status_label": run_status.title() if run_status else "Never",
+            "pill_class": _job_status_class(run_status) if run else "warn",
+            "created_at": _format_timestamp(run.get("created_at")) if run else None,
+            "updated_at": _format_timestamp(run.get("finished_at") or run.get("started_at") or run.get("created_at")) if run else None,
+            "duration": _format_duration(run.get("created_at"), run.get("finished_at") or run.get("started_at")) if run else None,
+            "description": error_detail if run_status == "failed" else result_text,
+            "detail": error_detail if run_status == "failed" else result_text,
+            "is_active": False,
+        }
+
+    return summaries_by_type
 
 
 def _build_index_info(search_service, config) -> dict:
@@ -344,7 +383,7 @@ def _build_operations_context(
     *,
     jobs_limit: int = 10,
 ):
-    telemetry_snapshot = telemetry_service.latest_snapshot()
+    telemetry_snapshot = telemetry_service.snapshot(session)
     worker_status = worker_control.status(session)
     diagnostics_payload = settings_service.diagnostics(session)
     diagnostics = _normalize_diagnostics(diagnostics_payload)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -88,7 +89,7 @@ class ImportService:
                 code=code,
                 name=name,
                 description=self._str_or_none(row.get("description")),
-                created_at=self._str_or_none(row.get("created_at")) or now_iso,
+                created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
             )
             session.add(category)
             categories_count += 1
@@ -108,10 +109,10 @@ class ImportService:
                     sync_status=self._int_or_default(row.get("sync_status"), default=1),
                     author=self._str_or_none(row.get("author")),
                     embedding_status="pending",
-                    created_at=self._str_or_none(row.get("created_at")) or now_iso,
-                    updated_at=self._str_or_none(row.get("updated_at")) or now_iso,
-                    synced_at=self._str_or_none(row.get("synced_at")),
-                    exported_at=self._str_or_none(row.get("exported_at")),
+                    created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
+                    updated_at=self._datetime_or_none(row.get("updated_at")) or now_iso,
+                    synced_at=self._datetime_or_none(row.get("synced_at")),
+                    exported_at=self._datetime_or_none(row.get("exported_at")),
                 )
             except ValueError as exc:
                 raise ValueError(
@@ -134,10 +135,10 @@ class ImportService:
                     sync_status=self._int_or_default(row.get("sync_status"), default=1),
                     author=self._str_or_none(row.get("author")),
                     embedding_status="pending",
-                    created_at=self._str_or_none(row.get("created_at")) or now_iso,
-                    updated_at=self._str_or_none(row.get("updated_at")) or now_iso,
-                    synced_at=self._str_or_none(row.get("synced_at")),
-                    exported_at=self._str_or_none(row.get("exported_at")),
+                    created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
+                    updated_at=self._datetime_or_none(row.get("updated_at")) or now_iso,
+                    synced_at=self._datetime_or_none(row.get("synced_at")),
+                    exported_at=self._datetime_or_none(row.get("exported_at")),
                 )
             except ValueError as exc:
                 raise ValueError(
@@ -168,6 +169,22 @@ class ImportService:
             return None
         value = str(value).strip()
         return value if value else None
+
+    @staticmethod
+    def _datetime_or_none(value: str | datetime | None) -> datetime | None:
+        """Convert ISO datetime string to datetime object, or return None."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+        try:
+            return datetime.fromisoformat(value_str.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            logger.warning("Failed to parse datetime value: %s", value_str)
+            return None
 
     @staticmethod
     def _require_value(row: Dict[str, Any], key: str, entity_type: str) -> str:

@@ -43,13 +43,13 @@
   <span class="htmx-indicator" id="diagnostics-indicator" hx-swap-oob="true"></span>
   {% if message or error %}
     {% with oob=True %}
-      {% include "partials/flash.html" %}
+      {% include "common/partials/flash.html" %}
     {% endwith %}
   {% endif %}
 {% else %}
   {% if message or error %}
     {% with oob=True %}
-      {% include "partials/flash.html" %}
+      {% include "common/partials/flash.html" %}
     {% endwith %}
   {% endif %}
 {% endif %}

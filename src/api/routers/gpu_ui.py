@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -62,6 +63,13 @@ router = APIRouter(tags=["ui"])
 
 GPU_SETTINGS_TEMPLATE = "gpu/settings_gpu.html"
 GPU_OPERATIONS_TEMPLATE = "gpu/operations_gpu.html"
+
+
+def _json_serialize_datetime(obj):
+    """Convert datetime objects to ISO format strings for JSON serialization."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def _gpu_features_enabled(*, search_mode: Optional[str] = None) -> bool:
@@ -427,9 +435,9 @@ async def telemetry_stream(
                 "jobs": context.get("jobs"),
             }
 
-            yield f"event: queue\ndata: {json.dumps(queue_payload, ensure_ascii=False)}\n\n"
-            yield f"event: index\ndata: {json.dumps(index_payload or {}, ensure_ascii=False)}\n\n"
-            yield f"event: controls\ndata: {json.dumps(controls_payload, ensure_ascii=False)}\n\n"
+            yield f"event: queue\ndata: {json.dumps(queue_payload, ensure_ascii=False, default=_json_serialize_datetime)}\n\n"
+            yield f"event: index\ndata: {json.dumps(index_payload or {}, ensure_ascii=False, default=_json_serialize_datetime)}\n\n"
+            yield f"event: controls\ndata: {json.dumps(controls_payload, ensure_ascii=False, default=_json_serialize_datetime)}\n\n"
 
             cycles += 1
             if max_cycles is not None and cycles >= max_cycles:

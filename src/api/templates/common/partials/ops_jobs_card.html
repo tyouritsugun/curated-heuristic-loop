@@ -68,6 +68,6 @@
 </section>
 {% if is_partial and (message or error) %}
   {% with oob=True %}
-    {% include "partials/flash.html" %}
+    {% include "common/partials/flash.html" %}
   {% endwith %}
 {% endif %}
