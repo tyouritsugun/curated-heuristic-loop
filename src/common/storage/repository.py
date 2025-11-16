@@ -316,59 +316,24 @@ class EmbeddingRepository:
             counts.setdefault(bucket, 0)
         return counts
 
-
-class FAISSMetadataRepository:
-    """Repository for FAISS index metadata."""
-
-    def __init__(self, session: Session):
-        self.session = session
-
-    def get_or_create(self, index_path: str, dimension: int, metric: str) -> FAISSMetadata:
-        meta = (
-            self.session.query(FAISSMetadata)
-            .filter(FAISSMetadata.index_path == index_path)
-            .first()
-        )
-        now = utc_now()
-        if meta is None:
-            meta = FAISSMetadata(
-                index_path=index_path,
-                dimension=dimension,
-                metric=metric,
-                trained=False,
-                total_vectors=0,
-                deleted_vectors=0,
-                created_at=now,
-                updated_at=now,
-            )
-            self.session.add(meta)
-            self.session.flush()
-        return meta
-
-    def update_stats(
+    def get_all_by_model(
         self,
-        index_path: str,
-        total_vectors: Optional[int] = None,
-        deleted_vectors: Optional[int] = None,
-        trained: Optional[bool] = None,
-    ) -> Optional[FAISSMetadata]:
-        meta = (
-            self.session.query(FAISSMetadata)
-            .filter(FAISSMetadata.index_path == index_path)
-            .first()
+        model_version: str,
+        entity_type: Optional[str] = None,
+    ) -> List[Embedding]:
+        """Get all embeddings for a specific model version and optional entity type."""
+        query = self.session.query(Embedding).filter(
+            Embedding.model_version == model_version
         )
-        if not meta:
-            return None
+        if entity_type:
+            query = query.filter(Embedding.entity_type == entity_type)
+        return query.all()
 
-        if total_vectors is not None:
-            meta.total_vectors = total_vectors
-        if deleted_vectors is not None:
-            meta.deleted_vectors = deleted_vectors
-        if trained is not None:
-            meta.trained = trained
-        meta.updated_at = utc_now()
-        self.session.flush()
-        return meta
+    def to_numpy(self, embedding: Embedding) -> np.ndarray:
+        """Convert an Embedding object to numpy array."""
+        return self._decode_vector(embedding.vector)
+
+
 
 
 class JobHistoryRepository:

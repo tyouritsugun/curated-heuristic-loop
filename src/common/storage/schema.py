@@ -92,14 +92,11 @@ class FAISSMetadata(Base):
     __tablename__ = "faiss_metadata"
 
     id = Column(Integer, primary_key=True)
-    index_path = Column(String(512), nullable=False, unique=True)
-    dimension = Column(Integer, nullable=False)
-    metric = Column(String(32), nullable=False)
-    trained = Column(Boolean, default=False, nullable=False)
-    total_vectors = Column(Integer, default=0, nullable=False)
-    deleted_vectors = Column(Integer, default=0, nullable=False)
+    entity_id = Column(String(64), nullable=False, index=True)
+    entity_type = Column(String(32), nullable=False)
+    internal_id = Column(Integer, nullable=False, index=True)
+    deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class JobHistory(Base):

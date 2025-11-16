@@ -130,10 +130,13 @@ async def lifespan(app: FastAPI):
         background_worker = getattr(mode_runtime, "background_worker", None)
         worker_pool = getattr(mode_runtime, "worker_pool", None)
 
+        def get_queue_depth():
+            with db.session_scope() as session:
+                return worker_control_service.queue_depth(session)
+
         telemetry_service = TelemetryService(
-            db.get_session,
-            config.experience_root,
-            queue_probe=lambda: worker_control_service.queue_depth(db.get_session()),
+            session_factory=db.get_session,
+            queue_probe=get_queue_depth,
             worker_probe=lambda: worker_pool.get_status() if worker_pool else None,
         )
         await telemetry_service.start()

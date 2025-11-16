@@ -532,13 +532,16 @@ def initialize_faiss_with_recovery(
                 faiss_manager.save()
                 session.flush()
             else:
+                from src.common.storage.repository import EmbeddingRepository
+
+                emb_repo = EmbeddingRepository(session)
                 metadata_map = {
                     meta.entity_id: meta.entity_type for meta in metadata_list
                 }
                 embeddings = (
                     session.query(Embedding)
                     .filter(
-                        Embedding.model_name == model_name,
+                        Embedding.model_version == model_name,
                         Embedding.entity_id.in_(list(metadata_map.keys())),
                     )
                     .all()
@@ -556,9 +559,7 @@ def initialize_faiss_with_recovery(
                         if emb.entity_id in metadata_map:
                             entity_ids.append(emb.entity_id)
                             entity_types.append(metadata_map[emb.entity_id])
-                            vectors.append(
-                                np.frombuffer(emb.embedding_data, dtype=np.float32)
-                            )
+                            vectors.append(emb_repo.to_numpy(emb))
                     if entity_ids:
                         faiss_manager._create_new_index(reset_metadata=True)
                         vectors_array = np.vstack(vectors).astype(np.float32)
@@ -590,10 +591,13 @@ def initialize_faiss_with_recovery(
 
         try:
             logger.info("Attempting to rebuild FAISS index from database")
+            from src.common.storage.repository import EmbeddingRepository
+
+            emb_repo = EmbeddingRepository(session)
             faiss_manager._create_new_index(reset_metadata=True)
             embeddings = (
                 session.query(Embedding)
-                .filter(Embedding.model_name == model_name)
+                .filter(Embedding.model_version == model_name)
                 .all()
             )
             if not embeddings:
@@ -615,9 +619,7 @@ def initialize_faiss_with_recovery(
                 if emb.entity_id in entity_type_map:
                     entity_ids.append(emb.entity_id)
                     entity_types.append(entity_type_map[emb.entity_id])
-                    vectors.append(
-                        np.frombuffer(emb.embedding_data, dtype=np.float32)
-                    )
+                    vectors.append(emb_repo.to_numpy(emb))
 
             if entity_ids:
                 vectors_array = np.vstack(vectors).astype(np.float32)
