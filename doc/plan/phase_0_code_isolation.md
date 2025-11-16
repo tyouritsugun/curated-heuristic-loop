@@ -145,12 +145,15 @@ src/
 - `search.py`: Protocol with `is_available`, `search()`, `find_duplicates()`, `rebuild_index()` + `SearchProviderError` exception
 - `embedding.py`: Protocol with `encode()`, `encode_single()`, `embedding_dimension`, `get_model_version()`
 - `runtime.py`: **ONLY** the `ModeRuntime` dataclass (from `modes/base.py`, NOT `build_mode_runtime()`)
+  - Include `OperationsModeAdapter` and `DiagnosticsModeAdapter` Protocol definitions here so CPU/GPU runtimes can depend on them without importing `src.api.*`.
+  - Replace any `SearchService` references with interfaces from `interfaces/search.py` (or `typing.Protocol`) so `common` never imports the API layer.
 
 **3. Migrate Shared API Client** (`src/common/api_client/`)
 - Move `src/api_client.py` → `src/common/api_client/client.py`
 - Extract exceptions to `src/common/api_client/errors.py`:
   - `CHLAPIError`, `APIConnectionError`, `APIOperationError`
 - Update imports: `from src.api_client import CHLAPIClient` → `from src.common.api_client.client import CHLAPIClient`
+  - Current consumers are `scripts/import.py` and `src/services/operations_service.py`. MCP continues using its dedicated `httpx` client until Step 16 moves handlers to HTTP.
 
 **4. Migrate Configuration**
 - Move `src/config.py` → `src/common/config/config.py`
@@ -168,7 +171,8 @@ src/
   - Shared templates → `src/web/common/templates/` (base.html, doc_viewer.html, partials/sidebar.html, etc.)
   - CPU templates → `src/web/cpu/templates/` (settings_cpu.html, operations_cpu.html, partials/ops_onboarding_cpu.html)
   - GPU templates → `src/web/gpu/templates/` (settings.html, operations_gpu.html, GPU-specific partials)
-- Update Jinja2 template loader to search: `[mode]/templates/`, then `common/templates/`
+- Configure a `Jinja2Templates` factory inside `src/api/server.py` that searches `[mode]/templates/`, then `common/templates/`, and inject it into routers instead of constructing template objects at import time.
+- Mount `/static` from `src/common/web/static/` inside `src/api/server.py`; delete the per-module static mounting currently in `src/api_server.py`.
 
 **7. Extract CPU Implementation** (`src/api/cpu/`)
 - Migrate `modes/sqlite_only/runtime.py` → `api/cpu/runtime.py`
@@ -196,6 +200,8 @@ src/
 - Update to import from `api/runtime_builder.py`
 - Update `src/api/dependencies.py` for new paths
 - Update all `src/api/routers/*` imports
+- Replace router/global imports (`src/api/dependencies.py`, `src/api/routers/ui.py` SSE endpoints, etc.) so everything consumes instances passed through `dependencies.py` instead of importing `src.api_server`.
+- Remove MCP coupling from UI routers (e.g., `_invalidate_categories_cache_safe` should emit an event via a service, not `sys.modules["src.server"]`).
 - Delete `src/api_server.py`
 
 **11. TEST CPU MODE** ✅ **CHECKPOINT 1**
@@ -237,7 +243,10 @@ src/
 - Move `src/server.py` → `src/mcp/server.py`
 - Audit: MCP should ONLY import from `common/` (verify no `src.api.*` imports)
 - Update `mcp/api_client.py` imports: `src.config` → `src.common.config.config`
-- Update `mcp/handlers_*.py` imports
+- Update `mcp/handlers_*.py` so handlers no longer receive DB sessions or `SearchService` instances:
+  - Replace repository calls with HTTP requests via `src.common.api_client.client.CHlAPIClient` (or a thin MCP wrapper) for `list_categories`, `read_entries`, `write_entry`, etc.
+  - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata.
+  - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`).
 - Delete `src/server.py`
 
 **17. TEST MCP** ✅ **CHECKPOINT 3**
@@ -257,11 +266,16 @@ src/
 - Fix imports in all Python scripts:
   - `from src.api_client import` → `from src.common.api_client.client import`
   - `from src.config import` → `from src.common.config.config import`
-  - `from src.storage import` → `from src.common.storage import`
-  - `from src.search.service import` → `from src.api.services.search_service import`
-  - `from src.embedding.service import` → `from src.api.gpu.embedding_service import`
+  - `from src.storage import` → `from src.common.storage`
+  - `from src.search.service import` → `from src.api.services.search_service`
+  - `from src.embedding.service import` → `from src.api.gpu.embedding_service`
+- Add `scripts/seed_default_content.py` to the migration list (currently imports `src.config` and dynamically loads `scripts/setup-gpu.py`).
+- Decide boundary strategy for scripts that still rely on API internals:
+  1. **Shared helpers**: move FAISS/embedding utilities needed by `rebuild_index.py`, `sync_embeddings.py`, `tweak/*`, etc., into `src/common/search` or `src/common/embedding` so scripts import from `common/`.
+  2. **HTTP orchestration**: rewrite scripts (e.g., `setup-gpu.py`, `sync_embeddings.py`) to call REST endpoints via `CHLAPIClient` and stop importing `src.api.*`.
+  Document the choice per script inside this plan to enforce the "Scripts → API internals" prohibition after Phase 0.
 - **Scripts to update**:
-  - `import.py`, `export.py`
+  - `import.py`, `export.py`, `seed_default_content.py`
   - `rebuild_index.py`, `sync_embeddings.py`, `sync_guidelines.py`
   - `setup-gpu.py`, `setup-cpu.py`
   - `gpu_smoke_test.py`, `search_health.py`
@@ -287,6 +301,7 @@ src/
   - Test SQLite provider works independently
   - Test Vector provider graceful degradation
   - Test search service fallback logic
+- Update `tests/api/conftest.py`, `tests/integration/test_concurrent_faiss*.py`, and any docs that import `src.api_server` (README, `doc/manual.md`) to reference `src.api.server`.
 
 **21. Update Documentation**
 - `doc/architecture/phase_0_boundaries.md`: Document structure and import rules
