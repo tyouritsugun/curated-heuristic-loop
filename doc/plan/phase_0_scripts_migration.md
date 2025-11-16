@@ -23,11 +23,11 @@ This document details the migration strategy for 13+ operational scripts in the 
 ### 4. **Backend Prerequisites**
 - The FastAPI surface must expose the same capabilities the scripts rely on today. Concretely:
   - Keep every public endpoint under `/api/v1/...` and update examples to use that prefix (e.g., `/api/v1/entries/read`, `/api/v1/settings/`, `/api/v1/operations/{job}`).
-  - Add operation job handlers for “sync-embeddings”, “rebuild-index”, “sync-guidelines”, and “import-sheets” that internally run the existing script logic (or delegate to those scripts via `OperationsService`). Scripts will call `POST /api/v1/operations/{job}` and poll `/api/v1/operations/jobs/{id}` instead of shelling out.
+  - Add operation job handlers for "sync-embeddings", "rebuild-index", "sync-guidelines", and "import-sheets" that internally run the existing script logic (or delegate to those scripts via `OperationsService`). Scripts will call `POST /api/v1/operations/{job}` and poll `/api/v1/operations/jobs/{job_id}` instead of shelling out.
   - Expose a read-only `/api/v1/search/health` endpoint mirroring `scripts/search_health.py` output so diagnostics can drop their direct SQL dependency.
-  - Provide bulk export/import endpoints (e.g., `/api/v1/entries/export`, `/api/v1/entries/import`) or streaming payloads so scripts are not forced to loop over thousands of individual `/entries/write` calls.
+  - Provide bulk export/import endpoints (e.g., `/api/v1/entries/export`, `/api/v1/entries/import`). **Note:** Batch size and pagination concerns are deferred as the current dataset is limited and unlikely to grow rapidly in the MVP stage.
 - Extend `CHLAPIClient` with small `.get()`/`.post()` helpers plus typed wrappers for the new endpoints before removing `src/api_client.py`.
-- The destructive import/export flows currently truncate tables, reset FAISS directories, and coordinate background workers. Either re-implement that behavior as an API operation or declare script-only escape hatches in this doc so expectations stay realistic.
+- Implementation details (e.g., which router handles each endpoint) are left to developer discretion during implementation.
 
 ## Global Import Updates
 
@@ -86,7 +86,7 @@ def import_from_sheets():
         sync_job = api_client.post("/api/v1/operations/sync-embeddings")
         sync_job_id = sync_job["job_id"]
 
-        # Optional: Poll for completion
+        # Optional: Poll for completion (implementation should include timeout to avoid infinite loops)
         while True:
             status = api_client.get(f"/api/v1/operations/jobs/{sync_job_id}")
             if status["state"] in ["completed", "failed"]:
@@ -103,8 +103,8 @@ def import_from_sheets():
 - ✅ GPU operations triggered conditionally
 - ❌ No direct imports from `src.api.*`
 
-**Transaction Semantics:**
-- For GPU mode, the import is "transactional" in the sense that if embedding sync fails, the user is notified
+**Concurrency Handling:**
+- The API server uses lock mechanisms to prevent data inconsistency during concurrent operations
 - The script can optionally wait for embedding completion or return immediately (async pattern)
 
 ---
@@ -195,11 +195,11 @@ def rebuild_index():
 
     # Trigger rebuild (mode-aware on server side)
     job = api_client.post("/api/v1/operations/rebuild-index")
-    job_id = job["id"]
+    job_id = job["job_id"]
 
-    # Poll for completion
+    # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
-            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
+        status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -231,11 +231,11 @@ def sync_embeddings():
 
     # Trigger sync (GPU-only endpoint)
     job = api_client.post("/api/v1/operations/sync-embeddings")
-    job_id = job["id"]
+    job_id = job["job_id"]
 
-    # Poll for completion
+    # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
-            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
+        status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -266,11 +266,11 @@ def sync_guidelines():
 
     # Trigger sync
     job = api_client.post("/api/v1/operations/sync-guidelines")
-    job_id = job["id"]
+    job_id = job["job_id"]
 
-    # Poll for completion
+    # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
-            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
+        status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -308,9 +308,9 @@ def setup_gpu():
 ```
 
 **Rationale:**
-- ⚠️ One-time setup, tightly coupled to GPU internals
+- ⚠️ One-time setup script that runs **FIRST** before the API server starts
 - ⚠️ Exception to the "no src.api.* imports" rule
-- ⚠️ Runs before API server is available
+- ⚠️ GPU-specific setup dependencies must be moved from API server code to this script or other dedicated scripts in `scripts/` folder
 - ✅ Clearly documented as setup-only script
 
 ---
@@ -420,76 +420,7 @@ def check_search_health():
 
 ---
 
-### 11. `scripts/tweak/read.py` - Low-Level DB Read
-
-**Current Behavior:**
-- Reads raw DB entries for debugging
-
-**Migration Strategy: Common + HTTP**
-
-```python
-from src.common.storage.repository import Repository
-from src.common.storage.database import Database
-from src.common.api_client.client import CHLAPIClient
-from src.common.config.config import Config
-
-def read_entry(entry_id: str):
-    config = Config()
-
-    # Direct DB read for low-level debugging
-    db = Database(config.db_path)
-    repo = Repository(db)
-    entry = repo.get_entry(entry_id)
-
-    # Also fetch via API for comparison
-    api_client = CHLAPIClient(base_url=config.api_url)
-    api_entry = api_client.get(f"/api/v1/entries/{entry_id}")
-
-    print("DB entry:", entry)
-    print("API entry:", api_entry)
-```
-
-**Key Points:**
-- ✅ Uses common utilities for direct DB access
-- ✅ HTTP for comparison/validation
-- ✅ Low-level diagnostic tool
-- 🔧 Implementation detail: the existing script imports `src.mcp.handlers_entries`. Move the shared handler helpers into `src/common/diagnostics/handlers.py` (or similar) so this “tweak” tool no longer depends on MCP internals, and keep its HTTP fallback as the source of truth.
-
----
-
-### 12. `scripts/tweak/write.py` - Low-Level DB Write
-
-**Current Behavior:**
-- Writes raw DB entries for debugging/maintenance
-
-**Migration Strategy: Common + HTTP**
-
-```python
-from src.common.storage.repository import Repository
-from src.common.storage.database import Database
-from src.common.api_client.client import CHLAPIClient
-from src.common.config.config import Config
-
-def write_entry(entry_data: dict):
-    config = Config()
-    db = Database(config.db_path)
-    repo = Repository(db)
-
-    # Direct DB write
-    repo.upsert_entry(entry_data)
-
-    # Trigger embeddings sync if GPU mode
-    api_client = CHLAPIClient(base_url=config.api_url)
-    settings = api_client.get("/api/v1/settings/")
-    if settings["search_mode"] == "auto":
-        api_client.post("/api/v1/operations/sync-embeddings")
-```
-
-**Key Points:**
-- ✅ Direct DB write for low-level operations
-- ✅ Mode-aware embedding sync via HTTP
-- ✅ Maintenance tool
-- 🔧 Implementation detail: relocate `make_write_entry_handler` (currently under `src.mcp.handlers_entries`) into a common diagnostics module or rework it into an internal API so this script no longer depends on MCP internals when crafting payloads.
+**Note:** The legacy `scripts/tweak/read.py` and `scripts/tweak/write.py` scripts are removed in Phase 0 for simplicity. Debugging and maintenance operations should be performed through the API server endpoints instead.
 
 ---
 
@@ -507,8 +438,6 @@ def write_entry(entry_data: dict):
 | setup-cpu.py | HTTP + Common | ❌ | ✅ (optional) | ❌ |
 | **gpu_smoke_test.py** | **Keep API Imports** | ✅ (exception) | ❌ | ❌ |
 | search_health.py | HTTP | ❌ | ✅ | ✅ |
-| tweak/read.py | Common + HTTP | ❌ | ✅ (comparison) | ❌ |
-| tweak/write.py | Common + HTTP | ❌ | ✅ (embeddings) | ✅ |
 
 ## Exception Policy
 
@@ -540,8 +469,8 @@ After migration, verify each script:
 - [ ] `python scripts/setup-cpu.py` - Standalone (no API)
 - [ ] `python scripts/gpu_smoke_test.py` - Standalone (no API)
 - [ ] `python scripts/search_health.py` - Both modes (API running)
-- [ ] `python scripts/tweak/read.py <id>` - Both modes
-- [ ] `python scripts/tweak/write.py <data>` - Both modes
+
+**Note:** Unit tests should be written during implementation. Integration tests should be run before the final migration to ensure all scripts work correctly with the new architecture.
 
 ## API Endpoints Required
 
@@ -562,24 +491,7 @@ Scripts depend on these API endpoints (ensure they exist):
 
 ## Import Validation
 
-Add to `tests/architecture/test_boundaries.py`:
-
-```python
-def test_scripts_no_api_imports():
-    """Ensure operational scripts don't import from src.api.*"""
-    exceptions = ["setup-gpu.py", "gpu_smoke_test.py"]  # Setup/test scripts
-
-    for script_path in glob("scripts/**/*.py"):
-        if any(exc in script_path for exc in exceptions):
-            continue  # Skip exceptions
-
-        with open(script_path) as f:
-            content = f.read()
-            assert "from src.api." not in content, \
-                f"{script_path} imports from src.api.* (use src.common.api_client instead)"
-            assert "import src.api." not in content, \
-                f"{script_path} imports src.api.* (use src.common.api_client instead)"
-```
+Boundary tests should be implemented in `tests/architecture/test_boundaries.py` to ensure operational scripts (excluding `setup-gpu.py` and `gpu_smoke_test.py`) do not import from `src.api.*`. Implementation details are left to the developer.
 
 ---
 
@@ -590,10 +502,11 @@ Suggested order for script migration (Step 19 of Phase 4):
 1. **Foundation**: Update global imports in all scripts (config, storage, api_client)
 2. **Mode-agnostic scripts**: export.py, sync_guidelines.py, search_health.py
 3. **HTTP-only scripts**: rebuild_index.py, sync_embeddings.py
-4. **Mode-aware scripts**: import.py, seed_default_content.py, tweak/write.py
-5. **Common utilities scripts**: setup-cpu.py, tweak/read.py
+4. **Mode-aware scripts**: import.py, seed_default_content.py
+5. **Common utilities scripts**: setup-cpu.py
 6. **Exception scripts (last)**: setup-gpu.py, gpu_smoke_test.py (keep api imports)
 7. **Test all scripts** per checklist above
+8. **Remove deprecated scripts**: Delete `scripts/tweak/read.py` and `scripts/tweak/write.py`
 
 ---
 
