@@ -63,6 +63,7 @@
 - The MCP server may import only `Config` and `CHLAPIClient` from `src/common.*`; all other behavior must go through HTTP endpoints.
 - API and MCP communicate only via HTTP (CHLAPIClient).
 - Boundary tests enforce these architectural rules (including forbidden MCP imports from `src.common.storage.*`, `src.common.web_utils.*`, etc.).
+ - Setup and internal diagnostic scripts (e.g., `scripts/setup-gpu.py`, `scripts/gpu_smoke_test.py`) are explicit exceptions: they may import `src.api.*` directly but only run with the API server stopped, and never act as general orchestration tools.
 
 ### ADR-004: Local-Only Deployment Model
 

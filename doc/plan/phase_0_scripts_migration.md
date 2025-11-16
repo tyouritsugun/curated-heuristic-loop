@@ -90,11 +90,11 @@ def import_from_sheets():
         # Optional: Poll for completion (implementation should include timeout to avoid infinite loops)
         while True:
             status = api_client.get(f"/api/v1/operations/jobs/{sync_job_id}")
-            if status["state"] in ["completed", "failed"]:
+            if status["status"] in ["succeeded", "failed", "cancelled"]:
                 break
             time.sleep(1)
 
-        print(f"Embeddings sync: {status['state']}")
+        print(f"Embeddings sync: {status['status']}")
 ```
 
 **Key Points:**
@@ -201,11 +201,11 @@ def rebuild_index():
     # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
         status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
-        if status["state"] in ["completed", "failed"]:
+        if status["status"] in ["succeeded", "failed", "cancelled"]:
             break
         time.sleep(1)
 
-    print(f"Index rebuild: {status['state']}")
+    print(f"Index rebuild: {status['status']}")
 ```
 
 **Key Points:**
@@ -237,11 +237,11 @@ def sync_embeddings():
     # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
         status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
-        if status["state"] in ["completed", "failed"]:
+        if status["status"] in ["succeeded", "failed", "cancelled"]:
             break
         time.sleep(1)
 
-    print(f"Embeddings sync: {status['state']}")
+    print(f"Embeddings sync: {status['status']}")
 ```
 
 **Key Points:**
@@ -272,11 +272,11 @@ def sync_guidelines():
     # Poll for completion (implementation should include timeout to avoid infinite loops)
     while True:
         status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
-        if status["state"] in ["completed", "failed"]:
+        if status["status"] in ["succeeded", "failed", "cancelled"]:
             break
         time.sleep(1)
 
-    print(f"Guidelines sync: {status['state']}")
+    print(f"Guidelines sync: {status['status']}")
 ```
 
 ---
@@ -492,9 +492,9 @@ Scripts depend on these API endpoints (ensure they exist):
 
 ## Operations Job Contract
 
-- `POST /api/v1/operations/{job_name}` returns JSON with at least `{"job_id": "<string>"}`. Expected job names include: `import-sheets`, `sync-embeddings`, `rebuild-index`, `sync-guidelines`, and `seed-defaults`.
-- `GET /api/v1/operations/jobs/{job_id}` returns JSON with at least `{"job_id": ..., "name": ..., "state": ..., "error": Optional[str]}`. Additional metadata (timestamps, counts) is allowed but not required by scripts.
-- `state` values are finite and include a terminal subset; scripts treat `["completed", "failed"]` as terminal states and may ignore intermediary states such as `"queued"` or `"running"`.
+- `POST /api/v1/operations/{job_name}` returns JSON with at least `{"job_id": "<string>", "status": "<string>"}`. Expected job names include: `import-sheets`, `sync-embeddings`, `rebuild-index`, `sync-guidelines`, and `seed-defaults`.
+- `GET /api/v1/operations/jobs/{job_id}` returns JSON with at least `{"job_id": ..., "job_type": ..., "status": ..., "error": Optional[str]}`. Additional metadata (timestamps, counts) is allowed but not required by scripts.
+- `status` values are finite and include a terminal subset; scripts treat `["succeeded", "failed", "cancelled"]` as terminal states and may ignore intermediary states such as `"queued"` or `"running"`.
 - Operations are expected to be idempotent from the caller’s point of view. The API server is responsible for locking and deduplication so that repeated triggers do not corrupt the database or FAISS index.
 - Long-running operations should surface meaningful `error` messages on failure so scripts can print them before exiting with a non-zero status.
 

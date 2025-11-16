@@ -208,7 +208,7 @@ src/
 - Delete `src/api_server.py`
 
 **9a. API Surface Alignment**
-- Keep all public routes under `/api/v1/...` and update every script/doc example accordingly (no bare `/entries` or `/settings`). If we want short aliases later, add FastAPI sub-routers that simply 307 to the versioned paths.
+- Keep all public routes under `/api/v1/...` and update every script/doc example accordingly (no bare `/entries` or `/settings`). If we want short aliases later, add FastAPI sub-routers that simply 307 to the versioned paths. The only deliberate exception is the top-level `/health` probe, which remains unversioned for simplicity and compatibility with existing tooling.
 - Promote script-only workflows into first-class operations endpoints so Phase 0 doesn’t block on “manual DB work”:
   - Add operation handlers for “import from Sheets”, “sync embeddings”, “rebuild index”, and “sync guidelines” that wrap the existing script logic (ideally by delegating through `OperationsService` job types). `POST /api/v1/operations/{job}` already exists—ensure job names (`sync-embeddings`, `rebuild-index`, `sync-guidelines`, `import-sheets`) are wired up server-side before scripts switch to HTTP.
   - Expose a read-only `/api/v1/search/health` JSON endpoint that surfaces the data currently produced by `scripts/search_health.py` (counts, FAISS status, warnings) so diagnostics stay available without shelling into SQLite.
@@ -360,7 +360,8 @@ from src.api.services.search_service import SearchService   # Test fixtures only
 # MCP → common ONLY
 from src.common.config.config import Config
 from src.common.api_client.client import CHLAPIClient
-from src.common.storage.schema import Experience
+# NOTE: MCP must not import from src.common.storage.* or src.common.web_utils.*;
+# all storage and web concerns are reached only via HTTP JSON payloads.
 
 # API → common
 from src.common.storage.database import Database
