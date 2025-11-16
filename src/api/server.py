@@ -41,18 +41,8 @@ from src.api.services.telemetry_service import TelemetryService
 
 logger = logging.getLogger(__name__)
 
-# Global singletons (initialized on startup)
-config = None
-db = None
-search_service = None
-thread_safe_faiss = None
-settings_service = None
-operations_service = None
-worker_control_service = None
-telemetry_service = None
-background_worker = None
-worker_pool = None
-mode_runtime = None
+# Note: All service singletons are now stored in app.state instead of module globals
+# to avoid circular imports with dependencies.py
 
 
 class JSONFormatter(logging.Formatter):
@@ -84,62 +74,59 @@ def configure_logging():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global config, db, search_service, thread_safe_faiss
-    global settings_service, operations_service, worker_control_service, telemetry_service
-    global background_worker, worker_pool, mode_runtime
-
+    # Use app.state instead of module globals to avoid circular imports
     logger.info("Starting CHL API server...")
 
     try:
-        config = Config()
+        app.state.config = Config()
         logger.info("Configuration loaded")
 
-        db = Database(config.database_path)
-        db.init_database()
+        app.state.db = Database(app.state.config.database_path)
+        app.state.db.init_database()
         logger.info("Database initialized")
 
-        settings_service = SettingsService(db.get_session, config.experience_root)
-        settings_service.set_config(config)
-        worker_control_service = WorkerControlService(db.get_session)
-        operations_service = OperationsService(
-            session_factory=db.get_session,
-            data_path=config.experience_root,
-            faiss_index_path=Path(config.faiss_index_path),
+        app.state.settings_service = SettingsService(app.state.db.get_session, app.state.config.experience_root)
+        app.state.settings_service.set_config(app.state.config)
+        app.state.worker_control_service = WorkerControlService(app.state.db.get_session)
+        app.state.operations_service = OperationsService(
+            session_factory=app.state.db.get_session,
+            data_path=app.state.config.experience_root,
+            faiss_index_path=Path(app.state.config.faiss_index_path),
         )
         logger.info("Core services initialized (settings, worker control, operations)")
 
-        background_worker = None
-        worker_pool = None
+        app.state.background_worker = None
+        app.state.worker_pool = None
 
-        mode_runtime = build_mode_runtime(config, db, worker_control_service)
-        search_service = mode_runtime.search_service
-        thread_safe_faiss = mode_runtime.thread_safe_faiss
+        app.state.mode_runtime = build_mode_runtime(app.state.config, app.state.db, app.state.worker_control_service)
+        app.state.search_service = app.state.mode_runtime.search_service
+        app.state.thread_safe_faiss = app.state.mode_runtime.thread_safe_faiss
 
         # Attach mode runtime to services for diagnostics and operations
         try:
-            settings_service.set_mode_runtime(mode_runtime)
+            app.state.settings_service.set_mode_runtime(app.state.mode_runtime)
         except Exception as exc:
             logger.warning("Failed to attach mode runtime to SettingsService: %s", exc)
 
         try:
-            operations_service.set_mode_adapter(getattr(mode_runtime, "operations_mode_adapter", None))
+            app.state.operations_service.set_mode_adapter(getattr(app.state.mode_runtime, "operations_mode_adapter", None))
         except Exception as exc:
             logger.warning("Failed to attach mode adapter to OperationsService: %s", exc)
 
         # Expose background worker / pool for telemetry if available
-        background_worker = getattr(mode_runtime, "background_worker", None)
-        worker_pool = getattr(mode_runtime, "worker_pool", None)
+        app.state.background_worker = getattr(app.state.mode_runtime, "background_worker", None)
+        app.state.worker_pool = getattr(app.state.mode_runtime, "worker_pool", None)
 
         def get_queue_depth():
-            with db.session_scope() as session:
-                return worker_control_service.queue_depth(session)
+            with app.state.db.session_scope() as session:
+                return app.state.worker_control_service.queue_depth(session)
 
-        telemetry_service = TelemetryService(
-            session_factory=db.get_session,
+        app.state.telemetry_service = TelemetryService(
+            session_factory=app.state.db.get_session,
             queue_probe=get_queue_depth,
-            worker_probe=lambda: worker_pool.get_status() if worker_pool else None,
+            worker_probe=lambda: app.state.worker_pool.get_status() if app.state.worker_pool else None,
         )
-        await telemetry_service.start()
+        await app.state.telemetry_service.start()
         logger.info("Telemetry service started")
 
         yield
@@ -147,34 +134,34 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Shutting down CHL API server...")
 
-        if telemetry_service:
+        if hasattr(app.state, 'telemetry_service') and app.state.telemetry_service:
             try:
-                await telemetry_service.stop()
+                await app.state.telemetry_service.stop()
             except Exception as e:
                 logger.warning(f"Error stopping telemetry service: {e}")
 
-        if background_worker and background_worker.is_running():
+        if hasattr(app.state, 'background_worker') and app.state.background_worker and app.state.background_worker.is_running():
             try:
-                background_worker.stop(timeout=10.0)
+                app.state.background_worker.stop(timeout=10.0)
                 logger.info("Background embedding worker stopped")
             except Exception as e:
                 logger.warning(f"Error stopping background worker: {e}")
 
-        if operations_service:
+        if hasattr(app.state, 'operations_service') and app.state.operations_service:
             try:
-                operations_service.shutdown()
+                app.state.operations_service.shutdown()
             except Exception as e:
                 logger.warning(f"Error shutting down operations service: {e}")
 
-        if thread_safe_faiss:
+        if hasattr(app.state, 'thread_safe_faiss') and app.state.thread_safe_faiss:
             try:
-                thread_safe_faiss.shutdown()
+                app.state.thread_safe_faiss.shutdown()
                 logger.info("ThreadSafeFAISSManager shut down")
             except Exception as e:
                 logger.warning(f"Error shutting down ThreadSafeFAISSManager: {e}")
 
-        if db:
-            db.close()
+        if hasattr(app.state, 'db') and app.state.db:
+            app.state.db.close()
             logger.info("Database connection closed")
         logger.info("CHL API server shut down")
 

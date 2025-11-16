@@ -31,10 +31,17 @@ class CHLAPIClient:
     - Queue status
     """
 
+    # Timeout constants (in seconds)
+    DEFAULT_TIMEOUT = 30
+    HEALTH_CHECK_TIMEOUT = 2
+    WORKER_OPERATION_TIMEOUT = 5
+    QUEUE_DRAIN_TIMEOUT = 300
+    QUEUE_DRAIN_BUFFER = 10  # Extra time for drain endpoint overhead
+
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
-        timeout: int = 30,
+        timeout: int = DEFAULT_TIMEOUT,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -71,7 +78,7 @@ class CHLAPIClient:
         try:
             response = self.session.get(
                 f"{self.base_url}/health",
-                timeout=timeout or 2,
+                timeout=timeout or self.HEALTH_CHECK_TIMEOUT,
             )
             return response.status_code in (200, 307)
         except Exception as exc:  # noqa: BLE001
@@ -93,7 +100,7 @@ class CHLAPIClient:
         try:
             response = self.session.post(
                 f"{self.base_url}/admin/queue/pause",
-                timeout=timeout or 5,
+                timeout=timeout or self.WORKER_OPERATION_TIMEOUT,
             )
             if response.status_code == 200:
                 logger.info("Background workers paused successfully")
@@ -112,7 +119,7 @@ class CHLAPIClient:
         try:
             response = self.session.post(
                 f"{self.base_url}/admin/queue/resume",
-                timeout=timeout or 5,
+                timeout=timeout or self.WORKER_OPERATION_TIMEOUT,
             )
             if response.status_code == 200:
                 logger.info("Background workers resumed successfully")
@@ -126,8 +133,10 @@ class CHLAPIClient:
             logger.warning("Failed to resume workers: %s", exc)
             return False
 
-    def drain_queue(self, timeout: int = 300) -> Dict[str, Any]:
+    def drain_queue(self, timeout: int = None) -> Dict[str, Any]:
         """Wait for embedding queue to drain and return extended metadata."""
+        if timeout is None:
+            timeout = self.QUEUE_DRAIN_TIMEOUT
         result: Dict[str, Any] = {
             "success": False,
             "status": "error",
@@ -140,7 +149,7 @@ class CHLAPIClient:
             response = self.session.post(
                 f"{self.base_url}/admin/queue/drain",
                 params={"timeout": timeout},
-                timeout=timeout + 10,
+                timeout=timeout + self.QUEUE_DRAIN_BUFFER,
             )
             if response.status_code == 200:
                 payload = response.json()
@@ -179,7 +188,7 @@ class CHLAPIClient:
         try:
             response = self.session.get(
                 f"{self.base_url}/admin/queue/status",
-                timeout=timeout or 5,
+                timeout=timeout or self.WORKER_OPERATION_TIMEOUT,
             )
             if response.status_code == 200:
                 return response.json()
@@ -213,11 +222,13 @@ class CHLAPIClient:
 
     def wait_for_queue_drain(
         self,
-        timeout: int = 300,
+        timeout: int = None,
         max_attempts: int = 3,
         stable_reads: int = 2,
     ) -> Dict[str, Any]:
         """Iteratively drain queue until it remains empty for multiple checks."""
+        if timeout is None:
+            timeout = self.QUEUE_DRAIN_TIMEOUT
         history: List[Dict[str, Any]] = []
         summary: Dict[str, Any] = {
             "success": False,

@@ -327,7 +327,8 @@ class OperationsService:
         session.commit()
         session.close()
 
-        handler = self._handlers.get(job_type, self._noop_handler)
+        # Handler is guaranteed to exist due to validation in trigger()
+        handler = self._handlers[job_type]
         handler_session = self._session_factory()
         error_detail = None
         result_payload: Optional[Dict[str, Any]] = None

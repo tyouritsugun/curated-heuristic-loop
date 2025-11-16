@@ -119,7 +119,8 @@ def get_cached_categories() -> Optional[Dict[str, Any]]:
     with _categories_cache_lock:
         payload = _categories_cache.get("payload")
         expires = _categories_cache.get("expires", 0.0)
-        if payload is None or expires < time.time():
+        # Use monotonic time to avoid issues with system clock adjustments
+        if payload is None or expires < time.monotonic():
             return None
         return payload
 
@@ -128,7 +129,8 @@ def set_categories_cache(payload: Dict[str, Any]) -> None:
     """Update categories cache with fresh payload."""
     with _categories_cache_lock:
         _categories_cache["payload"] = payload
-        _categories_cache["expires"] = time.time() + CATEGORIES_CACHE_TTL
+        # Use monotonic time to avoid issues with system clock adjustments
+        _categories_cache["expires"] = time.monotonic() + CATEGORIES_CACHE_TTL
 
 
 def invalidate_categories_cache() -> None:
@@ -223,8 +225,9 @@ def startup_health_check(client: CHLAPIClient, max_wait: int = 30) -> bool:
     Wait up to max_wait seconds for /health to report
     status 'healthy' or 'degraded'.
     """
-    start_time = time.time()
-    while time.time() - start_time < max_wait:
+    # Use monotonic time to avoid issues with system clock adjustments
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < max_wait:
         try:
             health = client.get_health()
             status = health.get("status")
