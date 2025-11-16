@@ -2,63 +2,154 @@
 
 ## 1. Overview
 
-This document describes the technical architecture of the Curated Heuristic Loop (CHL) system. The system is designed around a local-first data model using SQLite and FAISS, with Google Sheets serving as a medium for human-in-the-loop curation.
+This document describes the technical architecture of the Curated Heuristic Loop (CHL) system after Phase 0 codebase isolation. The system is designed around a **two-tier HTTP-based architecture** with clear separation between the API server (data & compute) and the MCP server (protocol adapter).
+
+For the architectural design decisions that led to this structure, see [doc/plan/architecture_refine.md](plan/architecture_refine.md).
 
 ### 1.1. High-Level Diagram
+
 ```mermaid
 graph TB
     subgraph "Client Layer"
-        CA[Code Assistant<br/>Generator / Evaluator]
+        CA[Code Assistant<br/>Cursor / Claude Code]
     end
 
-    subgraph "MCP Server (src/mcp/server.py)"
-        HNDL[Tool Handlers<br/>src/mcp/*]
+    subgraph "MCP Server (src/mcp/) - Lightweight HTTP Client"
+        MCPCORE[MCP Core<br/>src/mcp/server.py]
+        HNDL[Tool Handlers<br/>src/mcp/handlers_*.py]
     end
 
-    subgraph "Application Services"
-        SRCH[SearchService<br/>src/search/service.py]
-        OPS[OperationsService<br/>src/services/operations_service.py]
+    subgraph "API Server (src/api/) - FastAPI Runtime"
+        ROUTERS[API Routers<br/>src/api/routers/*]
+        SRVCS[Services<br/>src/api/services/*]
+        RUNTIME[Runtime Builder<br/>Strategy: CPU vs GPU]
     end
 
-    subgraph "Storage (src/storage)"
-        DB[(SQLite + SQLAlchemy)]
-        SHEETS[SheetsClient<br/>Google Sheets]
-        INDEX[FAISS Index + Snapshots]
+    subgraph "Common Layer (src/common/)"
+        APICLIENT[CHLAPIClient<br/>HTTP Client]
+        CONFIG[Config<br/>Environment Variables]
+        DTO[DTOs<br/>Shared Data Structures]
     end
 
-    subgraph "Scripts (scripts/)"
+    subgraph "API Server Storage & Compute"
+        DB[(SQLite + SQLAlchemy<br/>src/common/storage/)]
+        SHEETS[SheetsClient<br/>Google Sheets API]
+        SEARCH[Search Providers<br/>CPU: SQLite Text<br/>GPU: FAISS + Embeddings]
+    end
+
+    subgraph "Scripts (scripts/) - API Server Venv"
         EXPORT[export.py]
         IMPORT[import.py]
         REBUILD[rebuild_index.py]
+        SETUP[setup-gpu.py<br/>setup-cpu.py]
     end
 
-    CA -->|MCP protocol| HNDL
-    HNDL --> SRCH
-    HNDL --> OPS
-    HNDL --> DB
-    SRCH --> DB
-    SRCH --> INDEX
-    OPS --> DB
-    OPS --> INDEX
-    HNDL --> SHEETS
-    EXPORT --> DB
-    EXPORT --> SHEETS
-    IMPORT --> DB
-    IMPORT --> SHEETS
-    REBUILD --> DB
-    REBUILD --> INDEX
+    CA -->|MCP Protocol| MCPCORE
+    MCPCORE --> HNDL
+    HNDL -.->|HTTP Only| APICLIENT
+    APICLIENT -.->|HTTP POST/GET| ROUTERS
+    ROUTERS --> SRVCS
+    SRVCS --> RUNTIME
+    RUNTIME --> SEARCH
+    RUNTIME --> DB
+    SRVCS --> SHEETS
+    EXPORT -.->|HTTP + Direct DB| ROUTERS
+    IMPORT -.->|HTTP + Direct DB| ROUTERS
+    REBUILD -.->|HTTP + Direct DB| ROUTERS
+    SETUP -->|Direct Access| RUNTIME
 ```
+
+**Key Architectural Principles:**
+
+1. **HTTP-Only Communication**: MCP server communicates with API server exclusively via HTTP (ADR-001)
+2. **Two-Tier Deployment**: API server (platform-specific venv) + MCP server (uv sync)
+3. **CPU/GPU Separation**: Strategy pattern for runtime modes, fixed at startup (ADR-002, ADR-005)
+4. **Local-Only Deployment**: No authentication, simple error handling (ADR-004)
+5. **Clear Import Boundaries**: MCP imports only from `src.common.{config,api_client,dto}` (ADR-003)
 
 ## 2. System Components
 
-The system consists of several key components:
+### 2.1. API Server (`src/api/`)
 
--   **MCP Server (`src/mcp/server.py`):** A lightweight server that exposes the CHL functionality to AI assistants via the Model Context Protocol (MCP). It handles tool calls like `read_entries` and `write_entry`.
--   **API Server (`src/api/server.py`):** A FastAPI server that provides a REST API for programmatic access and serves the web-based UI for operations and settings.
--   **Application Services (`src/services`):** Core logic for operations, settings management, and telemetry.
--   **Search Service (`src/search`):** An abstraction layer for finding relevant entries. It uses a provider-based model, with the primary implementation using FAISS for vector search and a fallback SQLite provider.
--   **Storage Layer (`src/storage`):** Manages all data persistence. It includes the SQLAlchemy-based repository for interacting with the SQLite database and a client for Google Sheets.
--   **Scripts (`scripts/`):** A collection of command-line tools for setup, maintenance, and data synchronization (import/export).
+The FastAPI server is the sole authority for all data persistence, search operations, and background workers.
+
+**Responsibilities:**
+- SQLite database operations (CRUD, transactions)
+- Vector search (FAISS) and text search (SQLite FTS)
+- Background embedding worker (GPU mode only)
+- Google Sheets integration (import/export)
+- Web dashboards (Settings, Operations)
+- REST API for MCP and scripts
+
+**Runtime Modes:**
+- **CPU Mode** (`CHL_SEARCH_MODE=cpu`): SQLite text search only, no ML dependencies
+- **GPU Mode** (`CHL_SEARCH_MODE=gpu`): FAISS vector search with embeddings and reranking
+
+Mode is fixed at startup and requires full re-setup to change (see [ADR-005](plan/architecture_refine.md#adr-005-fixed-runtime-mode)).
+
+**Key Modules:**
+- `src/api/routers/` - FastAPI route handlers
+- `src/api/services/` - Business logic (operations, settings, telemetry, workers)
+- `src/api/cpu/` - CPU-specific runtime and search provider
+- `src/api/gpu/` - GPU-specific runtime, FAISS manager, embedding/reranker clients
+- `src/api/runtime_builder.py` - Strategy factory for CPU/GPU mode selection
+
+### 2.2. MCP Server (`src/mcp/`)
+
+The lightweight MCP server exposes CHL functionality to AI assistants via the Model Context Protocol. It is a **pure HTTP client** with no direct database or FAISS access.
+
+**Responsibilities:**
+- Handle MCP tool calls from AI assistants
+- Translate tool calls to API server HTTP requests
+- Return formatted responses to AI assistants
+
+**Architecture Constraint:**
+- MCP server may ONLY import from:
+  - `src.common.config.*` (environment configuration)
+  - `src.common.api_client.*` (CHLAPIClient HTTP wrapper)
+  - `src.common.dto.*` (shared data structures)
+- All other operations must go through API server HTTP endpoints
+
+**Key Modules:**
+- `src/mcp/server.py` - MCP protocol server (FastMCP)
+- `src/mcp/handlers_entries.py` - Entry operations (read, write, update)
+- `src/mcp/handlers_guidelines.py` - Guidelines operations
+- `src/mcp/core.py` - Shared runtime (API client, categories cache)
+
+### 2.3. Common Layer (`src/common/`)
+
+Shared utilities used by both API and MCP servers.
+
+**Modules:**
+- `src/common/config/` - Environment variable configuration
+- `src/common/api_client/` - CHLAPIClient HTTP wrapper
+- `src/common/dto/` - Shared data structures for validation
+- `src/common/storage/` - Database, schema, repository (API server only)
+- `src/common/web_utils/` - Static files, templates, markdown rendering (API server only)
+
+**Import Rules (enforced by boundary tests):**
+- MCP server: May import only `config`, `api_client`, `dto`
+- API server: May import all `src/common.*` modules
+- Scripts: May import `config`, `api_client`, `storage` (but run in API venv)
+
+### 2.4. Operational Scripts (`scripts/`)
+
+CLI tools for setup, maintenance, and data synchronization. Scripts run from the **API server's venv**, not via `uv run`.
+
+**HTTP-First Scripts:**
+- `import.py` - Pull data from Google Sheets (uses API endpoints + direct DB)
+- `export.py` - Push data to Google Sheets (uses API endpoints + direct DB)
+- `rebuild_index.py` - Rebuild FAISS/FTS index (HTTP orchestration)
+- `sync_embeddings.py` - Sync embeddings for all entries (GPU mode, HTTP)
+- `search_health.py` - Check search system health (HTTP)
+- `seed_default_content.py` - Load starter content (HTTP)
+
+**Setup Scripts (Exception to HTTP-First Rule):**
+- `setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
+- `setup-cpu.py` - Initialize database schema (direct DB access)
+- `gpu_smoke_test.py` - Test GPU components (direct API imports)
+
+These setup scripts are **exceptions** that can import from `src.api.*` because they configure internal components during initial setup (see [Phase 0 Scripts Migration](plan/phase_0_scripts_migration.md#exception-policy)).
 
 ## 3. Data Flow Patterns
 
@@ -68,29 +159,26 @@ The system consists of several key components:
 sequenceDiagram
     participant Dev as Developer
     participant LLM as Code Assistant
-    participant MCP as MCP Tools
-    participant ES as Experience Service
-    participant SS as Search Service
+    participant MCP as MCP Server
+    participant API as API Server
+    participant SEARCH as Search Service
     participant DB as SQLite
 
     Dev->>LLM: Brief task with @generator.md
     LLM->>MCP: list_categories()
-    MCP->>DB: Query categories
-    DB-->>MCP: Category list
+    MCP->>API: GET /api/v1/categories
+    API->>DB: Query categories
+    DB-->>API: Category list
+    API-->>MCP: JSON response
     MCP-->>LLM: Available categories
 
-    LLM->>MCP: read_entries(entity_type, category_code, query)
-    MCP->>ES: Get summaries
-    ES->>DB: Query experiences
-    DB-->>ES: Experience list
-    ES-->>MCP: ID + title summaries
-    MCP-->>LLM: Summaries
-
-    LLM->>MCP: read_entries(entity_type, category_code, ids)
-    MCP->>SS: Search/retrieve
-    SS->>DB: Query full entries
-    DB-->>SS: Full experiences
-    SS-->>MCP: Ranked results
+    LLM->>MCP: read_entries(query="error handling")
+    MCP->>API: POST /api/v1/entries/read
+    API->>SEARCH: Search with query
+    SEARCH->>DB: Query entries
+    DB-->>SEARCH: Matching entries
+    SEARCH-->>API: Ranked results
+    API-->>MCP: JSON response
     MCP-->>LLM: Detailed entries
 
     LLM-->>Dev: Execute task with guidance
@@ -102,33 +190,24 @@ sequenceDiagram
 sequenceDiagram
     participant Dev as Developer
     participant LLM as Code Assistant
-    participant MCP as MCP Tools
-    participant ES as Experience Service
-    participant SS as Search Service
+    participant MCP as MCP Server
+    participant API as API Server
+    participant REPO as Repository
     participant DB as SQLite
 
     Dev->>LLM: Summarize with @evaluator.md
-    LLM->>MCP: write_entry(entity_type, category_code, data)
-    MCP->>ES: Create experience
+    LLM->>MCP: write_entry(data)
+    MCP->>API: POST /api/v1/entries/write
+    API->>REPO: Create entry
 
-    ES->>SS: find_duplicates(title, playbook)
-    SS->>DB: Search similar entries
-    DB-->>SS: Potential matches
-    SS-->>ES: Scored duplicates
+    REPO->>DB: Check duplicates
+    DB-->>REPO: Similar entries
+    REPO->>DB: Insert new entry
+    DB-->>REPO: Success
 
-    alt High similarity (atomic experiences)
-        ES-->>MCP: Suggest refactor into more orthogonal atomic entries (avoid merging)
-        MCP-->>LLM: Propose refactor plan
-        LLM->>Dev: Ask for confirmation
-    else Integrative change (manuals)
-        ES->>DB: Update category manual (keep concise)
-        ES-->>MCP: Manual updated + notes
-        MCP-->>LLM: Manual change suggested/applied
-    else New atomic guidance
-        ES->>DB: Create new atomic experience
-        ES-->>MCP: Success (with similarity context)
-        MCP-->>LLM: Entry created
-    end
+    REPO-->>API: Entry created
+    API-->>MCP: JSON response
+    MCP-->>LLM: Entry created with similarity context
 
     LLM-->>Dev: Summary with actions
 ```
@@ -143,8 +222,8 @@ flowchart TD
     end
 
     subgraph "Export Stage"
-        EXPORT[export.py<br/>Write SQLite → Sheets]
-        REVIEW[Google Sheet<br/>Curated tabs]
+        EXPORT[scripts/export.py<br/>API Server Venv]
+        REVIEW[Google Sheet<br/>Review Tab]
     end
 
     subgraph "Curation Stage"
@@ -153,11 +232,11 @@ flowchart TD
     end
 
     subgraph "Import Stage"
-        IMPORT[import.py<br/>Overwrite SQLite]
+        IMPORT[scripts/import.py<br/>API Server Venv]
     end
 
-    DEV1 -->|local datasets| EXPORT
-    DEV2 -->|local datasets| EXPORT
+    DEV1 -->|export script| EXPORT
+    DEV2 -->|export script| EXPORT
     EXPORT --> REVIEW
     REVIEW --> CURATOR
     CURATOR -->|approve/merge| PUBLISHED
@@ -168,61 +247,119 @@ flowchart TD
 
 ## 4. Data Models and Storage
 
-The system utilizes three primary data surfaces: local SQLite, a local FAISS index, and remote Google Sheets.
+The system utilizes three primary data surfaces: local SQLite, a local FAISS index (GPU mode only), and remote Google Sheets.
 
--   **Local SQLite:** The authoritative per-user store. It contains tables for `experiences` (atomic patterns), `category_manuals` (long-form context), `embeddings`, and metadata for tracking `source`, `sync_status`, and timestamps. All writes from the user flow here first.
--   **Local FAISS:** A performance layer for efficient vector search. The index is keyed by `experience_id` and `manual_id` and is updated through an operator-driven workflow (e.g., via the Web UI or `rebuild_index.py`). This keeps write latency low on the client side.
--   **Google Sheets:** A human-readable and -editable surface for team-based curation. The `export.py` script generates a **Review Sheet** from local databases, and curators merge approved content into a **Published Sheet**, which is then consumed by `import.py` to update local databases across the team.
+### 4.1. Local SQLite
 
-### 4.1. SQLite Schema Design
+The authoritative per-user store. Contains tables for:
 
--   **experiences:** Stores atomic patterns and heuristics.
-    -   Primary fields: `id`, `category_code`, `section`, `title`, `playbook`, `context`
-    -   Provenance: `source`, `sync_status`, `author`
-    -   Timestamps: `created_at`, `updated_at`, `synced_at`
--   **category_manuals:** For long-form context and domain knowledge.
-    -   Primary fields: `id`, `category_code`, `title`, `content`, `summary`
-    -   Provenance: `source`, `sync_status`, `author`
-    -   Timestamps: `created_at`, `updated_at`, `synced_at`
--   **embeddings:** Vector representations for search.
-    -   Links to experiences and manuals via `entity_id` and `entity_type`.
-    -   Stores serialized vectors and tracks the embedding model version.
--   **categories:** Metadata for each knowledge category.
-    -   Fields: `code`, `name`, `description`.
+- `experiences` - Atomic patterns and heuristics
+  - Fields: `id`, `category_code`, `section`, `title`, `playbook`, `context`
+  - Provenance: `source`, `sync_status`, `author`
+  - Timestamps: `created_at`, `updated_at`, `synced_at`
+
+- `category_manuals` - Long-form context and domain knowledge
+  - Fields: `id`, `category_code`, `title`, `content`, `summary`
+  - Provenance: `source`, `sync_status`, `author`
+  - Timestamps: `created_at`, `updated_at`, `synced_at`
+
+- `embeddings` - Vector representations for search (GPU mode only)
+  - Links to experiences/manuals via `entity_id` and `entity_type`
+  - Stores serialized vectors and embedding model version
+
+- `categories` - Metadata for each knowledge category
+  - Fields: `code`, `name`, `description`
+
+### 4.2. Local FAISS Index (GPU Mode Only)
+
+Performance layer for efficient vector search. Index is keyed by `experience_id` and `manual_id` and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
+
+**Mode-Specific Behavior:**
+- **CPU Mode**: No FAISS index, search uses SQLite `LIKE` queries
+- **GPU Mode**: FAISS index backed by embeddings table, with optional reranking
+
+### 4.3. Google Sheets
+
+Human-readable surface for team-based curation. Scripts generate a **Review Sheet** from local databases, and curators merge approved content into a **Published Sheet**, which is then consumed by `import.py` to update local databases across the team.
 
 ## 5. Key Architectural Decisions
 
-### 5.1. Knowledge Organization: Experience vs. Manual
+### 5.1. HTTP-Based API ↔ MCP Communication (ADR-001)
 
-The system distinguishes between two types of knowledge to balance specificity and context:
+**Decision**: Use HTTP/REST API as the sole communication method between MCP server and API server.
 
--   An **atomic experience** is preferred when guidance is focused, actionable, and testable on its own. To avoid bloat, the system encourages refactoring highly similar experiences to be more orthogonal rather than merging them.
--   A **manual update** is used for integrative background, architectural rationale, or synthesis across multiple experiences. Manuals are intended to be concise to preserve embedding quality.
+**Rationale:**
+- Multi-client concurrency (multiple MCP clients simultaneously)
+- Resource control via API server lock mechanisms
+- Process isolation prevents resource conflicts
+- Clear error boundaries and failure modes
 
-The Evaluator prompt is designed to make this decision explicit, providing a clear rationale for curators.
+**Implications:**
+- All MCP operations go through API endpoints
+- API server is sole authority for database and FAISS operations
+- `CHLAPIClient` is the only shared client library
+- Lock mechanisms prevent concurrent modification issues
 
-### 5.2. Provenance & State Management
+### 5.2. CPU/GPU Runtime Separation (ADR-002)
 
-The `source` and `sync_status` fields are crucial for the curation workflow:
+**Decision**: Separate CPU-only and GPU-accelerated implementations into distinct modules (`src/api/cpu/` and `src/api/gpu/`) using strategy pattern.
 
--   **Source Field:**
-    -   `local`: Created by an individual developer, not yet reviewed.
-    -   `global`: Synced from the published sheet, indicating team approval.
--   **Sync Status States:**
-    -   `synced`: The local copy matches the published sheet.
-    -   `pending`: The entry is new or has been modified locally and is awaiting review.
-    -   `local_only`: The entry is a personal note and will be excluded from exports.
+**Rationale:**
+- Clear separation makes code easier to understand
+- CPU mode has no GPU dependencies (lighter installations)
+- Independent testing without mocking
+- Better developer onboarding
 
-### 5.3. Duplicate Detection Strategy
+**Implications:**
+- Mode is fixed at startup (no runtime switching)
+- Switching modes requires data cleanup and re-setup
+- Runtime builder provides abstraction layer
 
-The goal is to maintain a library of atomic, focused experiences, not to merge them into broad, overlapping entries.
+### 5.3. Directory Structure for Clarity (ADR-003)
 
--   When a new entry shows high similarity to an existing one, the assistant is prompted to refactor both to be more focused and orthogonal.
--   This "anti-pattern" of avoiding merges is a core principle to prevent knowledge bloat and maintain the quality of the heuristic library.
+**Decision**: Three-tier directory structure `src/api/`, `src/mcp/`, `src/common/` with explicit boundaries.
 
-### 5.4. Search Abstraction Layer
+**Import Rules:**
+- Common code has no dependencies on API or MCP
+- API server may import any `src/common.*` modules
+- MCP server may import only `src.common.{config,api_client,dto}`
+- API and MCP communicate only via HTTP
+- Setup scripts (`setup-gpu.py`, `gpu_smoke_test.py`) are exceptions
 
-A provider-based architecture (`src/search/provider.py`) allows swapping search implementations. The primary provider uses FAISS for vector search with optional reranking, with a fallback to a simple SQLite-based text search.
+**Enforcement:**
+- Boundary tests enforce these rules via AST parsing (`tests/architecture/test_boundaries.py`)
+
+### 5.4. Local-Only Deployment (ADR-004)
+
+**Decision**: Design for local-only deployment where MCP and API server run on the same developer machine.
+
+**Rationale:**
+- MVP stage, not building cloud service yet
+- Simplicity without authentication/authorization complexity
+- Fast iteration with minimal deployment overhead
+
+**Implications:**
+- No authentication layer required
+- Simple error handling (`CHLAPIClient` raises standard HTTP exceptions)
+- MCP receives API URL as start parameter (typically `localhost:8000`)
+- Lock mechanisms sufficient for concurrency (no distributed locks)
+
+### 5.5. Fixed Runtime Mode (ADR-005)
+
+**Decision**: Runtime mode (CPU vs GPU) is fixed at API server startup and cannot be changed at runtime.
+
+**Rationale:**
+- Simplicity eliminates complex mode-switching logic
+- GPU resources (FAISS index, embeddings) are expensive to load/unload
+- Clear expectations for users
+- Data consistency (avoids partially-synced embeddings)
+
+**Implications:**
+- Mode determined by `CHL_SEARCH_MODE` environment variable at startup
+- Mode change requires: stop server → run setup script → restart server
+- Template selection happens once at startup
+- No hot-swapping between CPU and GPU providers
+- No automatic fallback from GPU to CPU mode
 
 ## 6. Interfaces and APIs
 
@@ -230,29 +367,129 @@ A provider-based architecture (`src/search/provider.py`) allows swapping search 
 
 The MCP server provides a simple, tool-based interface for AI assistants:
 
--   **Reads (`read_entries`):** Retrieve candidates via vector search (FAISS), then fetch full records from SQLite. Responses include provenance metadata (`source`) to distinguish global vs. personal entries.
--   **Writes (`write_entry`):** Persist to SQLite immediately with `embedding_status='pending'`. The write operation returns top-k similar matches to help the assistant decide whether to create a new entry, refactor an existing one, or update a manual.
--   **No Direct Sheet Access:** The MCP interface never writes directly to Google Sheets. All curation flows through the explicit export/import scripts.
+**Available Tools:**
+- `list_categories()` - List all available category shelves
+- `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or manuals
+- `write_entry(entity_type, category_code, data)` - Create new entry
+- `update_entry(entity_type, category_code, entry_id, updates)` - Update existing entry
+- `get_guidelines(guide_type)` - Return generator or evaluator workflow manual
+
+**Key Behaviors:**
+- Reads via vector search (FAISS) in GPU mode, text search in CPU mode
+- Writes persist to SQLite immediately with `embedding_status='pending'`
+- No direct Sheet access - all curation flows through explicit export/import scripts
+- Responses include provenance metadata (`source`) to distinguish global vs. personal entries
 
 ### 6.2. REST API
 
-The FastAPI server (`src/api/server.py`) exposes a REST API for programmatic control and monitoring. Key endpoints include:
+The FastAPI server exposes a REST API for programmatic control and monitoring:
 
--   `/health`: Health checks for the server and its components.
--   `/api/v1/operations/*`: Trigger and monitor import/export jobs.
--   `/api/v1/workers/*`: Control and monitor background worker status (if used).
--   `/api/v1/settings/*`: Manage application settings.
+**Core Endpoints:**
+- `/health` - Health checks for server and components
+- `/api/v1/categories` - List categories
+- `/api/v1/entries/read` - Read entries with search
+- `/api/v1/entries/write` - Create entry
+- `/api/v1/entries/update` - Update entry
+- `/api/v1/entries/export` - Export all entries
+- `/api/v1/operations/{job_type}` - Trigger operations jobs
+- `/api/v1/operations/jobs/{job_id}` - Get job status
+- `/api/v1/settings` - Manage application settings
+- `/api/v1/workers/*` - Control background workers (GPU mode)
 
-This API powers the Web UI and can be used for custom integrations.
+**Web Dashboards:**
+- `/settings` - Configuration, diagnostics, backup/restore
+- `/operations` - Import/export/index triggers, job history
 
 ## 7. Configuration Management
 
-Configuration is managed by `src/config.py`, which loads settings from environment variables with sensible project defaults. The `CHL_EXPERIENCE_ROOT` variable is central, defining the base path for the database, FAISS index, and other data files.
+Configuration is managed by `src/common/config/config.py`, which loads settings from environment variables with sensible project defaults.
+
+**Key Environment Variables:**
+- `CHL_EXPERIENCE_ROOT` - Base path for database, FAISS index, and data files
+- `CHL_SEARCH_MODE` - Runtime mode (`cpu` or `gpu`)
+- `CHL_API_BASE_URL` - API server URL for MCP and scripts (default: `http://localhost:8000`)
+- `GOOGLE_CREDENTIAL_PATH` - Path to Google service account JSON
+- `IMPORT_SPREADSHEET_ID` - Published spreadsheet ID for imports
+- `EXPORT_SPREADSHEET_ID` - Review spreadsheet ID for exports
 
 ## 8. Technology Stack
 
--   **Storage:** SQLite with SQLAlchemy ORM.
--   **Search:** FAISS (`faiss-cpu`) for vector search, with embeddings and reranking provided by Qwen3 GGUF models served via `llama-cpp-python`.
--   **External Services:** `gspread` and `google-auth` for Google Sheets integration.
--   **Servers:** `FastMCP` for the MCP server and `FastAPI` for the REST API and Web UI.
--   **CLI:** Python scripts managed with `uv`.
+### 8.1. API Server Runtime
+
+**Platform-Specific Installation:**
+- CPU-only: `requirements_cpu.txt` (no ML dependencies)
+- Apple Metal: `requirements_apple.txt` (Metal-accelerated ML)
+- NVIDIA CUDA: `requirements_cuda.txt` (CUDA-accelerated ML)
+
+**Core Dependencies:**
+- Storage: SQLite with SQLAlchemy ORM
+- Search (GPU mode): FAISS (`faiss-cpu`) for vector search
+- Embeddings/Reranking (GPU mode): Qwen3 GGUF models via `llama-cpp-python`
+- External Services: `gspread` and `google-auth` for Google Sheets
+- Web Framework: FastAPI with Uvicorn
+
+### 8.2. MCP Server Runtime
+
+**Installation:** `uv sync --python 3.11` from `pyproject.toml`
+
+**Minimal Dependencies:**
+- MCP Protocol: `fastmcp>=0.3.0`
+- HTTP Client: `httpx>=0.27.0`, `requests>=2.31.0`
+- Configuration: `python-dotenv>=1.0.0`, `pyyaml>=6.0`
+
+**No ML dependencies** - all heavy lifting happens in the API server.
+
+## 9. Deployment Architecture
+
+### 9.1. Two-Tier Deployment Model
+
+**Tier 1: API Server (Platform-Specific Venv)**
+```bash
+# Example: CPU mode
+python -m venv .venv-cpu
+source .venv-cpu/bin/activate
+pip install -r requirements_cpu.txt
+CHL_SEARCH_MODE=cpu uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+```
+
+**Tier 2: MCP Server (UV Managed)**
+```bash
+# Separate terminal
+uv sync --python 3.11
+uv run python -m src.mcp.server
+```
+
+**Scripts** run from API server venv:
+```bash
+source .venv-cpu/bin/activate
+python scripts/import.py --yes
+```
+
+### 9.2. Concurrency Model
+
+**Multi-Client Support:**
+- Users may run multiple MCP clients simultaneously (e.g., Cursor and Claude Code)
+- API server provides single point of control with lock mechanisms
+- Background worker coordination uses in-process mechanisms (no distributed locks)
+
+**Lock Mechanisms:**
+- FAISS file operations: Lock during rebuild/snapshot operations
+- Background worker coordination: Pause/drain/resume controls
+- SQLite transactions: WAL mode with retry logic for transient locks
+
+## 10. Future Considerations
+
+**Phase B (Next):** Diagnostics & Environment Guardrails
+- Implement `scripts/check_api_env.py` for OS/GPU/toolchain readiness detection
+- Emit structured reports for LLM-assisted troubleshooting
+
+**Phase C:** Runtime Isolation
+- Enforce MCP ↔ API separation via service boundaries
+- Refine shared modules to expose only necessary DTOs
+
+**Phase D:** Validation & Hardening
+- Platform-specific smoke tests
+- CI checks for requirements file sync
+- Documentation accuracy validation
+
+For detailed phase planning, see [doc/plan/architecture_refine.md](plan/architecture_refine.md).

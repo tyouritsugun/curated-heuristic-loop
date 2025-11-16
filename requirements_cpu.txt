@@ -1,26 +1,50 @@
-# CPU-only runtime requirements.
-# Used by docker/Dockerfile.cpu and CI validation builds.
+# CHL API Server - CPU-only mode (no ML dependencies)
+#
+# This requirements file is for the API server running in CPU-only mode.
+# In this mode, search uses SQLite text search (LIKE queries) instead of
+# vector embeddings and semantic similarity.
+#
+# Installation:
+#   python -m venv .venv-cpu
+#   source .venv-cpu/bin/activate  # On Windows: .venv-cpu\Scripts\activate
+#   python -m pip install --upgrade pip
+#   python -m pip install -r requirements_cpu.txt
+#
+# Starting the API server:
+#   CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+#
+# Note: The MCP server is installed separately via `uv sync` from pyproject.toml
+# and communicates with this API server via HTTP.
 
-fastmcp>=0.3.0
+# Web framework and server
+fastapi>=0.114.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.6
+jinja2>=3.1.0
+
+# Database and ORM
 sqlalchemy>=2.0.0
-numpy>=1.24.0,<2.0.0
+
+# HTTP client for external services
+httpx>=0.27.0
+requests>=2.31.0
+
+# Google Sheets integration
 gspread>=5.0.0
 google-auth>=2.0.0
 google-auth-oauthlib>=1.0.0
-tqdm>=4.65.0
+
+# Data processing and utilities
+numpy>=1.24.0,<2.0.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
-fastapi>=0.114.0
-uvicorn[standard]>=0.30.0
-httpx>=0.27.0
-python-multipart>=0.0.6
 pydantic>=2.6.0
-jinja2>=3.1.0
+tqdm>=4.65.0
 tenacity>=8.2.0
 markdown>=3.6
 
-# ML stack (CPU)
-faiss-cpu>=1.7.4
-huggingface-hub>=0.20.0
-sentence-transformers>=3.1.1
-llama-cpp-python==0.3.16
+# NO ML dependencies in CPU-only mode:
+# - No faiss-cpu (vector search disabled)
+# - No sentence-transformers (no embeddings)
+# - No llama-cpp-python (no reranking)
+# - No huggingface-hub (no model downloads)
