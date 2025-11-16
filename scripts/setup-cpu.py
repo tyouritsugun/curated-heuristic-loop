@@ -2,21 +2,21 @@
 """CPU-only first-time setup for CHL MCP Server
 
 This script initializes the database and prepares the environment for running
-the MCP server in SQLite-only mode (no vector search, no ML dependencies).
+the MCP server in CPU mode (no vector search, no ML dependencies).
 
 Usage:
-    CHL_SEARCH_MODE=sqlite_only python scripts/setup-cpu.py
+    CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
 
 This setup is appropriate for CPU-only machines without GPU acceleration.
 It skips all ML model downloads and FAISS initialization.
 
 Environment Variables:
-    CHL_SEARCH_MODE: Must be set to "sqlite_only" (required)
+    CHL_SEARCH_MODE: Must be set to "cpu" (required)
     CHL_EXPERIENCE_ROOT: Path to data directory (default: <project_root>/data)
     CHL_DATABASE_PATH: Path to SQLite database (default: <experience_root>/chl.db)
 
 What this script does:
-1. Verify CHL_SEARCH_MODE=sqlite_only is set
+1. Verify CHL_SEARCH_MODE=cpu is set
 2. Check/create data directory structure (no FAISS directory)
 3. Initialize SQLite database (create tables)
 4. Seed starter categories and sample content
@@ -24,7 +24,7 @@ What this script does:
 6. Print next steps
 
 Example:
-    CHL_SEARCH_MODE=sqlite_only python scripts/setup-cpu.py
+    CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
 """
 import os
 import sys
@@ -121,17 +121,17 @@ def print_header():
 
 
 def check_search_mode() -> bool:
-    """Verify CHL_SEARCH_MODE is set to sqlite_only"""
+    """Verify CHL_SEARCH_MODE is set to cpu"""
     search_mode = os.getenv("CHL_SEARCH_MODE", "auto")
-    if search_mode != "sqlite_only":
-        print("✗ This setup script requires CHL_SEARCH_MODE=sqlite_only")
+    if search_mode != "cpu":
+        print("✗ This setup script requires CHL_SEARCH_MODE=cpu")
         print("\nPlease set the environment variable:")
-        print("  export CHL_SEARCH_MODE=sqlite_only")
+        print("  export CHL_SEARCH_MODE=cpu")
         print("\nOr run:")
-        print("  CHL_SEARCH_MODE=sqlite_only python scripts/setup-cpu.py")
+        print("  CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py")
         print("\nFor GPU/vector search setup, use scripts/setup-gpu.py instead.")
         return False
-    print("✓ CPU-only mode confirmed (CHL_SEARCH_MODE=sqlite_only)")
+    print("✓ CPU-only mode confirmed (CHL_SEARCH_MODE=cpu)")
     return True
 
 
@@ -365,7 +365,7 @@ def print_next_steps():
     print("\nNext steps:\n")
 
     print("  1. Start the FastAPI server in CPU-only mode:")
-    print("     CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000\n")
+    print("     CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000\n")
     print("  2. Visit http://127.0.0.1:8000/settings to verify configuration")
     print("  3. Use the web UI to add experiences and guidelines\n")
 
@@ -381,7 +381,7 @@ def main():
     """Main setup workflow for CPU-only mode"""
     print_header()
 
-    # 1. Verify CHL_SEARCH_MODE=sqlite_only
+    # 1. Verify CHL_SEARCH_MODE=cpu
     if not check_search_mode():
         sys.exit(1)
 
@@ -391,9 +391,9 @@ def main():
         config = get_config()
 
         # Verify search mode from config
-        if config.search_mode != "sqlite_only":
-            print(f"✗ Config search_mode is '{config.search_mode}', expected 'sqlite_only'")
-            print("  Please set CHL_SEARCH_MODE=sqlite_only and try again")
+        if config.search_mode != "cpu":
+            print(f"✗ Config search_mode is '{config.search_mode}', expected 'cpu'")
+            print("  Please set CHL_SEARCH_MODE=cpu and try again")
             sys.exit(1)
 
         # 2. Check/create directories (no FAISS)

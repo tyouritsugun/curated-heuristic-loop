@@ -435,7 +435,7 @@ def _render_full(
     cfg = get_config()
     search_mode = getattr(cfg, "search_mode", "auto")
     context["search_mode"] = search_mode
-    template_name = "cpu/settings_cpu.html" if search_mode == "sqlite_only" else "gpu/settings_gpu.html"
+    template_name = "cpu/settings_cpu.html" if search_mode == "cpu" else "gpu/settings_gpu.html"
     return templates.TemplateResponse(template_name, context)
 
 
@@ -891,8 +891,8 @@ def settings_page(
     """Render the settings dashboard.
 
     Dynamically selects template based on search mode:
-    - sqlite_only mode: settings_cpu.html (simplified, keyword search guidance)
-    - auto/vector mode: settings.html (full GPU features)
+    - cpu mode: settings_cpu.html (simplified, keyword search guidance)
+    - auto mode: settings_gpu.html (full GPU features)
     """
     context = _build_settings_context(request, session, settings_service)
     # Add job_summaries for import/export status display
@@ -903,7 +903,7 @@ def settings_page(
     context["search_mode"] = config.search_mode
 
     # Select template based on search mode
-    template_name = "cpu/settings_cpu.html" if config.search_mode == "sqlite_only" else "gpu/settings_gpu.html"
+    template_name = "cpu/settings_cpu.html" if config.search_mode == "cpu" else "gpu/settings_gpu.html"
     return templates.TemplateResponse(template_name, context)
 
 
@@ -1122,7 +1122,7 @@ def operations_page(
             "search_mode": config.search_mode,
         }
     )
-    template_name = "cpu/operations_cpu.html" if config.search_mode == "sqlite_only" else "gpu/operations_gpu.html"
+    template_name = "cpu/operations_cpu.html" if config.search_mode == "cpu" else "gpu/operations_gpu.html"
     return templates.TemplateResponse(template_name, context)
 
 

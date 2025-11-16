@@ -150,7 +150,7 @@ cp .env.sample .env
 # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
 # - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
 # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
-# - CHL_SEARCH_MODE (cpu for CPU-only, gpu for Metal/CUDA)
+# - CHL_SEARCH_MODE (cpu for CPU-only, auto for GPU with fallback)
 ```
 
 ### Step 3: Initialize API Server
@@ -184,7 +184,7 @@ CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port
 **GPU modes (Apple Metal or NVIDIA CUDA):**
 ```bash
 source .venv-apple/bin/activate  # Or .venv-cuda
-CHL_SEARCH_MODE=gpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+CHL_SEARCH_MODE=auto python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 ```
 
 **Verify installation:**
@@ -244,7 +244,7 @@ Add to `~/.cursor/mcp.json`:
 
 **Switching from CPU-only to GPU mode:**
 1. Stop the API server
-2. Set `CHL_SEARCH_MODE=gpu` in `.env`
+2. Set `CHL_SEARCH_MODE=auto` in `.env`
 3. Create new GPU venv (`.venv-apple` or `.venv-cuda`) and install corresponding requirements file
 4. Run `python scripts/setup-gpu.py --download-models`
 5. Start API server with GPU mode

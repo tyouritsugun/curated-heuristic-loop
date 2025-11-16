@@ -26,23 +26,23 @@ def _with_env(env: dict):
     return _Ctx()
 
 
-def test_config_initializes_in_sqlite_only_mode(tmp_path: Path):
+def test_config_initializes_in_cpu_mode(tmp_path: Path):
     from src.common.config.config import Config, SearchMode
     data_dir = tmp_path / "data"
     with _with_env({
         "CHL_EXPERIENCE_ROOT": str(data_dir),
-        "CHL_SEARCH_MODE": "sqlite_only",
+        "CHL_SEARCH_MODE": "cpu",
     }):
         cfg = Config()
         # search_mode remains a lowercase string for compatibility
-        assert cfg.search_mode == "sqlite_only"
+        assert cfg.search_mode == "cpu"
         # Enum and helpers expose the structured mode
-        assert cfg.search_mode_enum is SearchMode.SQLITE_ONLY
+        assert cfg.search_mode_enum is SearchMode.CPU
         assert cfg.is_cpu_only() is True
         assert cfg.is_semantic_enabled() is False
         # Experience root created
         assert Path(cfg.experience_root).exists()
-        # FAISS index dir is not auto-created in sqlite_only
+        # FAISS index dir is not auto-created in CPU mode
         assert not Path(cfg.faiss_index_path).exists()
 
 

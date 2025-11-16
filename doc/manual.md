@@ -39,11 +39,11 @@ uv run python scripts/setup-gpu.py
 
 **Command (CPU-only mode):**
 ```bash
-CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
+CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
 ```
 
 **What CPU-only setup does:**
-1. Verifies `CHL_SEARCH_MODE=sqlite_only` is set
+1. Verifies `CHL_SEARCH_MODE=cpu` is set
 2. Creates the `data/` directory (no FAISS directory)
 3. Initializes the SQLite database (`chl.db`)
 4. Seeds default categories and sample entries
@@ -172,7 +172,7 @@ The system is pre-configured with the following categories. You can add more as 
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. See the old `manual.md` for a complete list if needed. Key variables include:
 - `CHL_EXPERIENCE_ROOT` - Path to data directory
 - `CHL_DATABASE_PATH` - Path to SQLite database file
-- `CHL_SEARCH_MODE` - Search mode (`auto` or `sqlite_only`); see section 9 for details
+- `CHL_SEARCH_MODE` - Search mode (`auto` or `cpu`); see section 9 for details
 - `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
 - `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
 - `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
@@ -210,17 +210,17 @@ uv sync --python 3.11
 
 Set the search mode in `.env`:
 ```bash
-CHL_SEARCH_MODE=sqlite_only
+CHL_SEARCH_MODE=cpu
 ```
 
 Run setup (no ML model downloads):
 ```bash
-CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
+CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
 ```
 
 Start the server:
 ```bash
-CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 ```
 
 ### 9.3. Behavior Differences
@@ -251,7 +251,7 @@ Since SQLite text search uses literal keyword matching:
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
 
 **From GPU to CPU-only mode:**
-1. Set `CHL_SEARCH_MODE=sqlite_only` in `.env`
+1. Set `CHL_SEARCH_MODE=cpu` in `.env`
 2. Restart the API/MCP server
 3. FAISS artifacts remain on disk but are ignored
 4. Any pending embedding tasks are dropped on restart

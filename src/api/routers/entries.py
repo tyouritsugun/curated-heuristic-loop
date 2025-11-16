@@ -44,7 +44,7 @@ def _runtime_search_mode(config, search_service):
     provider_name = getattr(search_service, "primary_provider_name", None)
     vector_available = bool(getattr(search_service, "get_vector_provider", lambda: None)())
     if provider_name == "sqlite_text" and not vector_available:
-        return "sqlite_only"
+        return "cpu"
     return mode
 
 

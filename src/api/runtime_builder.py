@@ -20,7 +20,7 @@ def build_mode_runtime(config: Config, db: Database, worker_control: WorkerContr
     prerequisites gracefully and fall back if needed.
     """
     mode = getattr(config, "search_mode", "auto")
-    if mode == "sqlite_only" or mode == "cpu":
+    if mode == "cpu":
         return build_cpu_runtime(config, db, worker_control)
-    # Default to GPU-capable runtime for "auto" and "gpu"
+    # Default to GPU-capable runtime for "auto"
     return build_gpu_runtime(config, db, worker_control)

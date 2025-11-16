@@ -30,7 +30,7 @@ def get_guidelines(
     """
     Return the generator or evaluator workflow manual from the GLN category.
 
-    In sqlite_only mode, returns CPU-specific evaluator guidelines when guide_type='evaluator'.
+    In CPU mode, returns CPU-specific evaluator guidelines when guide_type='evaluator'.
 
     Parameters:
     - guide_type: 'generator' or 'evaluator'
@@ -40,7 +40,7 @@ def get_guidelines(
         Manual content with metadata
     """
     # Select title based on search mode
-    if config.search_mode == "sqlite_only" and guide_type == "evaluator":
+    if config.search_mode == "cpu" and guide_type == "evaluator":
         title = GUIDE_TITLE_MAP_CPU.get(guide_type)
     else:
         title = GUIDE_TITLE_MAP.get(guide_type)

@@ -1,4 +1,4 @@
-"""CPU-only (sqlite_only) mode tests.
+"""CPU-only mode tests.
 
 Covers health behavior, telemetry meta, and text-search hints.
 """
@@ -6,8 +6,8 @@ import os
 import pytest
 
 
-@pytest.mark.sqlite_only
-def test_health_reports_disabled_components_in_sqlite_only(client):
+@pytest.mark.sqlite_only  # Keep legacy marker for backward compatibility
+def test_health_reports_disabled_components_in_cpu_mode(client):
     resp = client.get("/health/")
     assert resp.status_code == 200
     data = resp.json()
@@ -16,14 +16,14 @@ def test_health_reports_disabled_components_in_sqlite_only(client):
     assert comps.get("embedding_model", {}).get("status") == "disabled"
 
 
-@pytest.mark.sqlite_only
+@pytest.mark.sqlite_only  # Keep legacy marker for backward compatibility
 def test_telemetry_snapshot_includes_search_mode_meta(client):
     resp = client.get("/api/v1/telemetry/snapshot")
     assert resp.status_code == 200
     data = resp.json()
     meta = data.get("meta") or {}
     # Accept None meta if telemetry started before server set provider, but prefer explicit
-    assert meta.get("search_mode") in ("sqlite_only", None)
+    assert meta.get("search_mode") in ("cpu", None)
 
 
 @pytest.mark.sqlite_only

@@ -24,9 +24,9 @@ Core environment variables:
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
 
 Search & retrieval:
-- CHL_SEARCH_MODE: Search mode (default: auto; options: auto, sqlite_only)
+- CHL_SEARCH_MODE: Search mode (default: auto; options: auto, cpu)
   - auto: Try vector search; fall back to SQLite if initialization fails
-  - sqlite_only: Force text search; skip embedding/reranker/FAISS initialization
+  - cpu: Force text search; skip embedding/reranker/FAISS initialization
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
@@ -101,7 +101,7 @@ class SearchMode(str, Enum):
     """
 
     AUTO = "auto"
-    SQLITE_ONLY = "sqlite_only"
+    CPU = "cpu"
 
     @classmethod
     def from_env(cls, value: str | None) -> "SearchMode":
@@ -214,7 +214,7 @@ class Config:
         """Return current search mode as a lowercase string.
 
         Kept for backward compatibility with existing code that compares against
-        literal strings like "auto" or "sqlite_only".
+        literal strings like "auto" or "cpu".
         """
         return self._search_mode.value
 
@@ -314,8 +314,8 @@ class Config:
                 f"Invalid CHL_TOPK_RERANK={self.topk_rerank}. Must be > 0."
             )
 
-        # Create FAISS index directory if it doesn't exist (skip in sqlite_only mode)
-        if self._search_mode is not SearchMode.SQLITE_ONLY:
+        # Create FAISS index directory if it doesn't exist (skip in CPU mode)
+        if self._search_mode is not SearchMode.CPU:
             faiss_path = Path(self.faiss_index_path)
             if not faiss_path.exists():
                 try:

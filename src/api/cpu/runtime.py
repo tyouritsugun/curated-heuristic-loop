@@ -1,4 +1,4 @@
-"""CPU-only runtime builder (SQLite-only search)."""
+"""CPU-only runtime builder (text search via SQLite)."""
 
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ class CpuDiagnosticsAdapter(DiagnosticsModeAdapter):
 
 def build_cpu_runtime(config: Config, db: Database, worker_control) -> ModeRuntime:
     """Build CPU-only ModeRuntime."""
-    del db, worker_control  # Not used in sqlite_only mode
+    del db, worker_control  # Not used in CPU mode
 
-    # SQLite-only search service using built-in text provider
+    # CPU-mode search service using built-in text provider
     search_service = SearchService(
         primary_provider="sqlite_text",
         fallback_enabled=False,

@@ -83,12 +83,12 @@ def health_check(
             "faiss_index",
             {
                 "status": "disabled",
-                "detail": "Vector search disabled in sqlite_only mode",
+                "detail": "Vector search disabled in CPU mode",
             },
         )
         components["embedding_model"] = {
             "status": "disabled",
-            "detail": "Semantic stack disabled (sqlite_only)",
+            "detail": "Semantic stack disabled (CPU mode)",
         }
     else:
         vector_provider = None
