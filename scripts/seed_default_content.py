@@ -59,7 +59,8 @@ def _run_guidelines() -> bool:
     # Lazy import to keep surface minimal
     try:
         from scripts.sync_guidelines import sync_guidelines  # type: ignore
-        sync_guidelines()
+        config = get_config()
+        sync_guidelines(api_url=getattr(config, "api_base_url", None))
         return True
     except Exception as e:
         print(f"✗ Failed to sync guidelines: {e}")

@@ -88,6 +88,7 @@ class SettingsService:
         self._session_factory = session_factory
         self._secrets_root = Path(secrets_root).resolve()
         self._mode_runtime = mode_runtime
+        self._config: Optional[Any] = None
 
     @property
     def secrets_root(self) -> Path:
@@ -97,6 +98,10 @@ class SettingsService:
     def set_mode_runtime(self, mode_runtime: Any) -> None:
         """Attach the active ModeRuntime after server startup."""
         self._mode_runtime = mode_runtime
+
+    def set_config(self, config: Any) -> None:
+        """Attach Config object for mode-aware snapshots."""
+        self._config = config
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,11 +117,16 @@ class SettingsService:
             if record and (updated_at is None or record.updated_at > updated_at):
                 updated_at = record.updated_at
 
+        mode_payload = None
+        if self._config is not None:
+            mode_payload = {"search_mode": getattr(self._config, "search_mode", None)}
+
         return {
             "credentials": credentials.__dict__ if credentials else None,
             "sheets": sheets.__dict__ if sheets else None,
             "models": models.__dict__ if models else None,
             "updated_at": updated_at,
+            "mode": mode_payload,
         }
 
     def update_credentials(self, session: Session, *, path: str, notes: Optional[str], actor: Optional[str]) -> CredentialSettings:
@@ -340,21 +350,19 @@ class SettingsService:
         sections.append(self._diagnose_models(models))
 
         # Attach mode-specific diagnostics if the runtime provides them
-        if self._mode_runtime and hasattr(self._mode_runtime, "diagnostics_adapter"):
+        adapter = getattr(self._mode_runtime, "diagnostics_adapter", None) if self._mode_runtime else None
+        if adapter and hasattr(adapter, "faiss_status"):
             try:
-                adapter = self._mode_runtime.diagnostics_adapter
-                extra = adapter.get_status()
-                if isinstance(extra, dict):
-                    for key, value in extra.items():
-                        sections.append(
-                            DiagnosticStatus(
-                                name=f"runtime.{key}",
-                                state=value.get("state", "warn"),
-                                headline=value.get("headline", "Runtime diagnostics"),
-                                detail=value.get("detail"),
-                                validated_at=value.get("validated_at"),
-                            )
-                        )
+                status = adapter.faiss_status(self._secrets_root, session)
+                sections.append(
+                    DiagnosticStatus(
+                        name="runtime.faiss",
+                        state=status.get("state", "info"),
+                        headline=status.get("headline", "Runtime diagnostics"),
+                        detail=status.get("detail"),
+                        validated_at=status.get("validated_at"),
+                    )
+                )
             except Exception as exc:  # pragma: no cover - defensive
                 sections.append(
                     DiagnosticStatus(

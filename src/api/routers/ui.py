@@ -43,6 +43,7 @@ from src.api.services.operations_service import OperationConflict, JobNotFoundEr
 from src.api.services.worker_control import WorkerUnavailableError
 from src.common.storage.repository import AuditLogRepository
 from src.common.storage.schema import AuditLog, utc_now
+from src.common import mcp_bridge
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -136,25 +137,10 @@ def _is_htmx(request: Request) -> bool:
 
 
 def _invalidate_categories_cache_safe() -> None:
-    """Best-effort MCP categories cache invalidation (may run out-of-process)."""
-    import sys
-
-    mcp_server = sys.modules.get("src.mcp.server")
-    if not mcp_server:
-        # Don't import lazily here; importing would try to auto-start the MCP server and
-        # block the current FastAPI request. Skipping this keeps the UI responsive when
-        # the MCP stack isn't co-hosted.
-        logger.debug("MCP server not loaded; skipping cache invalidation.")
-        return
-
-    invalidate = getattr(mcp_server, "invalidate_categories_cache", None)
-    if not invalidate:
-        return
-
+    """Best-effort MCP categories cache invalidation (no direct import)."""
     try:
-        invalidate()
-    except Exception:
-        # Best effort only
+        mcp_bridge.invalidate_categories_cache()
+    except Exception:  # pragma: no cover - defensive
         logger.debug("MCP cache invalidation failed", exc_info=True)
 
 

@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 
 from src.common.api_client.client import CHLAPIClient
 from src.common.config.config import get_config
+from src.common import mcp_bridge
 from src.mcp.core import (
     SERVER_VERSION,
     TOOL_INDEX,
@@ -129,6 +130,7 @@ def init_server() -> None:
 
     # Expose runtime to core module for handlers
     set_runtime(config, api_client)
+    mcp_bridge.register_categories_invalidator(invalidate_categories_cache)
 
     health_ok = startup_health_check(api_client, max_wait=config.api_health_check_max_wait)
     if not health_ok:

@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized")
 
         settings_service = SettingsService(db.get_session, config.experience_root)
+        settings_service.set_config(config)
         worker_control_service = WorkerControlService(db.get_session)
         operations_service = OperationsService(
             session_factory=db.get_session,

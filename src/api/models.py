@@ -122,6 +122,7 @@ class SettingsSnapshotResponse(BaseModel):
     sheets: Optional[Dict[str, Any]]
     models: Optional[Dict[str, Any]]
     updated_at: Optional[str]
+    mode: Optional[Dict[str, Any]] = None
 
 
 # Operation models

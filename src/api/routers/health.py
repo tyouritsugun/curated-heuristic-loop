@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
+from pathlib import Path
+
 from src.api.dependencies import get_db_session, get_search_service, get_config, get_mode_runtime
 from src.api.models import HealthResponse
 from src.api.metrics import metrics
@@ -43,12 +45,23 @@ def health_check(
         components["database"] = {"status": "unhealthy", "detail": str(e)}
         overall_status = "unhealthy"
 
-    # Check FAISS/embedding status via mode runtime (CPU vs vector-capable)
-    if mode_runtime is not None:
-        faiss_components, degraded = mode_runtime.health_components(config)
-        components.update(faiss_components)
-        if degraded and overall_status == "healthy":
-            overall_status = "degraded"
+    # Check FAISS/embedding status via diagnostics adapter
+    adapter = getattr(mode_runtime, "diagnostics_adapter", None) if mode_runtime else None
+    if adapter and hasattr(adapter, "faiss_status"):
+        try:
+            data_path = Path(getattr(config, "experience_root", "data"))
+            faiss_status = adapter.faiss_status(data_path, session)
+            components["faiss_index"] = {
+                "status": faiss_status.get("state", "info"),
+                "detail": faiss_status.get("detail"),
+                "headline": faiss_status.get("headline"),
+                "validated_at": faiss_status.get("validated_at"),
+            }
+            if faiss_status.get("state") == "warn" and overall_status == "healthy":
+                overall_status = "degraded"
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to collect FAISS diagnostics: %s", exc)
+            components["faiss_index"] = {"status": "unknown", "detail": str(exc)}
 
     # Add timestamp
     timestamp = datetime.now(timezone.utc).isoformat()

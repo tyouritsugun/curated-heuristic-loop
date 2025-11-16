@@ -19,6 +19,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.common.storage.schema import AuditLog, JobHistory, OperationLock, utc_now
+from src.common.constants.guidelines import (
+    GUIDELINES_CATEGORY_CODE,
+    GENERATOR_GUIDE_TITLE,
+    EVALUATOR_GUIDE_TITLE,
+    EVALUATOR_CPU_GUIDE_TITLE,
+    EXPECTED_GUIDELINE_TITLES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +108,13 @@ class OperationsService:
         self._handlers["import-sheets"] = self._import_sheets_handler
         self._handlers["sync-embeddings"] = self._sync_embeddings_handler
         self._handlers["rebuild-index"] = self._rebuild_index_handler
+        self._handlers["sync-guidelines"] = self._sync_guidelines_handler
 
         # Legacy aliases (kept for compatibility with old job names in DB)
         self._handlers["import"] = self._import_sheets_handler
         self._handlers["sync"] = self._sync_embeddings_handler
         self._handlers["index"] = self._rebuild_index_handler
+        self._handlers["guidelines"] = self._sync_guidelines_handler
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -356,7 +365,6 @@ class OperationsService:
     def _import_sheets_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
         """Import data from Google Sheets into the database."""
         from src.api.services.import_service import ImportService
-        from src.common.sheets_client import SheetsClient
         
         try:
             # Get sheets data from payload (sent by HTTP client)
@@ -412,19 +420,20 @@ class OperationsService:
             if not embedding_service:
                 raise ValueError("Embedding service not available")
             
-            # Get parameters
-            retry_failed = payload.get("retry_failed", False)
+            retry_failed = bool(payload.get("retry_failed"))
             max_count = payload.get("max_count")
-            
-            # Process pending embeddings
             stats = embedding_service.process_pending(max_count=max_count)
+            retry_result = None
+            if retry_failed:
+                retry_result = embedding_service.retry_failed(max_count=max_count)
             
             logger.info("Embedding sync completed: %s", stats)
             
             return {
                 "success": True,
                 "stats": stats,
-                "message": f"Processed {stats['processed']} entities: {stats['succeeded']} succeeded, {stats['failed']} failed"
+                "retry": retry_result,
+                "message": _format_sync_message(stats, retry_result),
             }
             
         except Exception as exc:
@@ -459,6 +468,87 @@ class OperationsService:
             logger.exception("Index rebuild failed")
             raise ValueError(f"Index rebuild operation failed: {exc}") from exc
 
+    def _sync_guidelines_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Upsert generator/evaluator guidelines from payload contents."""
+        from src.common.storage.repository import (
+            CategoryRepository,
+            CategoryManualRepository,
+        )
+
+        generator_content = _normalize_text(payload.get("generator_content"))
+        evaluator_content = _normalize_text(payload.get("evaluator_content"))
+        evaluator_cpu_content = _normalize_text(payload.get("evaluator_cpu_content"))
+
+        if not any([generator_content, evaluator_content, evaluator_cpu_content]):
+            raise ValueError("No guideline content provided in payload")
+
+        cat_repo = CategoryRepository(session)
+        manual_repo = CategoryManualRepository(session)
+
+        category = cat_repo.get_by_code(GUIDELINES_CATEGORY_CODE)
+        if category is None:
+            category = cat_repo.create(
+                code=GUIDELINES_CATEGORY_CODE,
+                name="chl_guidelines",
+                description="Seeded generator/evaluator guidance manuals",
+            )
+
+        existing = manual_repo.get_by_category(GUIDELINES_CATEGORY_CODE)
+        existing_by_title = {manual.title: manual for manual in existing}
+        retained_ids: set[str] = set()
+        mutations: list[str] = []
+
+        def _upsert(title: str, content: Optional[str]) -> None:
+            nonlocal retained_ids
+            if content is None:
+                if title in existing_by_title:
+                    manual_repo.delete(existing_by_title[title].id)
+                    mutations.append(f"deleted:{title}")
+                return
+
+            summary = _summarize(content)
+            if title in existing_by_title:
+                manual = manual_repo.update(
+                    existing_by_title[title].id,
+                    {
+                        "content": content,
+                        "summary": summary,
+                        "sync_status": 1,
+                    },
+                )
+                session.flush()
+                retained_ids.add(manual.id)
+                mutations.append(f"updated:{title}")
+            else:
+                manual = manual_repo.create(
+                    {
+                        "category_code": GUIDELINES_CATEGORY_CODE,
+                        "title": title,
+                        "content": content,
+                        "summary": summary,
+                        "sync_status": 1,
+                    }
+                )
+                retained_ids.add(manual.id)
+                mutations.append(f"created:{title}")
+
+        _upsert(GENERATOR_GUIDE_TITLE, generator_content)
+        _upsert(EVALUATOR_GUIDE_TITLE, evaluator_content)
+        _upsert(EVALUATOR_CPU_GUIDE_TITLE, evaluator_cpu_content)
+
+        for manual in existing:
+            if manual.id not in retained_ids and manual.title not in EXPECTED_GUIDELINE_TITLES:
+                manual_repo.delete(manual.id)
+                mutations.append(f"pruned:{manual.title}")
+
+        logger.info("Guidelines sync completed (mutations=%s)", mutations)
+
+        return {
+            "success": True,
+            "mutations": mutations,
+            "category_code": GUIDELINES_CATEGORY_CODE,
+        }
+
 
 
 
@@ -468,3 +558,31 @@ __all__ = [
     "JobNotFoundError",
     "OperationHandler",
 ]
+
+
+def _normalize_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def _summarize(content: str) -> Optional[str]:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:120]
+    return None
+
+
+def _format_sync_message(stats: Dict[str, int], retry_result: Optional[Dict[str, int]]) -> str:
+    base = (
+        f"Processed {stats.get('processed', 0)} entities: "
+        f"{stats.get('succeeded', 0)} succeeded, {stats.get('failed', 0)} failed."
+    )
+    if retry_result:
+        base += (
+            f" Retried {retry_result.get('retried', 0)} failures "
+            f"({retry_result.get('succeeded', 0)} succeeded, {retry_result.get('failed', 0)} failed)."
+        )
+    return base
