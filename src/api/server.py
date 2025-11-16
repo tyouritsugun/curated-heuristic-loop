@@ -32,7 +32,12 @@ from src.api.routers.settings import router as settings_router
 from src.api.routers.operations import router as operations_router
 from src.api.routers.workers import router as workers_router
 from src.api.routers.telemetry import router as telemetry_router
-from src.api.routers.ui import router as ui_router
+initial_config = Config()
+
+if initial_config.search_mode == "cpu":
+    from src.api.routers.cpu_ui import router as ui_router
+else:
+    from src.api.routers.gpu_ui import router as ui_router
 from src.common.web_utils.docs import router as docs_router
 from src.api.services.settings_service import SettingsService
 from src.api.services.operations_service import OperationsService
@@ -78,7 +83,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting CHL API server...")
 
     try:
-        app.state.config = Config()
+        app.state.config = initial_config
         logger.info("Configuration loaded")
 
         app.state.db = Database(app.state.config.database_path)

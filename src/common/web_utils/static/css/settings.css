@@ -1,6 +1,41 @@
 body {
   background: #ffffff;
   color: #000000;
+  margin: 0;
+}
+
+.w3-sidebar {
+  width: 250px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  padding: 1.5rem 0.75rem;
+  background: #ffffff;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.main-content {
+  margin-left: 250px;
+  padding: 2rem 2rem 4rem;
+  min-height: 100vh;
+}
+
+.content-wrapper {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.main-menu {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.sub-menu {
+  font-size: 0.95rem;
+  padding-left: 1rem;
 }
 
 .site-nav {
@@ -112,6 +147,20 @@ body {
 
   #models-card {
     grid-column: span 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .w3-sidebar {
+    position: static;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1.5rem 1rem 3rem;
   }
 }
 
@@ -291,4 +340,3 @@ textarea {
   min-height: 150px;
   background: #f8f9fa;
 }
-

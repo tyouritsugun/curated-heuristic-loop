@@ -1,8 +1,3 @@
-{% set config = request.app.state.config if request and request.app and request.app.state else None %}
-{% set sidebar_mode = config.search_mode if config and config.search_mode else request.headers.get('x-chl-search-mode') %}
-{% set sidebar_mode = (sidebar_mode or 'auto')|lower %}
-{% set gpu_enabled = sidebar_mode != 'cpu' %}
-
 <div class="w3-sidebar w3-bar-block w3-white">
   <div class="w3-bar-item main-menu">Documentation</div>
   <a href="/docs/concept" class="w3-bar-item w3-button sub-menu">Concept</a>
@@ -11,10 +6,8 @@
 
   <div class="w3-bar-item main-menu">Settings</div>
   <a href="/settings#setup" class="w3-bar-item w3-button sub-menu">Setup</a>
-  {% if gpu_enabled %}
   <a href="/settings#gpu-runtime" class="w3-bar-item w3-button sub-menu">Hardware Acceleration</a>
-  {% endif %}
-  <a href="/settings#connectivity" class="w3-bar-item w3-button sub-menu">Connectivity & Validation</a>
+  <a href="/settings#connectivity" class="w3-bar-item w3-button sub-menu">Connectivity &amp; Validation</a>
   <a href="/settings#configuration" class="w3-bar-item w3-button sub-menu">Configuration Status</a>
   <a href="/settings#queue" class="w3-bar-item w3-button sub-menu">Queue Health</a>
   <a href="/settings#jobs" class="w3-bar-item w3-button sub-menu">Job History</a>
