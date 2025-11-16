@@ -553,3 +553,83 @@ def update_entry(
     except Exception as e:
         logger.exception("Error updating entry")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export")
+def export_entries(
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Export all entries for scripts/export.py.
+
+    Returns all experiences, manuals, and categories in a format suitable
+    for exporting to Google Sheets or other external systems.
+    """
+    try:
+        from src.common.storage.schema import Experience, CategoryManual, Category
+
+        # Fetch all data
+        experiences = session.query(Experience).all()
+        manuals = session.query(CategoryManual).all()
+        categories = session.query(Category).all()
+
+        # Serialize to dicts
+        experiences_data = []
+        for exp in experiences:
+            experiences_data.append({
+                "id": exp.id,
+                "category_code": exp.category_code,
+                "section": exp.section,
+                "title": exp.title,
+                "playbook": exp.playbook,
+                "context": exp.context,
+                "source": exp.source,
+                "sync_status": exp.sync_status,
+                "author": exp.author,
+                "embedding_status": exp.embedding_status,
+                "created_at": exp.created_at,
+                "updated_at": exp.updated_at,
+                "synced_at": exp.synced_at,
+                "exported_at": exp.exported_at,
+            })
+
+        manuals_data = []
+        for man in manuals:
+            manuals_data.append({
+                "id": man.id,
+                "category_code": man.category_code,
+                "title": man.title,
+                "content": man.content,
+                "summary": man.summary,
+                "source": man.source,
+                "sync_status": man.sync_status,
+                "author": man.author,
+                "embedding_status": man.embedding_status,
+                "created_at": man.created_at,
+                "updated_at": man.updated_at,
+                "synced_at": man.synced_at,
+                "exported_at": man.exported_at,
+            })
+
+        categories_data = []
+        for cat in categories:
+            categories_data.append({
+                "code": cat.code,
+                "name": cat.name,
+                "description": cat.description,
+                "created_at": cat.created_at,
+            })
+
+        return {
+            "experiences": experiences_data,
+            "manuals": manuals_data,
+            "categories": categories_data,
+            "count": {
+                "experiences": len(experiences_data),
+                "manuals": len(manuals_data),
+                "categories": len(categories_data),
+            }
+        }
+
+    except Exception as e:
+        logger.exception("Error exporting entries")
+        raise HTTPException(status_code=500, detail=str(e))

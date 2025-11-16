@@ -404,6 +404,16 @@ class CHLAPIClient:
             timeout=timeout or self.timeout,
         )
 
+    # Entry operations
+
+    def export_entries(self, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Export all entries (experiences, manuals, categories) from the database."""
+        return self.request(
+            "GET",
+            "/api/v1/entries/export",
+            timeout=timeout or self.timeout,
+        )
+
     # Context manager support
 
     def __enter__(self):

@@ -502,7 +502,7 @@ def _render_gpu_card(
             "gpu_prompt_text": prompt,
         }
     )
-    return templates.TemplateResponse("partials/settings_gpu_runtime.html", context)
+    return templates.TemplateResponse("gpu/partials/settings_gpu_runtime.html", context)
 
 
 def _respond(
@@ -1272,7 +1272,7 @@ def get_model_change_modal(
         "impact_estimate": impact_estimate,
     }
 
-    return templates.TemplateResponse("partials/model_change_modal.html", context)
+    return templates.TemplateResponse("common/partials/model_change_modal.html", context)
 
 
 def _check_disk_space(min_gb: float = 10.0) -> tuple[bool, str]:

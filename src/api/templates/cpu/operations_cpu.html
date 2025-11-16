@@ -11,10 +11,10 @@
     </div>
   </header>
 
-  {% include "partials/flash.html" %}
+  {% include "common/partials/flash.html" %}
 
   <div id="operations-onboarding-card" class="operations-section">
-    {% include "partials/ops_onboarding_cpu.html" %}
+    {% include "cpu/partials/ops_onboarding_cpu.html" %}
   </div>
 
   {% set cred_diag = diagnostics.credentials %}
@@ -27,10 +27,10 @@
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
     <div id="ops-queue-card" class="operations-section">
-      {% include "partials/ops_queue_card.html" %}
+      {% include "common/partials/ops_queue_card.html" %}
     </div>
     <div id="ops-jobs-card" class="full-span operations-section">
-      {% include "partials/ops_jobs_card.html" %}
+      {% include "common/partials/ops_jobs_card.html" %}
     </div>
   </div>
 </div>
