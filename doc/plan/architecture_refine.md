@@ -14,9 +14,21 @@
 
 ## Phased Approach
 0. **Phase 0 – Codebase Isolation Prerequisite**
-   - Restructure `src/` so API server and MCP server live in clearly separated directories/modules with no accidental shared state.
-   - Within the API server, isolate CPU-specific and GPU-specific implementations behind clean interfaces (e.g., strategy modules), ensuring changes in one path don’t ripple into the other.
-   - Document the boundaries so future work during later phases builds on an already decoupled foundation.
+   - Restructure `src/` into three top-level directories: `api/` (API server), `mcp/` (MCP server), `common/` (shared utilities)
+   - Within the API server, isolate CPU-specific (`api/cpu/`) and GPU-specific (`api/gpu/`) implementations behind clean interfaces (strategy pattern)
+   - Migrate shared API client to `common/api_client/` for reuse by scripts, MCP, and external tools
+   - Extract runtime builder factory to `api/runtime_builder.py` to prevent circular dependencies between common and API layers
+   - Reorganize web templates into `api/templates/{common,cpu,gpu}/` to support mode-specific UI
+   - Move web utilities (static files, markdown rendering) to `common/web_utils/`
+   - Update 13+ operational scripts to use new import paths and HTTP-based orchestration via `CHLAPIClient`
+   - Add boundary validation tests (AST-based import checks) to enforce architectural rules and prevent future coupling
+   - Document the boundaries, import rules, and entry points so future work during later phases builds on an already decoupled foundation
+
+   **Key Deliverables:**
+   - Clear separation: `api/` ↔ `mcp/` via HTTP only, no shared state
+   - CPU/GPU isolation: Strategy pattern, no cross-imports
+   - Scripts migration: Mode-aware orchestration (import.py detects CPU/GPU, export.py mode-agnostic)
+   - Foundation for platform-specific requirements work (Phase A)
 
 1. **Phase A – Requirements & Documentation Baseline**
    - Finalize `requirements_*.txt` matrices (Apple Metal, NVIDIA CUDA, AMD ROCm, Intel GPU, CPU) dedicated to the API server venv.

@@ -1,4 +1,4 @@
-# Phase 0: Codebase Isolation Implementation Plan
+# Phase 0: Codebase Isolation Implementation Plan (v2)
 
 ## Overview
 Restructure `src/` to cleanly separate API server, MCP server, and shared components, while isolating CPU-specific and GPU-specific implementations within the API server.
@@ -49,76 +49,69 @@ src/
 │   │   ├── telemetry_service.py           # MIGRATE: Move from services/, update imports
 │   │   ├── telemetry_names.py             # MIGRATE: Move from services/
 │   │   └── gpu_installer.py               # MIGRATE: Move from services/
+│   ├── templates/                         # Mode-specific web UI (RENAMED from src/web/)
+│   │   ├── common/                        # Shared templates across modes
+│   │   │   ├── base.html
+│   │   │   ├── doc_viewer.html
+│   │   │   └── partials/
+│   │   │       ├── sidebar.html
+│   │   │       ├── flash.html
+│   │   │       ├── audit_log.html
+│   │   │       ├── config_status_card.html
+│   │   │       ├── diagnostics_panel.html
+│   │   │       └── sheets_card.html
+│   │   ├── cpu/                           # CPU-mode templates
+│   │   │   ├── settings_cpu.html
+│   │   │   ├── operations_cpu.html
+│   │   │   └── partials/
+│   │   │       ├── ops_onboarding_cpu.html
+│   │   │       └── settings_onboarding_cpu.html
+│   │   └── gpu/                           # GPU-mode templates
+│   │       ├── settings.html
+│   │       ├── operations_gpu.html
+│   │       └── partials/
+│   │           ├── ops_onboarding_gpu.html
+│   │           ├── settings_gpu_runtime.html
+│   │           ├── settings_onboarding_gpu.html
+│   │           ├── models_card.html
+│   │           ├── ops_models_card.html
+│   │           ├── ops_queue_card.html
+│   │           ├── ops_operations_card.html
+│   │           ├── ops_jobs_card.html
+│   │           └── model_change_modal.html
 │   ├── runtime_builder.py                 # CREATE: Factory for building CPU/GPU runtimes (extracted from modes/base.py)
 │   ├── dependencies.py                    # UPDATE: Fix imports, use runtime_builder
 │   ├── metrics.py                         # UPDATE: Fix imports
 │   ├── models.py                          # NO CHANGE: API-specific DTOs
 │   └── server.py                          # CREATE: Move from api_server.py, implement runtime selection
 ├── mcp/                                    # MCP server code ONLY
-│   ├── api_client.py                      # UPDATE: Fix imports (src.config → src.common.config.config)
 │   ├── errors.py                          # NO CHANGE
 │   ├── utils.py                           # UPDATE: Fix imports if needed
 │   ├── models.py                          # NO CHANGE: MCP-specific DTOs
-│   ├── handlers_entries.py                # UPDATE: Fix imports
-│   ├── handlers_guidelines.py             # UPDATE: Fix imports
+│   ├── handlers_entries.py                # UPDATE: Fix imports, use CHLAPIClient from common
+│   ├── handlers_guidelines.py             # UPDATE: Fix imports, use CHLAPIClient from common
 │   └── server.py                          # CREATE: Move from server.py, update imports
 ├── common/                                 # Shared infrastructure ONLY
 │   ├── api_client/                        # HTTP client for API server (used by scripts, MCP)
 │   │   ├── client.py                      # MIGRATE: Move from api_client.py (CHLAPIClient)
 │   │   └── errors.py                      # CREATE: Extract CHLAPIError, APIConnectionError, APIOperationError
 │   ├── config/                            # Configuration management
-│   │   ├── config.py                      # MIGRATE: Move from config.py
-│   │   └── env.py                         # CREATE: Environment variable parsing (if needed)
+│   │   └── config.py                      # MIGRATE: Move from config.py
 │   ├── storage/                           # Database and repositories
 │   │   ├── database.py                    # MIGRATE: Move from storage/
 │   │   ├── repository.py                  # MIGRATE: Move from storage/
 │   │   ├── schema.py                      # MIGRATE: Move from storage/
 │   │   └── sheets_client.py               # MIGRATE: Move from storage/
-│   ├── models/                            # Shared domain models
-│   │   └── domain.py                      # CREATE: Extract domain models if needed (optional)
 │   ├── interfaces/                        # Abstract interfaces/protocols
 │   │   ├── embedding.py                   # CREATE: EmbeddingProvider protocol
 │   │   ├── search.py                      # CREATE: SearchProvider protocol + SearchProviderError
 │   │   ├── search_models.py               # CREATE: SearchResult, DuplicateCandidate, SearchReason (from search/models.py)
-│   │   └── runtime.py                     # CREATE: ModeRuntime dataclass ONLY (from modes/base.py)
-│   └── web/                               # Shared web resources
+│   │   └── runtime.py                     # CREATE: ModeRuntime dataclass + adapter protocols (ONLY typing.Protocol, NO src.api.* imports)
+│   └── web_utils/                         # Shared web rendering utilities (RENAMED from web/)
 │       ├── static/                        # MIGRATE: Move from web/static/
 │       │   ├── css/
 │       │   └── favicon.ico
 │       └── docs.py                        # MIGRATE: Move from web/docs.py (markdown rendering)
-└── web/                                    # Mode-specific web UI
-    ├── common/                            # Shared templates across modes
-    │   └── templates/                     # CREATE: Shared templates (base.html, doc_viewer.html, partials/*)
-    │       ├── base.html
-    │       ├── doc_viewer.html
-    │       └── partials/
-    │           ├── sidebar.html
-    │           ├── flash.html
-    │           ├── audit_log.html
-    │           ├── config_status_card.html
-    │           ├── diagnostics_panel.html
-    │           └── sheets_card.html
-    ├── cpu/                               # CPU-mode templates
-    │   └── templates/                     # CREATE: CPU-specific templates
-    │       ├── settings_cpu.html
-    │       ├── operations_cpu.html
-    │       └── partials/
-    │           ├── ops_onboarding_cpu.html
-    │           └── settings_onboarding_cpu.html
-    └── gpu/                               # GPU-mode templates
-        └── templates/                     # CREATE: GPU-specific templates
-            ├── settings.html
-            ├── operations_gpu.html
-            └── partials/
-                ├── ops_onboarding_gpu.html
-                ├── settings_gpu_runtime.html
-                ├── settings_onboarding_gpu.html
-                ├── models_card.html
-                ├── ops_models_card.html
-                ├── ops_queue_card.html
-                ├── ops_operations_card.html
-                ├── ops_jobs_card.html
-                └── model_change_modal.html
 
 # DELETED (old structure):
 ├── modes/                                  # DELETE: Migrated to api/cpu/ and api/gpu/
@@ -130,8 +123,15 @@ src/
 ├── config.py                               # DELETE: Migrated to common/config/config.py
 ├── server.py                               # DELETE: Moved to mcp/server.py
 ├── api_server.py                           # DELETE: Moved to api/server.py
-└── web/templates/                          # DELETE: Split into web/common/, web/cpu/, and web/gpu/
+├── web/                                    # DELETE: Split into common/web_utils/ and api/templates/
+└── mcp/api_client.py                       # DELETE: Replaced by common/api_client/client.py (CHLAPIClient)
 ```
+
+**Key Changes from v1:**
+1. **Simplified web structure**: `common/web_utils/` (rendering) + `api/templates/` (UI templates)
+2. **Single API client**: Deleted `mcp/api_client.py`, all HTTP communication via `common/api_client/client.py`
+3. **No optional modules**: Removed `common/models/domain.py` (use api/mcp DTOs directly)
+4. **Scripts strategy documented**: See Step 19 for per-script migration table
 
 ## Migration Actions by Component
 
@@ -144,16 +144,18 @@ src/
 - `search_models.py`: Migrate `SearchResult`, `DuplicateCandidate`, `SearchReason` from `search/models.py`
 - `search.py`: Protocol with `is_available`, `search()`, `find_duplicates()`, `rebuild_index()` + `SearchProviderError` exception
 - `embedding.py`: Protocol with `encode()`, `encode_single()`, `embedding_dimension`, `get_model_version()`
-- `runtime.py`: **ONLY** the `ModeRuntime` dataclass (from `modes/base.py`, NOT `build_mode_runtime()`)
-  - Include `OperationsModeAdapter` and `DiagnosticsModeAdapter` Protocol definitions here so CPU/GPU runtimes can depend on them without importing `src.api.*`.
-  - Replace any `SearchService` references with interfaces from `interfaces/search.py` (or `typing.Protocol`) so `common` never imports the API layer.
+- `runtime.py`:
+  - **ONLY** the `ModeRuntime` dataclass (from `modes/base.py`, NOT `build_mode_runtime()`)
+  - Include `OperationsModeAdapter` and `DiagnosticsModeAdapter` as **typing.Protocol definitions ONLY**
+  - **CRITICAL**: These protocols must NOT import from `src.api.*` - they define abstract interfaces that api/cpu/gpu implementations will satisfy
+  - Use `typing.Protocol` with abstract methods; no concrete implementations or service imports
 
 **3. Migrate Shared API Client** (`src/common/api_client/`)
 - Move `src/api_client.py` → `src/common/api_client/client.py`
 - Extract exceptions to `src/common/api_client/errors.py`:
   - `CHLAPIError`, `APIConnectionError`, `APIOperationError`
 - Update imports: `from src.api_client import CHLAPIClient` → `from src.common.api_client.client import CHLAPIClient`
-  - Current consumers are `scripts/import.py` and `src/services/operations_service.py`. MCP continues using its dedicated `httpx` client until Step 16 moves handlers to HTTP.
+  - Current consumers: `scripts/import.py`, `scripts/export.py`, `src/services/operations_service.py`
 
 **4. Migrate Configuration**
 - Move `src/config.py` → `src/common/config/config.py`
@@ -164,15 +166,15 @@ src/
 - Move `src/storage/*` → `src/common/storage/*`
 - Update all imports: `from src.storage` → `from src.common.storage`
 
-**6. Migrate Web Rendering**
-- Move `src/web/docs.py` → `src/common/web/docs.py`
-- Move `src/web/static/*` → `src/common/web/static/*`
+**6. Migrate Web Resources**
+- Move `src/web/docs.py` → `src/common/web_utils/docs.py`
+- Move `src/web/static/*` → `src/common/web_utils/static/*`
 - Split `src/web/templates/*`:
-  - Shared templates → `src/web/common/templates/` (base.html, doc_viewer.html, partials/sidebar.html, etc.)
-  - CPU templates → `src/web/cpu/templates/` (settings_cpu.html, operations_cpu.html, partials/ops_onboarding_cpu.html)
-  - GPU templates → `src/web/gpu/templates/` (settings.html, operations_gpu.html, GPU-specific partials)
-- Configure a `Jinja2Templates` factory inside `src/api/server.py` that searches `[mode]/templates/`, then `common/templates/`, and inject it into routers instead of constructing template objects at import time.
-- Mount `/static` from `src/common/web/static/` inside `src/api/server.py`; delete the per-module static mounting currently in `src/api_server.py`.
+  - Shared templates → `src/api/templates/common/` (base.html, doc_viewer.html, partials/sidebar.html, etc.)
+  - CPU templates → `src/api/templates/cpu/` (settings_cpu.html, operations_cpu.html, partials/ops_onboarding_cpu.html)
+  - GPU templates → `src/api/templates/gpu/` (settings.html, operations_gpu.html, GPU-specific partials)
+- Configure a `Jinja2Templates` factory inside `src/api/server.py` that searches `templates/[mode]/`, then `templates/common/`, and inject it into routers instead of constructing template objects at import time
+- Mount `/static` from `src/common/web_utils/static/` inside `src/api/server.py`; delete the per-module static mounting currently in `src/api_server.py`
 
 **7. Extract CPU Implementation** (`src/api/cpu/`)
 - Migrate `modes/sqlite_only/runtime.py` → `api/cpu/runtime.py`
@@ -200,8 +202,8 @@ src/
 - Update to import from `api/runtime_builder.py`
 - Update `src/api/dependencies.py` for new paths
 - Update all `src/api/routers/*` imports
-- Replace router/global imports (`src/api/dependencies.py`, `src/api/routers/ui.py` SSE endpoints, etc.) so everything consumes instances passed through `dependencies.py` instead of importing `src.api_server`.
-- Remove MCP coupling from UI routers (e.g., `_invalidate_categories_cache_safe` should emit an event via a service, not `sys.modules["src.server"]`).
+- Replace router/global imports (`src/api/dependencies.py`, `src/api/routers/ui.py` SSE endpoints, etc.) so everything consumes instances passed through `dependencies.py` instead of importing `src.api_server`
+- Remove MCP coupling from UI routers (e.g., `_invalidate_categories_cache_safe` should emit an event via a service, not `sys.modules["src.server"]`)
 - Delete `src/api_server.py`
 
 **11. TEST CPU MODE** ✅ **CHECKPOINT 1**
@@ -241,13 +243,14 @@ src/
 
 **16. Isolate MCP Server**
 - Move `src/server.py` → `src/mcp/server.py`
+- **Delete `src/mcp/api_client.py`** - replaced by `CHLAPIClient` from `common/api_client/client.py`
 - Audit: MCP should ONLY import from `common/` (verify no `src.api.*` imports)
-- Update `mcp/api_client.py` imports: `src.config` → `src.common.config.config`
 - Update `mcp/handlers_*.py` so handlers no longer receive DB sessions or `SearchService` instances:
-  - Replace repository calls with HTTP requests via `src.common.api_client.client.CHlAPIClient` (or a thin MCP wrapper) for `list_categories`, `read_entries`, `write_entry`, etc.
-  - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata.
-  - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`).
-- Delete `src/server.py`
+  - **Use `CHLAPIClient` from `src.common.api_client.client`** for all HTTP communication
+  - Replace repository calls with HTTP requests for `list_categories`, `read_entries`, `write_entry`, etc.
+  - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata
+  - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`)
+- Delete `src/server.py` and `src/mcp/api_client.py`
 
 **17. TEST MCP** ✅ **CHECKPOINT 3**
 - Start API server (CPU or GPU mode)
@@ -259,40 +262,56 @@ src/
 
 **18. Remove Old Code**
 - Delete: `src/modes/`, `src/embedding/`, `src/search/`, `src/services/`
-- Delete: `src/api_client.py`, `src/config.py`, `src/api_server.py`, `src/server.py`
-- Verify no references: `grep -r "from src.modes" src/`
+- Delete: `src/api_client.py`, `src/config.py`, `src/api_server.py`, `src/server.py`, `src/web/`
+- Delete: `src/mcp/api_client.py`
+- Verify no references: `grep -r "from src.modes" src/` (should return nothing)
 
 **19. Update Scripts** (`scripts/` directory - 13+ files)
-- Fix imports in all Python scripts:
-  - `from src.api_client import` → `from src.common.api_client.client import`
-  - `from src.config import` → `from src.common.config.config import`
-  - `from src.storage import` → `from src.common.storage`
-  - `from src.search.service import` → `from src.api.services.search_service`
-  - `from src.embedding.service import` → `from src.api.gpu.embedding_service`
-- Add `scripts/seed_default_content.py` to the migration list (currently imports `src.config` and dynamically loads `scripts/setup-gpu.py`).
-- Decide boundary strategy for scripts that still rely on API internals:
-  1. **Shared helpers**: move FAISS/embedding utilities needed by `rebuild_index.py`, `sync_embeddings.py`, `tweak/*`, etc., into `src/common/search` or `src/common/embedding` so scripts import from `common/`.
-  2. **HTTP orchestration**: rewrite scripts (e.g., `setup-gpu.py`, `sync_embeddings.py`) to call REST endpoints via `CHLAPIClient` and stop importing `src.api.*`.
-  Document the choice per script inside this plan to enforce the "Scripts → API internals" prohibition after Phase 0.
-- **Scripts to update**:
-  - `import.py`, `export.py`, `seed_default_content.py`
-  - `rebuild_index.py`, `sync_embeddings.py`, `sync_guidelines.py`
-  - `setup-gpu.py`, `setup-cpu.py`
-  - `gpu_smoke_test.py`, `search_health.py`
-  - `scripts/tweak/read.py`, `scripts/tweak/write.py`
-- **Test each script** to ensure functionality
+
+**Global Import Updates (All Scripts):**
+```python
+# Before → After
+from src.api_client import CHLAPIClient → from src.common.api_client.client import CHLAPIClient
+from src.config import Config → from src.common.config.config import Config
+from src.storage import → from src.common.storage import
+```
+
+**Per-Script Migration Strategy:**
+
+| Script | Strategy | Implementation Details | Rationale |
+|--------|----------|------------------------|-----------|
+| **import.py** | HTTP + Mode Detection | • Use `sheets_client.py` (common) to read spreadsheet<br>• POST /entries via CHLAPIClient<br>• GET /settings to detect mode<br>• If GPU: POST /operations/sync-embeddings | CPU: DB write only<br>GPU: DB write + trigger embedding job |
+| **export.py** | Pure HTTP | • GET /entries via CHLAPIClient<br>• Write to spreadsheet using `sheets_client.py` | Mode-agnostic read operation |
+| **seed_default_content.py** | HTTP + Script Delegation | • Update imports: `src.config` → `src.common.config.config`<br>• When calling setup scripts, use subprocess (no dynamic imports) | Orchestrates other scripts |
+| **rebuild_index.py** | HTTP | • POST /operations/rebuild-index via CHLAPIClient<br>• Poll job status via GET /operations/{job_id} | Mode-aware rebuild handled by API |
+| **sync_embeddings.py** | HTTP | • POST /operations/sync-embeddings via CHLAPIClient<br>• Poll job status | GPU-specific operation |
+| **sync_guidelines.py** | HTTP | • POST /operations/sync-guidelines via CHLAPIClient | Mode-agnostic |
+| **setup-gpu.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.embedding_service`<br>• Import from `src.common.storage`<br>• One-time setup, tightly coupled to GPU internals | Initial environment setup |
+| **setup-cpu.py** | HTTP + Common | • Use `src.common.storage` for DB setup<br>• Call API endpoints for validation | CPU-specific setup |
+| **gpu_smoke_test.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.*` for direct testing<br>• Bypass HTTP to test internal components | Testing GPU internals |
+| **search_health.py** | HTTP | • GET /search/health via CHLAPIClient<br>• GET /settings for mode detection | Diagnostic tool |
+| **tweak/read.py** | Common + HTTP | • Use `src.common.storage.repository` for direct DB reads<br>• Use CHLAPIClient for search operations | Low-level diagnostic |
+| **tweak/write.py** | Common + HTTP | • Use `src.common.storage.repository` for direct DB writes<br>• POST /operations/sync-embeddings if GPU mode | Low-level maintenance |
+
+**Exception Policy:**
+- **Setup scripts** (`setup-gpu.py`, `gpu_smoke_test.py`): Can import from `src.api.*` because they configure/test internal components during initial environment setup
+- **All other scripts**: Must use HTTP via CHLAPIClient or common utilities only
+
+**Test each script** after migration to ensure functionality
 
 **20. Update Tests**
 - Fix all import paths in test files:
   - `from src.modes import` → `from src.api.cpu.runtime import` / `from src.api.gpu.runtime import`
   - `from src.services import` → `from src.api.services import`
   - `from src.storage import` → `from src.common.storage import`
+  - `from src.api_client import` → `from src.common.api_client.client import`
   - etc.
 - Add `tests/architecture/test_boundaries.py`: Static import checks
   - Ensure MCP never imports from `src.api.*`
   - Ensure CPU never imports from `src.api.gpu.*`
   - Ensure common never imports from `src.api.*` or `src.mcp.*`
-  - Use AST parsing or grep to validate import rules
+  - Ensure scripts (except setup/test scripts) never import from `src.api.*`
+  - Use AST parsing to validate import rules
 - Add `tests/smoke/test_startup.py`: Mode-specific startup tests
   - Test CPU mode starts without GPU dependencies
   - Test GPU mode starts with FAISS/embeddings available
@@ -301,7 +320,8 @@ src/
   - Test SQLite provider works independently
   - Test Vector provider graceful degradation
   - Test search service fallback logic
-- Update `tests/api/conftest.py`, `tests/integration/test_concurrent_faiss*.py`, and any docs that import `src.api_server` (README, `doc/manual.md`) to reference `src.api.server`.
+- Update `tests/api/conftest.py`, `tests/integration/test_concurrent_faiss*.py` to reference `src.api.server`
+- Update any docs that import `src.api_server` (README, `doc/manual.md`) to reference `src.api.server`
 
 **21. Update Documentation**
 - `doc/architecture/phase_0_boundaries.md`: Document structure and import rules
@@ -314,10 +334,15 @@ src/
 
 ### Allowed
 ```python
-# Scripts/External → common (shared API client)
+# Scripts/External → common (shared API client + utilities)
 from src.common.api_client.client import CHLAPIClient
 from src.common.config.config import Config
 from src.common.storage.database import Database
+from src.common.storage.sheets_client import GoogleSheetsClient
+
+# Setup/test scripts → api (EXCEPTION - for initial setup/testing only)
+from src.api.gpu.embedding_service import EmbeddingService  # setup-gpu.py, gpu_smoke_test.py
+from src.api.services.search_service import SearchService   # Test fixtures only
 
 # MCP → common ONLY
 from src.common.config.config import Config
@@ -351,11 +376,13 @@ from src.api.gpu.embedding_client import GPUEmbeddingClient
 
 # ❌ Common → API/MCP (FORBIDDEN - creates circular dependency)
 from src.api.services import anything
-from src.mcp.api_client import APIClient
+from src.mcp.server import anything
 from src.api.runtime_builder import build_mode_runtime
 
-# ❌ Scripts → API internals (FORBIDDEN - use common/api_client instead)
-from src.api.services.search_service import SearchService
+# ❌ Operational scripts → API internals (FORBIDDEN - use HTTP via CHLAPIClient)
+# Exceptions: setup-gpu.py, gpu_smoke_test.py (setup/testing only)
+from src.api.services.search_service import SearchService  # in import.py, sync_embeddings.py
+from src.api.gpu.embedding_service import EmbeddingService # in rebuild_index.py
 ```
 
 ## Entry Points
@@ -369,6 +396,10 @@ CHL_SEARCH_MODE=auto python -m src.api.server
 
 # MCP Server (requires API running)
 python -m src.mcp.server
+
+# Scripts (mode-aware via HTTP)
+python scripts/import.py    # Detects mode, triggers embeddings if GPU
+python scripts/export.py    # Mode-agnostic
 ```
 
 ## Success Criteria
@@ -377,12 +408,14 @@ python -m src.mcp.server
 - [ ] Shared API client migrated to `common/api_client/`
 - [ ] Search models migrated to `common/interfaces/search_models.py`
 - [ ] Runtime builder created in `api/runtime_builder.py`
-- [ ] Shared templates in `web/common/templates/`
+- [ ] Templates organized in `api/templates/{common,cpu,gpu}/`
+- [ ] Web utilities in `common/web_utils/`
 - [ ] CPU mode fully functional (Checkpoint 1)
 - [ ] GPU mode fully functional (Checkpoint 2)
 - [ ] MCP server fully functional (Checkpoint 3)
-- [ ] Old directories deleted
-- [ ] All scripts updated and tested (13+ files)
+- [ ] Old directories deleted (modes/, embedding/, search/, services/, storage/, web/)
+- [ ] Old files deleted (api_client.py, config.py, api_server.py, server.py, mcp/api_client.py)
+- [ ] All scripts updated per migration table (13+ files)
 - [ ] All tests pass
 - [ ] Boundary tests prevent future coupling
 - [ ] Documentation updated
@@ -390,41 +423,30 @@ python -m src.mcp.server
 
 ## Timeline Estimate
 
-- **Phase 1 (Foundation & CPU)**: 16 hours
-  - +2 hours for api_client migration, search_models, runtime_builder, shared templates
+- **Phase 1 (Foundation & CPU)**: 17 hours
+  - +3 hours for web_utils refactor, mcp/api_client removal, runtime.py protocol clarity
 - **Phase 2 (GPU)**: 11 hours
   - +1 hour for embedding_service.py migration
-- **Phase 3 (MCP)**: 5 hours
-- **Phase 4 (Cleanup)**: 12 hours
-  - +4 hours for scripts update (13+ files), expanded test coverage
-- **Total**: ~44 hours (5-6 days)
+- **Phase 3 (MCP)**: 6 hours
+  - +1 hour for CHLAPIClient integration in handlers
+- **Phase 4 (Cleanup)**: 14 hours
+  - +6 hours for scripts migration table implementation (mode-aware import/export)
+- **Total**: ~48 hours (6 days)
 
-## Key Improvements from Review
+## Key Improvements from v1
 
-This plan has been updated based on comprehensive codebase analysis (see `phase_0_review.md`):
+### Critical Fixes
+1. **Simplified web structure**: `common/web_utils/` + `api/templates/` (no more confusing "common/web" vs "web/common")
+2. **Single API client**: Deleted `mcp/api_client.py`, use `CHLAPIClient` everywhere
+3. **Scripts migration table**: Per-script strategy with mode-aware import/export documented
+4. **Clearer protocols**: `common/interfaces/runtime.py` uses typing.Protocol ONLY, no src.api.* imports
+5. **Removed optional modules**: No `common/models/domain.py` (use api/mcp DTOs directly)
 
-### Critical Additions
-1. **Shared API Client** (`common/api_client/`) - Used by 13+ scripts and external tools
-2. **Scripts Update** (Phase 4, Step 19) - Fix imports in all operational scripts
-3. **Runtime Builder** (`api/runtime_builder.py`) - Avoids `common → api` boundary violation
-
-### Important Clarifications
-4. **Embedding Service** → GPU-only (`api/gpu/embedding_service.py`, not in `api/services/`)
-5. **Search Models** → Protocol contracts (`common/interfaces/search_models.py`)
-6. **Search Service** → Migrated from `search/service.py` to `api/services/search_service.py`
-7. **Shared Templates** → New `web/common/templates/` for base.html, partials, etc.
-
-### Enhanced Testing
-8. **Boundary Tests** - AST-based import validation to prevent coupling
-9. **Smoke Tests** - Mode-specific startup validation (CPU/GPU/MCP)
-10. **Integration Tests** - Provider isolation and fallback logic
-
-### Files Accounted For
-- **51 Python files** in src/
-- **13+ scripts** requiring import updates
-- **23 HTML templates** properly segregated (common/CPU/GPU)
-
-**Review Document**: See `doc/plan/phase_0_review.md` for detailed analysis
+### Alignment with High-Level Goals
+- Supports "API venv per platform + MCP via uv sync" workflow
+- Scripts can detect mode and orchestrate appropriately via HTTP
+- Clear separation enables Phase A (platform-specific requirements)
+- Foundation for Phase B (diagnostics script)
 
 ---
 
