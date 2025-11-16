@@ -151,7 +151,7 @@ src/
   - Include `OperationsModeAdapter` and `DiagnosticsModeAdapter` as **typing.Protocol definitions ONLY**
   - **CRITICAL**: These protocols must NOT import from `src.api.*` - they define abstract interfaces that api/cpu/gpu implementations will satisfy
   - Use `typing.Protocol` with abstract methods; no concrete implementations or service imports
-- **DTO relocation**: Move the MCP-specific DTOs/utilities consumed by API routers (`ExperienceWritePayload`, `ManualWritePayload`, `format_validation_error`, `normalize_context`) into `src/common/dto/models.py` so `src/api` no longer reaches into `src/mcp`. Update both API and MCP imports accordingly before deleting the old module paths.
+- **DTO relocation**: Move the MCP-specific DTOs/utilities currently imported by API routers (`ExperienceWritePayload`, `ManualWritePayload`, `format_validation_error`, `normalize_context`) out of `src/mcp` so `src/api` no longer reaches into the MCP package. They can live under `src/common/dto/models.py` as an API dependency, but **MCP must not import them directly**; MCP talks to the API only via HTTP payloads and `CHLAPIClient`-level wrappers.
 
 **3. Migrate Shared API Client** (`src/common/api_client/`)
 - Move `src/api_client.py` → `src/common/api_client/client.py`
@@ -161,7 +161,8 @@ src/
   - Current consumers: `scripts/import.py`, `scripts/export.py`, `src/services/operations_service.py`
 - Extend the client surface while moving it:
   - Add lightweight `.get()/.post()` helpers plus typed wrappers for `/api/v1/settings`, `/api/v1/operations/*`, `/api/v1/entries/*`, and `/health/metrics` so the scripts migration plan remains accurate.
-  - Keep compatibility with existing queue helpers but note that Phase 3 will port the circuit-breaker/tenacity stack from `src/mcp/api_client.py` into this shared client before the MCP module is deleted (see Step 16).
+  - Keep compatibility with existing queue helpers, but **do not** reintroduce the circuit-breaker/tenacity retry stack from `src/mcp/api_client.py`. In the local-only model (ADR-004), `CHLAPIClient` should remain a synchronous, single-shot HTTP client that surfaces clear exceptions to its callers.
+  - Treat `CHLAPIClient` as the **canonical boundary adapter** for calling the API: scripts and MCP should never hand-roll their own HTTP clients or reach into API/server internals; instead, they call `CHLAPIClient` methods that encapsulate the HTTP contract.
 
 **4. Migrate Configuration**
 - Move `src/config.py` → `src/common/config/config.py`
@@ -257,17 +258,19 @@ src/
 **16. Isolate MCP Server**
 - Move `src/server.py` → `src/mcp/server.py`
 - **Delete `src/mcp/api_client.py`** - replaced by `CHLAPIClient` from `common/api_client/client.py`
-- **Audit boundary rules**: MCP should ONLY import from `common/` (verify no `src.api.*` imports)
-  - **Critical**: MCP must access storage ONLY via API HTTP interfaces, never directly via `src.common.storage.*`
-  - `src.common.storage.*` modules are internal to the API server implementation
+- **Audit boundary rules**:
+  - MCP must **not** import from `src.api.*` (verify via boundary tests).
+  - MCP may only import `Config` and `CHLAPIClient` from `src.common.*` (`src.common.config.config.Config`, `src.common.api_client.client.CHLAPIClient`).
+  - **Critical**: MCP must access storage ONLY via API HTTP interfaces, never directly via `src.common.storage.*`; `src.common.storage.*` modules are internal to the API server implementation.
+  - Other `src.common.*` modules (DTOs, web utils, interfaces, storage) are for the API server and scripts, not for MCP.
   - **Note:** Authentication is skipped for local-only deployment (MCP and API run on same machine)
 - Update `mcp/handlers_*.py` so handlers no longer receive DB sessions or `SearchService` instances:
   - **Use `CHLAPIClient` from `src.common.api_client.client`** for all HTTP communication
   - Replace repository calls with HTTP requests for `list_categories`, `read_entries`, `write_entry`, etc.
   - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata
   - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`)
-- Port the resiliency features from `src/mcp/api_client.py` (circuit breaker, tenacity retries, transport-specific exceptions) into the shared `CHLAPIClient` to maintain current behavior
-- **Error handling**: If API server is unavailable, return 404 error to MCP client. No automatic reconnection, health checks, or circuit breaker for connection failures (local deployment assumption)
+- Port any useful error-mapping or request-shaping logic from `src/mcp/api_client.py` into the shared `CHLAPIClient`, but **do not** add circuit breakers or automatic retries. MCP handlers should catch `APIConnectionError`/`CHLAPIError` and surface simple, local-only failures to the host editor.
+- **Error handling**: If the API server is unavailable, MCP should surface a clear “API unreachable” error to the client (mapped to a 404-style tool error), with no automatic reconnection, health checks, or circuit breaker for connection failures (local deployment assumption).
 - Delete `src/server.py` and `src/mcp/api_client.py`
 
 **17. TEST MCP** ✅ **CHECKPOINT 3**
@@ -298,16 +301,16 @@ from src.storage import → from src.common.storage import
 
 | Script | Strategy | Implementation Details | Rationale |
 |--------|----------|------------------------|-----------|
-| **import.py** | HTTP + Mode Detection | • Use `sheets_client.py` (common) to read spreadsheet<br>• POST /entries via CHLAPIClient<br>• GET /settings to detect mode<br>• If GPU: POST /operations/sync-embeddings | CPU: DB write only<br>GPU: DB write + trigger embedding job |
-| **export.py** | Pure HTTP | • GET /entries via CHLAPIClient<br>• Write to spreadsheet using `sheets_client.py` | Mode-agnostic read operation |
+| **import.py** | HTTP + Mode Detection | • Use `sheets_client.py` (common) to read spreadsheet<br>• POST `/api/v1/operations/import-sheets` via CHLAPIClient<br>• GET `/api/v1/settings/` to detect mode<br>• If GPU: POST `/api/v1/operations/sync-embeddings` | CPU: DB write only<br>GPU: DB write + trigger embedding job |
+| **export.py** | Pure HTTP | • GET `/api/v1/entries/export` via CHLAPIClient<br>• Write to spreadsheet using `sheets_client.py` | Mode-agnostic read operation |
 | **seed_default_content.py** | HTTP + Script Delegation | • Update imports: `src.config` → `src.common.config.config`<br>• When calling setup scripts, use subprocess (no dynamic imports) | Orchestrates other scripts |
-| **rebuild_index.py** | HTTP | • POST /operations/rebuild-index via CHLAPIClient<br>• Poll job status via GET /operations/{job_id} | Mode-aware rebuild handled by API |
-| **sync_embeddings.py** | HTTP | • POST /operations/sync-embeddings via CHLAPIClient<br>• Poll job status | GPU-specific operation |
-| **sync_guidelines.py** | HTTP | • POST /operations/sync-guidelines via CHLAPIClient | Mode-agnostic |
-| **setup-gpu.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.embedding_service`<br>• Import from `src.common.storage`<br>• One-time setup, tightly coupled to GPU internals<br>• **Critical**: Move GPU-specific features from API server code to this script or other scripts in `scripts/` folder | Runs FIRST before API server starts |
-| **setup-cpu.py** | HTTP + Common | • Use `src.common.storage` for DB setup<br>• Call API endpoints for validation | CPU-specific setup |
-| **gpu_smoke_test.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.*` for direct testing<br>• Bypass HTTP to test internal components | Testing GPU internals |
-| **search_health.py** | HTTP | • GET /search/health via CHLAPIClient<br>• GET /settings for mode detection | Diagnostic tool |
+| **rebuild_index.py** | HTTP | • POST `/api/v1/operations/rebuild-index` via CHLAPIClient<br>• Poll job status via GET `/api/v1/operations/jobs/{job_id}` | Mode-aware rebuild handled by API |
+| **sync_embeddings.py** | HTTP | • POST `/api/v1/operations/sync-embeddings` via CHLAPIClient<br>• Poll job status via GET `/api/v1/operations/jobs/{job_id}` | GPU-specific operation |
+| **sync_guidelines.py** | HTTP | • POST `/api/v1/operations/sync-guidelines` via CHLAPIClient<br>• Poll job status via GET `/api/v1/operations/jobs/{job_id}` if needed | Mode-agnostic |
+| **setup-gpu.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.embedding_service`<br>• Import from `src.common.storage`<br>• One-time setup, tightly coupled to GPU internals<br>• **Critical**: Move GPU-specific features from API server code to this script or other scripts in `scripts/` folder | Runs FIRST before API server starts (with API server **stopped**) |
+| **setup-cpu.py** | HTTP + Common | • Use `src.common.storage` for DB setup<br>• Call API endpoints for validation | CPU-specific setup (prefer to run with API server stopped when mutating schema) |
+| **gpu_smoke_test.py** | Keep API Imports (Exception) | • Import from `src.api.gpu.*` for direct testing<br>• Bypass HTTP to test internal components | Testing GPU internals (run independently of API server) |
+| **search_health.py** | HTTP | • GET `/api/v1/search/health` via CHLAPIClient<br>• GET `/api/v1/settings/` for mode detection | Diagnostic tool |
 
 **Note:** Legacy `scripts/tweak/read.py` and `scripts/tweak/write.py` are removed. Use API endpoints for debugging and maintenance instead.
 

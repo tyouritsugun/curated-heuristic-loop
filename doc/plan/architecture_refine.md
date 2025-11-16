@@ -29,6 +29,7 @@
 - All MCP operations must go through API endpoints
 - API server becomes the sole authority for database and FAISS operations
 - Requires comprehensive API surface for all MCP operations
+- `CHLAPIClient` (plus `Config` for base URL/configuration) is the **only** shared client library MCP and scripts may use to talk to the API. Any other cross-process behavior must be expressed as HTTP endpoints.
 - Lock mechanisms in API server prevent concurrent modification issues
 
 ### ADR-002: CPU/GPU Runtime Separation via Strategy Pattern
@@ -57,9 +58,11 @@
 - **Scalability**: Structure supports future growth without major refactoring
 
 **Implications:**
-- Common code must have no dependencies on API or MCP
-- API and MCP communicate only via HTTP (CHLAPIClient)
-- Boundary tests enforce architectural rules
+- Common code must have no dependencies on API or MCP.
+- The API server may import any `src/common.*` modules (config, storage, DTOs, web utils, API client).
+- The MCP server may import only `Config` and `CHLAPIClient` from `src/common.*`; all other behavior must go through HTTP endpoints.
+- API and MCP communicate only via HTTP (CHLAPIClient).
+- Boundary tests enforce these architectural rules (including forbidden MCP imports from `src.common.storage.*`, `src.common.web_utils.*`, etc.).
 
 ### ADR-004: Local-Only Deployment Model
 

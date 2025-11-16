@@ -10,6 +10,7 @@ This document details the migration strategy for 13+ operational scripts in the 
 - **Preferred**: Scripts call API endpoints via `CHLAPIClient` from `src.common.api_client.client`
 - **Avoid**: Direct imports from `src.api.*` (violates separation of concerns)
 - **Exceptions**: Setup/testing scripts that configure internal components
+- `CHLAPIClient` is a synchronous, one-shot HTTP client (no built-in retries or circuit breaker); scripts may catch `APIConnectionError`/`CHLAPIError` to print friendly errors but should otherwise rely on the API server for robustness.
 
 ### 2. **Mode-Aware Orchestration**
 - Scripts detect runtime mode (CPU/GPU) via API endpoints (e.g., `GET /api/v1/settings/`)
@@ -446,9 +447,9 @@ def check_search_health():
 2. `gpu_smoke_test.py` - Internal GPU component testing
 
 **Rationale:**
-- These scripts configure/test internal components during initial environment setup
-- They run before or independently of the API server
-- Clearly documented as setup/testing tools, not operational scripts
+- These scripts configure/test internal components during initial environment setup.
+- They run before or independently of the API server and should operate on the database/index only while the API server is stopped.
+- Clearly documented as setup/testing tools, not operational scripts.
 
 **All other scripts must use:**
 - HTTP via `CHLAPIClient` for orchestration
@@ -489,9 +490,21 @@ Scripts depend on these API endpoints (ensure they exist):
 - `GET /api/v1/search/health` - Get search system health
 - `GET /health` - Get API health
 
+## Operations Job Contract
+
+- `POST /api/v1/operations/{job_name}` returns JSON with at least `{"job_id": "<string>"}`. Expected job names include: `import-sheets`, `sync-embeddings`, `rebuild-index`, `sync-guidelines`, and `seed-defaults`.
+- `GET /api/v1/operations/jobs/{job_id}` returns JSON with at least `{"job_id": ..., "name": ..., "state": ..., "error": Optional[str]}`. Additional metadata (timestamps, counts) is allowed but not required by scripts.
+- `state` values are finite and include a terminal subset; scripts treat `["completed", "failed"]` as terminal states and may ignore intermediary states such as `"queued"` or `"running"`.
+- Operations are expected to be idempotent from the caller’s point of view. The API server is responsible for locking and deduplication so that repeated triggers do not corrupt the database or FAISS index.
+- Long-running operations should surface meaningful `error` messages on failure so scripts can print them before exiting with a non-zero status.
+
 ## Import Validation
 
-Boundary tests should be implemented in `tests/architecture/test_boundaries.py` to ensure operational scripts (excluding `setup-gpu.py` and `gpu_smoke_test.py`) do not import from `src.api.*`. Implementation details are left to the developer.
+Boundary tests should be implemented in `tests/architecture/test_boundaries.py` to ensure:
+- Operational scripts (excluding `setup-gpu.py` and `gpu_smoke_test.py`) do not import from `src.api.*`.
+- MCP modules do not import from `src.api.*` and only reference `src.common.config.config.Config` and `src.common.api_client.client.CHLAPIClient` (no direct imports from `src.common.storage.*`, `src.common.web_utils.*`, or other `src.common.*` modules).
+
+Implementation details are left to the developer.
 
 ---
 
