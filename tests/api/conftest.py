@@ -1,9 +1,6 @@
 """Pytest fixtures for API tests."""
 
 import os
-
-os.environ.setdefault("CHL_OPERATIONS_MODE", "noop")
-
 import pytest
 import contextlib
 from typing import Iterator

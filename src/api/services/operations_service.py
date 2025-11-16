@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -13,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
-import re
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -225,7 +221,8 @@ class OperationsService:
             .order_by(JobHistory.job_type.asc())
             .all()
         )
-        return [self._serialize_job(row) for row in rows]
+        serialized = [self._serialize_job(row) for row in rows]
+        return {record["job_type"]: record for record in serialized}
 
     # ------------------------------------------------------------------
     # Internal job helpers
@@ -260,7 +257,7 @@ class OperationsService:
             "cancelled_at": job.cancelled_at,
             "payload": payload,
             "result": result,
-            "error_detail": job.error_detail,
+            "error": job.error_detail,
         }
 
     # ------------------------------------------------------------------

@@ -107,6 +107,7 @@ class JobHistory(Base):
     __tablename__ = "job_history"
 
     id = Column(Integer, primary_key=True)
+    job_id = Column(String(64), unique=True, nullable=False, index=True)
     job_type = Column(String(64), nullable=False, index=True)
     status = Column(String(32), nullable=False)
     requested_by = Column(String(255), nullable=True)
@@ -116,7 +117,7 @@ class JobHistory(Base):
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     payload = Column(JSON, nullable=True)
     result = Column(JSON, nullable=True)
-    error = Column(Text, nullable=True)
+    error_detail = Column(Text, nullable=True)
 
 
 class AuditLog(Base):
@@ -163,5 +164,6 @@ class OperationLock(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(64), unique=True, nullable=False)
-    acquired_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-
+    owner_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at = Column(String(64), nullable=True)

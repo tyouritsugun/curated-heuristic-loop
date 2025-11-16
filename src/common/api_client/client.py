@@ -44,8 +44,9 @@ class CHLAPIClient:
 
     def _raw_request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         url = f"{self.base_url}{path}"
+        timeout = kwargs.pop("timeout", self.timeout)
         try:
-            response = self.session.request(method, url, timeout=self.timeout, **kwargs)
+            response = self.session.request(method, url, timeout=timeout, **kwargs)
             return response
         except requests.RequestException as exc:
             logger.debug("API connection error: %s", exc)

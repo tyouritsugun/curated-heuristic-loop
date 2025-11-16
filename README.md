@@ -143,7 +143,7 @@ The browser UI now covers all day-to-day administration. Use the CLI pieces only
 
 - `uv run python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences.
 - `uv run python scripts/export.py` – pushes local SQLite data to Google Sheets (uses `scripts/scripts_config.yaml`). Add `--dry-run` to preview counts.
-- `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). In `sqlite_only` mode the script detects there is no worker queue and skips coordination automatically. Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data. Pass `--skip-api-coordination` only if the FastAPI server is offline.
+- `uv run python scripts/import.py --yes` – pulls from Sheets (optionally coordinating with a worker pool if you deploy one). In `sqlite_only` mode the script detects there is no worker queue and skips coordination automatically. Once it finishes, upload or rebuild a FAISS snapshot via `/operations` so vector search reflects the curated data.
 - `uv run python scripts/setup-gpu.py [--download-models]` – optional helper that downloads models ahead of time; the web UI works without it, but this can save the first user from waiting.
 
 ### MCP clients (optional)
@@ -191,8 +191,8 @@ Configuration options:
 
 Need raw API access? Hit the documented routes under `/api/v1/` (settings, workers, operations, telemetry). Health checks live at `/health` and `/metrics` (Prometheus).
 
-Import/export/index buttons call the same Python scripts you would run via the CLI. To keep them inert (for CI or local testing), set `CHL_OPERATIONS_MODE=noop` before starting the server. The default `scripts` mode executes the helpers with advisory locks and records stdout/stderr snippets in the job history.
-Set `CHL_OPERATIONS_TIMEOUT_SEC` (default 900, minimum 60) to cap script runtime; jobs exceeding the limit are marked failed with tail logs captured. For faster MCP category/tool updates after settings changes, you can tune `CHL_CATEGORIES_CACHE_TTL` (seconds, default 30).
+Import/export/index buttons now call the same in-process services that back the HTTP operations endpoints, so there is no separate “operations mode” switch. If you need to keep the UI inert in CI, avoid visiting `/operations` or gate those routes with auth in front of FastAPI.
+For faster MCP category/tool updates after settings changes, you can tune `CHL_CATEGORIES_CACHE_TTL` (seconds, default 30).
 
 ### System requirements
 
@@ -214,7 +214,7 @@ Both dashboards share the same process as the MCP/API stack, so every change is 
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
 - Operator runbooks & API details: [doc/manual.md](doc/manual.md)
 - Web plan breakdown (Phases 0–3): [doc/plan/06_web_interface/](doc/plan/06_web_interface/)
-- Advanced toggle: set `CHL_OPERATIONS_MODE=noop` before starting the server if you need the Operations buttons to stay in dry-run mode (the default `scripts` mode executes the CLI helpers).
+- Advanced note: because import/export/index handlers now run inside the API process, the `/operations` dashboard requires the API server to be running but no longer shells out to scripts.
 
 ## License
 

@@ -294,8 +294,9 @@ class JobHistoryRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def create(self, job_type: str, requested_by: Optional[str], payload: Optional[dict]) -> JobHistory:
+    def create(self, job_id: str, job_type: str, requested_by: Optional[str], payload: Optional[dict]) -> JobHistory:
         job = JobHistory(
+            job_id=job_id,
             job_type=job_type,
             status="pending",
             requested_by=requested_by,
@@ -306,8 +307,8 @@ class JobHistoryRepository:
         self.session.flush()
         return job
 
-    def get(self, job_id: int) -> Optional[JobHistory]:
-        return self.session.query(JobHistory).filter(JobHistory.id == job_id).first()
+    def get(self, job_id: str) -> Optional[JobHistory]:
+        return self.session.query(JobHistory).filter(JobHistory.job_id == job_id).first()
 
     def list_recent(self, limit: int = 20) -> List[JobHistory]:
         return (
@@ -385,4 +386,3 @@ class WorkerMetricRepository:
         self.session.add(metric)
         self.session.flush()
         return metric
-

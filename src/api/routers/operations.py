@@ -1,5 +1,4 @@
 """Operation orchestration endpoints."""
-import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -48,33 +47,7 @@ async def list_jobs(
 ):
     """List recent operation jobs for programmatic clients."""
     limit = max(1, min(int(limit or 10), 100))
-    rows = operations_service.list_recent(session, limit=limit)
-    results = []
-    for job in rows:
-        data = {
-            "job_id": job.job_id,
-            "job_type": job.job_type,
-            "status": job.status,
-            "requested_by": job.requested_by,
-            "created_at": job.created_at,
-            "started_at": job.started_at,
-            "finished_at": job.finished_at,
-            "cancelled_at": job.cancelled_at,
-        }
-        if job.payload:
-            try:
-                data["payload"] = json.loads(job.payload)
-            except Exception:
-                data["payload"] = job.payload
-        if job.result:
-            try:
-                data["result"] = json.loads(job.result)
-            except Exception:
-                data["result"] = job.result
-        if job.error_detail:
-            data["error"] = job.error_detail
-        results.append(data)
-    return results
+    return operations_service.list_recent(session, limit=limit)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse)

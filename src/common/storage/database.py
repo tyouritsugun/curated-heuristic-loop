@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from contextlib import contextmanager
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -78,6 +78,7 @@ class Database:
 
         # Ensure tables exist (no-op if already created)
         Base.metadata.create_all(self.engine)
+        self._run_bootstrap_migrations()
 
         self._initialized = True
 
@@ -137,6 +138,58 @@ class Database:
             self.engine.dispose()
         self._initialized = False
 
+    def _run_bootstrap_migrations(self):
+        """Apply lightweight SQLite migrations for new Phase 0 columns."""
+        if self.engine is None or self.engine.url.get_backend_name() != "sqlite":
+            return
+
+        def _has_column(conn, table: str, column: str) -> bool:
+            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            return any(row[1] == column for row in rows)
+
+        with self.engine.begin() as conn:
+            # Job history: add job_id + error_detail columns
+            if not _has_column(conn, "job_history", "job_id"):
+                conn.execute(text("ALTER TABLE job_history ADD COLUMN job_id TEXT"))
+                conn.execute(
+                    text(
+                        "UPDATE job_history SET job_id = printf('legacy-%s', id) "
+                        "WHERE job_id IS NULL OR job_id = ''"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS job_history_job_id_idx "
+                        "ON job_history(job_id)"
+                    )
+                )
+
+            if not _has_column(conn, "job_history", "error_detail"):
+                conn.execute(text("ALTER TABLE job_history ADD COLUMN error_detail TEXT"))
+                if _has_column(conn, "job_history", "error"):
+                    conn.execute(
+                        text(
+                            "UPDATE job_history SET error_detail = error "
+                            "WHERE error_detail IS NULL AND error IS NOT NULL"
+                        )
+                    )
+
+            # Operation locks: add owner_id/created_at/expires_at
+            if not _has_column(conn, "operation_locks", "owner_id"):
+                conn.execute(text("ALTER TABLE operation_locks ADD COLUMN owner_id TEXT"))
+            if not _has_column(conn, "operation_locks", "created_at"):
+                conn.execute(
+                    text("ALTER TABLE operation_locks ADD COLUMN created_at TEXT")
+                )
+                conn.execute(
+                    text(
+                        "UPDATE operation_locks SET created_at = "
+                        "datetime('now') WHERE created_at IS NULL"
+                    )
+                )
+            if not _has_column(conn, "operation_locks", "expires_at"):
+                conn.execute(text("ALTER TABLE operation_locks ADD COLUMN expires_at TEXT"))
+
 
 # Global database instance (will be initialized by config)
 _db_instance: Database | None = None
@@ -183,4 +236,3 @@ def get_session():
     db = get_database()
     with db.session_scope() as session:
         yield session
-
