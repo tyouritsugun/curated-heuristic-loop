@@ -23,7 +23,16 @@ class SQLiteTextProvider(SearchProvider):
 
     def __init__(self) -> None:
         """Initialize SQLite text provider (sessionless)."""
-        pass
+        self._name = "sqlite_text"
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def is_available(self) -> bool:
+        # SQLite provider is always available because it relies only on the DB.
+        return True
 
     def search(
         self,
@@ -160,6 +169,11 @@ class SQLiteTextProvider(SearchProvider):
             raise ValueError(f"Invalid entity_type: {entity_type}")
         except Exception as exc:
             raise SearchProviderError(f"Duplicate detection failed: {exc}") from exc
+
+    def rebuild_index(self, session: Session) -> None:  # noqa: D401 - interface compliance
+        """No-op for SQLite provider (no separate index files)."""
+        del session
+        return None
 
     def _find_experience_duplicates(
         self,

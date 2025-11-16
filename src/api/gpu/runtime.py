@@ -46,25 +46,39 @@ class GpuOperationsModeAdapter(OperationsModeAdapter):
         thread_safe_faiss=None,
         vector_provider=None,
         session_factory=None,
+        model_name: Optional[str] = None,
     ):
         self._embedding_client = embedding_client
         self._thread_safe_faiss = thread_safe_faiss
         self._vector_provider = vector_provider
         self._session_factory = session_factory
+        self._model_name = model_name
 
     def can_run_vector_jobs(self) -> bool:
-        return True
+        return (
+            self._embedding_client is not None
+            and self._thread_safe_faiss is not None
+            and self._vector_provider is not None
+            and getattr(self._vector_provider, "is_available", False)
+        )
 
     def get_embedding_service(self):
         """Get or create embedding service for operations."""
-        if not self._embedding_client or not self._thread_safe_faiss:
+        if (
+            not self.can_run_vector_jobs()
+            or self._session_factory is None
+        ):
             return None
+        session = self._session_factory()
         from src.api.gpu.embedding_service import EmbeddingService
-        return EmbeddingService(
-            session_factory=self._session_factory,
+        service = EmbeddingService(
+            session=session,
             embedding_client=self._embedding_client,
-            faiss_manager=self._thread_safe_faiss,
+            model_name=self._model_name
+            or getattr(self._embedding_client, "model_name", "unknown"),
+            faiss_index_manager=self._thread_safe_faiss,
         )
+        return service, session
 
     def get_search_provider(self):
         """Get vector search provider (contains FAISS manager and rebuild logic)."""
@@ -75,7 +89,7 @@ class GpuDiagnosticsAdapter(DiagnosticsModeAdapter):
     """Diagnostics adapter that inspects FAISS artifacts when GPU mode is active."""
 
     def faiss_status(self, data_path: Path, session) -> dict:
-        faiss_index_dir = Path(data_path) / "faiss_index"
+        faiss_index_dir = Path(data_path)
         if not faiss_index_dir.exists():
             return {
                 "state": "info",
@@ -354,6 +368,7 @@ def build_gpu_runtime(
             thread_safe_faiss=thread_safe_faiss,
             vector_provider=vector_provider,
             session_factory=db.get_session,
+            model_name=getattr(config, "embedding_model", None),
         ),
         diagnostics_adapter=GpuDiagnosticsAdapter(),
         background_worker=background_worker,

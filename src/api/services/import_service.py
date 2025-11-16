@@ -24,14 +24,17 @@ logger = logging.getLogger(__name__)
 class ImportService:
     """Handles importing data from external sources (Google Sheets) into the database."""
 
-    def __init__(self, data_path: Path):
+    def __init__(self, data_path: Path, faiss_index_path: Optional[Path] = None):
         """Initialize the import service.
 
         Args:
             data_path: Path to the data directory containing faiss_index/
         """
         self.data_path = data_path
-        self.faiss_index_dir = data_path / "faiss_index"
+        if faiss_index_path:
+            self.faiss_index_dir = Path(faiss_index_path)
+        else:
+            self.faiss_index_dir = data_path / "faiss_index"
 
     def import_from_sheets(
         self,

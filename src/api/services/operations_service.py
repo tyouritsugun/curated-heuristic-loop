@@ -64,6 +64,7 @@ class OperationsService:
         max_workers: int = 3,
         lock_ttl_seconds: int = 3600,
         data_path: Optional[Path] = None,
+        faiss_index_path: Optional[Path] = None,
     ):
         """Initialize operations service.
 
@@ -85,6 +86,7 @@ class OperationsService:
             project_root = Path(__file__).resolve().parents[3]
             data_path = project_root / "data"
         self._data_path = Path(data_path)
+        self._faiss_index_path = Path(faiss_index_path) if faiss_index_path else None
 
         # Mode adapter for GPU operations (set later by runtime)
         self._mode_adapter: Optional[Any] = None
@@ -109,12 +111,15 @@ class OperationsService:
         self._handlers["sync-embeddings"] = self._sync_embeddings_handler
         self._handlers["rebuild-index"] = self._rebuild_index_handler
         self._handlers["sync-guidelines"] = self._sync_guidelines_handler
+        self._handlers["export"] = self._export_snapshot_handler
+        self._handlers["export-snapshot"] = self._export_snapshot_handler
 
         # Legacy aliases (kept for compatibility with old job names in DB)
         self._handlers["import"] = self._import_sheets_handler
         self._handlers["sync"] = self._sync_embeddings_handler
         self._handlers["index"] = self._rebuild_index_handler
         self._handlers["guidelines"] = self._sync_guidelines_handler
+        self._handlers["export-job"] = self._export_snapshot_handler
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -376,7 +381,7 @@ class OperationsService:
                 raise ValueError("No category data provided in payload")
             
             # Import via service
-            import_service = ImportService(self._data_path)
+            import_service = ImportService(self._data_path, self._faiss_index_path)
             counts = import_service.import_from_sheets(
                 session=session,
                 categories_rows=categories_rows,
@@ -410,35 +415,42 @@ class OperationsService:
         """Sync embeddings for pending/failed entities."""
         if not self._mode_adapter:
             raise ValueError("Embedding sync requires GPU mode (mode adapter not set)")
-        
+
         if not self._mode_adapter.can_run_vector_jobs():
             raise ValueError("Vector operations not available in current mode")
-        
+
         try:
-            # Get embedding service from mode adapter
-            embedding_service = self._mode_adapter.get_embedding_service()
-            if not embedding_service:
+            # Get embedding service and underlying session from mode adapter
+            embedding_service_tuple = self._mode_adapter.get_embedding_service()
+            if not embedding_service_tuple:
                 raise ValueError("Embedding service not available")
-            
+            embedding_service, service_session = embedding_service_tuple
+
             retry_failed = bool(payload.get("retry_failed"))
             max_count = payload.get("max_count")
             stats = embedding_service.process_pending(max_count=max_count)
             retry_result = None
             if retry_failed:
                 retry_result = embedding_service.retry_failed(max_count=max_count)
-            
+
             logger.info("Embedding sync completed: %s", stats)
-            
+
             return {
                 "success": True,
                 "stats": stats,
                 "retry": retry_result,
                 "message": _format_sync_message(stats, retry_result),
             }
-            
+
         except Exception as exc:
             logger.exception("Embedding sync failed")
             raise ValueError(f"Embedding sync operation failed: {exc}") from exc
+        finally:
+            try:
+                if "service_session" in locals() and service_session is not None:
+                    service_session.close()
+            except Exception:
+                pass
 
     def _rebuild_index_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
         """Rebuild FAISS index from existing embeddings."""
@@ -547,6 +559,30 @@ class OperationsService:
             "success": True,
             "mutations": mutations,
             "category_code": GUIDELINES_CATEGORY_CODE,
+        }
+
+    def _export_snapshot_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Lightweight export job for Operations UI/tests."""
+        try:
+            delay = float(payload.get("_test_delay", 0) or 0)
+        except (TypeError, ValueError):
+            delay = 0
+        if delay > 0:
+            time.sleep(min(delay, 30))
+
+        from src.common.storage.schema import Experience, CategoryManual, Category
+
+        exp_total = session.query(Experience).count()
+        man_total = session.query(CategoryManual).count()
+        cat_total = session.query(Category).count()
+
+        return {
+            "success": True,
+            "counts": {
+                "experiences": exp_total,
+                "manuals": man_total,
+                "categories": cat_total,
+            },
         }
 
 

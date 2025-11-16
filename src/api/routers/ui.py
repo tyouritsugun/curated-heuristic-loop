@@ -43,7 +43,6 @@ from src.api.services.operations_service import OperationConflict, JobNotFoundEr
 from src.api.services.worker_control import WorkerUnavailableError
 from src.common.storage.repository import AuditLogRepository
 from src.common.storage.schema import AuditLog, utc_now
-from src.common import mcp_bridge
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -134,14 +133,6 @@ router = APIRouter(tags=["ui"])
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("hx-request", "").lower() == "true"
-
-
-def _invalidate_categories_cache_safe() -> None:
-    """Best-effort MCP categories cache invalidation (no direct import)."""
-    try:
-        mcp_bridge.invalidate_categories_cache()
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("MCP cache invalidation failed", exc_info=True)
 
 
 def _recent_audit_entries(session: Session, limit: int = 8):
@@ -1620,9 +1611,6 @@ async def update_model_preferences(
         actor=actor,
     )
 
-    # Invalidate MCP categories cache
-    _invalidate_categories_cache_safe()
-
     auto_msg = ""
     # Automatically trigger re-embedding workflow; OperationsService adapter handles mode gating
     try:
@@ -1867,8 +1855,6 @@ async def restore_settings_backup(
         )
 
     applied_msg = ", ".join(applied)
-    # Invalidate MCP categories cache (settings changed)
-    _invalidate_categories_cache_safe()
     return _respond(
         "partials/backup_card.html",
         request,

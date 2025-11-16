@@ -13,14 +13,12 @@ from fastmcp import FastMCP
 
 from src.common.api_client.client import CHLAPIClient
 from src.common.config.config import get_config
-from src.common import mcp_bridge
 from src.mcp.core import (
     SERVER_VERSION,
     TOOL_INDEX,
     set_runtime,
     build_handshake_payload,
     startup_health_check,
-    invalidate_categories_cache as _invalidate_categories_cache,
 )
 from src.mcp.errors import MCPError
 from src.mcp.utils import create_error_response
@@ -94,11 +92,6 @@ def _setup_logging(config_obj) -> None:
         logger.warning("Failed to initialize file logging: %s", exc)
 
 
-def invalidate_categories_cache() -> None:
-    """Public wrapper used by API UI to invalidate MCP categories cache."""
-    _invalidate_categories_cache()
-
-
 def init_server() -> None:
     """Initialize MCP server with configuration and API client."""
     global config, api_client, _initialized
@@ -130,8 +123,6 @@ def init_server() -> None:
 
     # Expose runtime to core module for handlers
     set_runtime(config, api_client)
-    mcp_bridge.register_categories_invalidator(invalidate_categories_cache)
-
     health_ok = startup_health_check(api_client, max_wait=config.api_health_check_max_wait)
     if not health_ok:
         logger.error(

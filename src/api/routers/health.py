@@ -49,8 +49,8 @@ def health_check(
     adapter = getattr(mode_runtime, "diagnostics_adapter", None) if mode_runtime else None
     if adapter and hasattr(adapter, "faiss_status"):
         try:
-            data_path = Path(getattr(config, "experience_root", "data"))
-            faiss_status = adapter.faiss_status(data_path, session)
+            faiss_path = Path(getattr(config, "faiss_index_path", getattr(config, "experience_root", "data")))
+            faiss_status = adapter.faiss_status(faiss_path, session)
             components["faiss_index"] = {
                 "status": faiss_status.get("state", "info"),
                 "detail": faiss_status.get("detail"),

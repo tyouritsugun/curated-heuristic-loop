@@ -104,6 +104,7 @@ async def lifespan(app: FastAPI):
         operations_service = OperationsService(
             session_factory=db.get_session,
             data_path=config.experience_root,
+            faiss_index_path=Path(config.faiss_index_path),
         )
         logger.info("Core services initialized (settings, worker control, operations)")
 

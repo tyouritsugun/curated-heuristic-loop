@@ -353,7 +353,14 @@ class SettingsService:
         adapter = getattr(self._mode_runtime, "diagnostics_adapter", None) if self._mode_runtime else None
         if adapter and hasattr(adapter, "faiss_status"):
             try:
-                status = adapter.faiss_status(self._secrets_root, session)
+                faiss_path = Path(
+                    getattr(
+                        self._config,
+                        "faiss_index_path",
+                        self._secrets_root,
+                    )
+                )
+                status = adapter.faiss_status(faiss_path, session)
                 sections.append(
                     DiagnosticStatus(
                         name="runtime.faiss",
