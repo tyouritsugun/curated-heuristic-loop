@@ -10,7 +10,7 @@ This document details the migration strategy for 13+ operational scripts in the 
 - **Preferred**: Scripts call API endpoints via `CHLAPIClient` from `src.common.api_client.client`
 - **Avoid**: Direct imports from `src.api.*` (violates separation of concerns)
 - **Exceptions**: Setup/testing scripts that configure internal components
-- `CHLAPIClient` is a synchronous, one-shot HTTP client (no built-in retries or circuit breaker); scripts may catch `APIConnectionError`/`CHLAPIError` to print friendly errors but should otherwise rely on the API server for robustness.
+- `CHLAPIClient` is a synchronous, one-shot HTTP client that raises standard HTTP exceptions (404, 500, etc.) to the caller with no automatic retries or circuit breakers; scripts should catch these exceptions to print friendly error messages but otherwise rely on the API server for robustness.
 
 ### 2. **Mode-Aware Orchestration**
 - Scripts detect runtime mode (CPU/GPU) via API endpoints (e.g., `GET /api/v1/settings/`)
@@ -24,6 +24,7 @@ This document details the migration strategy for 13+ operational scripts in the 
 ### 4. **Backend Prerequisites**
 - The FastAPI surface must expose the same capabilities the scripts rely on today. Concretely:
   - Keep every public endpoint under `/api/v1/...` and update examples to use that prefix (e.g., `/api/v1/entries/read`, `/api/v1/settings/`, `/api/v1/operations/{job}`).
+  - **Exception**: Health endpoints remain unversioned (`/health`, `/health/metrics`) as they are infrastructure endpoints, not business API endpoints.
   - Add operation job handlers for "sync-embeddings", "rebuild-index", "sync-guidelines", and "import-sheets" that internally run the existing script logic (or delegate to those scripts via `OperationsService`). Scripts will call `POST /api/v1/operations/{job}` and poll `/api/v1/operations/jobs/{job_id}` instead of shelling out.
   - Expose a read-only `/api/v1/search/health` endpoint mirroring `scripts/search_health.py` output so diagnostics can drop their direct SQL dependency.
   - Provide bulk export/import endpoints (e.g., `/api/v1/entries/export`, `/api/v1/entries/import`). **Note:** Batch size and pagination concerns are deferred as the current dataset is limited and unlikely to grow rapidly in the MVP stage.
@@ -82,7 +83,7 @@ def import_from_sheets():
 
     # Step 3: Detect mode and trigger GPU operations if needed
     settings = api_client.get("/api/v1/settings/")
-    if settings["search_mode"] == "auto":
+    if settings["search_mode"] == "gpu":
         # Trigger embedding sync (GPU-specific operation)
         sync_job = api_client.post("/api/v1/operations/sync-embeddings")
         sync_job_id = sync_job["job_id"]
@@ -502,7 +503,8 @@ Scripts depend on these API endpoints (ensure they exist):
 
 Boundary tests should be implemented in `tests/architecture/test_boundaries.py` to ensure:
 - Operational scripts (excluding `setup-gpu.py` and `gpu_smoke_test.py`) do not import from `src.api.*`.
-- MCP modules do not import from `src.api.*` and only reference `src.common.config.config.Config` and `src.common.api_client.client.CHLAPIClient` (no direct imports from `src.common.storage.*`, `src.common.web_utils.*`, or other `src.common.*` modules).
+- MCP modules may only import from `src.common.config.*`, `src.common.api_client.*`, and `src.common.dto.*` (shared DTOs for validation).
+- MCP modules must not import from `src.api.*`, `src.common.storage.*`, `src.common.interfaces.*`, `src.common.web_utils.*`, or other restricted `src.common.*` modules.
 
 Implementation details are left to the developer.
 

@@ -60,9 +60,9 @@
 **Implications:**
 - Common code must have no dependencies on API or MCP.
 - The API server may import any `src/common.*` modules (config, storage, DTOs, web utils, API client).
-- The MCP server may import only `Config` and `CHLAPIClient` from `src/common.*`; all other behavior must go through HTTP endpoints.
+- The MCP server may import only `Config`, `CHLAPIClient`, and shared DTOs from `src/common.*` (specifically: `src.common.config.*`, `src.common.api_client.*`, and `src.common.dto.*`); all other behavior must go through HTTP endpoints.
 - API and MCP communicate only via HTTP (CHLAPIClient).
-- Boundary tests enforce these architectural rules (including forbidden MCP imports from `src.common.storage.*`, `src.common.web_utils.*`, etc.).
+- Boundary tests enforce these architectural rules (including forbidden MCP imports from `src.common.storage.*`, `src.common.web_utils.*`, `src.common.interfaces.*`, etc.).
 
 ### ADR-004: Local-Only Deployment Model
 
@@ -76,25 +76,29 @@
 
 **Implications:**
 - No authentication layer required
-- Simple error handling (404 if API unavailable, no reconnection logic)
+- Simple error handling: `CHLAPIClient` raises standard HTTP exceptions (404, 500, etc.) to the caller with no automatic retries or circuit breakers; callers handle errors explicitly
 - MCP receives API URL as start parameter (typically localhost:port)
 - Lock mechanisms are sufficient for concurrency (no distributed locks needed)
 - Background worker coordination uses existing in-process mechanisms
 
 ### ADR-005: Fixed Runtime Mode
 
-**Decision**: Runtime mode (CPU vs GPU) is fixed at API server startup and does not change dynamically.
+**Decision**: Runtime mode (CPU vs GPU) is fixed at API server startup and cannot be changed at runtime. Mode switching requires complete project re-setup.
 
 **Rationale:**
-- **Simplicity**: Eliminates complex mode-switching logic
+- **Simplicity**: Eliminates complex mode-switching logic and fallback mechanisms
 - **Resource management**: GPU resources (FAISS index, embeddings) are expensive to load/unload
 - **Clear expectations**: Users know their deployment mode upfront
 - **Data consistency**: Avoids issues with partially-synced embeddings or index mismatches
 
 **Implications:**
-- Mode change requires: stop server → cleanup data → reconfigure → restart
-- Template selection happens once at startup
+- Mode is determined by `CHL_SEARCH_MODE` environment variable at startup:
+  - `CHL_SEARCH_MODE=cpu` - SQLite-only search (no embeddings, no reranking)
+  - `CHL_SEARCH_MODE=gpu` - Vector search with embeddings and reranking
+- Mode change requires: stop server → run setup script for new mode → restart server with new `CHL_SEARCH_MODE` value
+- Template selection happens once at startup based on mode
 - No hot-swapping between CPU and GPU providers
+- No automatic fallback from GPU to CPU mode
 
 ## Phased Approach
 0. **Phase 0 – Codebase Isolation Prerequisite**
@@ -113,7 +117,7 @@
    - CPU/GPU isolation: Strategy pattern, no cross-imports
    - Scripts migration: Mode-aware orchestration (import.py detects CPU/GPU, export.py mode-agnostic)
    - Foundation for platform-specific requirements work (Phase A)
-   - **Concurrency controls**: Retain existing lock mechanisms for FAISS file operations and background worker coordination
+   - **Concurrency controls**: Phase 0 inherits and preserves existing lock mechanisms for FAISS file operations and background worker coordination without modifications; lock mechanism improvements are deferred to future phases
 
 1. **Phase A – Requirements & Documentation Baseline**
    - Finalize `requirements_*.txt` matrices (Apple Metal, NVIDIA CUDA, AMD ROCm, Intel GPU, CPU) dedicated to the API server venv.

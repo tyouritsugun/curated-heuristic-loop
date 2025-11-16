@@ -161,7 +161,7 @@ src/
   - Current consumers: `scripts/import.py`, `scripts/export.py`, `src/services/operations_service.py`
 - Extend the client surface while moving it:
   - Add lightweight `.get()/.post()` helpers plus typed wrappers for `/api/v1/settings`, `/api/v1/operations/*`, `/api/v1/entries/*`, and `/health/metrics` so the scripts migration plan remains accurate.
-  - Keep compatibility with existing queue helpers, but **do not** reintroduce the circuit-breaker/tenacity retry stack from `src/mcp/api_client.py`. In the local-only model (ADR-004), `CHLAPIClient` should remain a synchronous, single-shot HTTP client that surfaces clear exceptions to its callers.
+  - Keep compatibility with existing queue helpers, but **do not** reintroduce the circuit-breaker/tenacity retry stack from `src/mcp/api_client.py`. In the local-only model (ADR-004), `CHLAPIClient` should remain a synchronous, single-shot HTTP client that raises standard HTTP exceptions (404, 500, etc.) to the caller with no automatic retries or circuit breakers; callers handle errors explicitly.
   - Treat `CHLAPIClient` as the **canonical boundary adapter** for calling the API: scripts and MCP should never hand-roll their own HTTP clients or reach into API/server internals; instead, they call `CHLAPIClient` methods that encapsulate the HTTP contract.
 
 **4. Migrate Configuration**
@@ -209,13 +209,14 @@ src/
 
 **9a. API Surface Alignment**
 - Keep all public routes under `/api/v1/...` and update every script/doc example accordingly (no bare `/entries` or `/settings`). If we want short aliases later, add FastAPI sub-routers that simply 307 to the versioned paths.
+- **Exception**: Health endpoints remain unversioned (`/health`, `/health/metrics`) as they are infrastructure endpoints, not business API endpoints.
 - Promote script-only workflows into first-class operations endpoints so Phase 0 doesn’t block on “manual DB work”:
   - Add operation handlers for “import from Sheets”, “sync embeddings”, “rebuild index”, and “sync guidelines” that wrap the existing script logic (ideally by delegating through `OperationsService` job types). `POST /api/v1/operations/{job}` already exists—ensure job names (`sync-embeddings`, `rebuild-index`, `sync-guidelines`, `import-sheets`) are wired up server-side before scripts switch to HTTP.
   - Expose a read-only `/api/v1/search/health` JSON endpoint that surfaces the data currently produced by `scripts/search_health.py` (counts, FAISS status, warnings) so diagnostics stay available without shelling into SQLite.
 - Make sure `SettingsService.snapshot()` is reachable via the versioned API (`GET /api/v1/settings/` already exists); document that these responses include `search_mode`, eliminating the need for scripts to peek into config files.
 
 **10. TEST CPU MODE** ✅ **CHECKPOINT 1**
-- Set `CHL_SEARCH_MODE=sqlite_only`
+- Set `CHL_SEARCH_MODE=cpu`
 - Start: `python -m src.api.server`
 - Verify all endpoints, web UI, SQLite search work
 - **DO NOT PROCEED until CPU mode fully validated**
@@ -248,7 +249,7 @@ src/
 - Verify template loader works for GPU mode
 
 **15. TEST GPU MODE** ✅ **CHECKPOINT 2**
-- Set `CHL_SEARCH_MODE=auto`
+- Set `CHL_SEARCH_MODE=gpu`
 - Start: `python -m src.api.server`
 - Verify FAISS, embeddings, reranking, background worker, web UI
 - **DO NOT PROCEED until GPU mode fully validated**
@@ -260,17 +261,20 @@ src/
 - **Delete `src/mcp/api_client.py`** - replaced by `CHLAPIClient` from `common/api_client/client.py`
 - **Audit boundary rules**:
   - MCP must **not** import from `src.api.*` (verify via boundary tests).
-  - MCP may only import `Config` and `CHLAPIClient` from `src.common.*` (`src.common.config.config.Config`, `src.common.api_client.client.CHLAPIClient`).
+  - MCP may only import from these `src.common.*` modules:
+    - `src.common.config.config.Config`
+    - `src.common.api_client.client.CHLAPIClient`
+    - `src.common.dto.*` (shared DTOs for request/response validation)
   - **Critical**: MCP must access storage ONLY via API HTTP interfaces, never directly via `src.common.storage.*`; `src.common.storage.*` modules are internal to the API server implementation.
-  - Other `src.common.*` modules (DTOs, web utils, interfaces, storage) are for the API server and scripts, not for MCP.
+  - Other `src.common.*` modules (web utils, interfaces, storage) are for the API server and scripts, not for MCP.
   - **Note:** Authentication is skipped for local-only deployment (MCP and API run on same machine)
 - Update `mcp/handlers_*.py` so handlers no longer receive DB sessions or `SearchService` instances:
   - **Use `CHLAPIClient` from `src.common.api_client.client`** for all HTTP communication
   - Replace repository calls with HTTP requests for `list_categories`, `read_entries`, `write_entry`, etc.
   - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata
   - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`)
-- Port any useful error-mapping or request-shaping logic from `src/mcp/api_client.py` into the shared `CHLAPIClient`, but **do not** add circuit breakers or automatic retries. MCP handlers should catch `APIConnectionError`/`CHLAPIError` and surface simple, local-only failures to the host editor.
-- **Error handling**: If the API server is unavailable, MCP should surface a clear “API unreachable” error to the client (mapped to a 404-style tool error), with no automatic reconnection, health checks, or circuit breaker for connection failures (local deployment assumption).
+- Port any useful error-mapping or request-shaping logic from `src/mcp/api_client.py` into the shared `CHLAPIClient`, but **do not** add circuit breakers or automatic retries. `CHLAPIClient` raises standard HTTP exceptions (404, 500, etc.) to the caller; MCP handlers should catch these exceptions and surface simple, local-only failures to the host editor.
+- **Error handling**: If the API server is unavailable, `CHLAPIClient` raises standard HTTP exceptions which MCP should surface as clear "API unreachable" errors to the client, with no automatic reconnection, health checks, or circuit breaker for connection failures (local deployment assumption).
 - Delete `src/server.py` and `src/mcp/api_client.py`
 
 **17. TEST MCP** ✅ **CHECKPOINT 3**
@@ -328,7 +332,8 @@ from src.storage import → from src.common.storage import
   - `from src.api_client import` → `from src.common.api_client.client import`
   - etc.
 - Add `tests/architecture/test_boundaries.py`: Static import checks to enforce architectural boundaries (implementation details left to developer)
-  - MCP must never import from `src.api.*` or `src.common.storage.*` (HTTP-only communication)
+  - MCP may only import from `src.common.config.*`, `src.common.api_client.*`, and `src.common.dto.*`
+  - MCP must never import from `src.api.*`, `src.common.storage.*`, `src.common.interfaces.*`, or `src.common.web_utils.*`
   - CPU must never import from `src.api.gpu.*`
   - Common must never import from `src.api.*` or `src.mcp.*`
   - Scripts (except setup/test scripts) must never import from `src.api.*`
@@ -357,10 +362,10 @@ from src.common.storage.sheets_client import GoogleSheetsClient
 from src.api.gpu.embedding_service import EmbeddingService  # setup-gpu.py, gpu_smoke_test.py
 from src.api.services.search_service import SearchService   # Test fixtures only
 
-# MCP → common ONLY
+# MCP → common (Config, API client, shared DTOs ONLY)
 from src.common.config.config import Config
 from src.common.api_client.client import CHLAPIClient
-from src.common.storage.schema import Experience
+from src.common.dto.models import ExperienceWritePayload  # Shared DTOs for validation
 
 # API → common
 from src.common.storage.database import Database
@@ -384,6 +389,12 @@ from src.api.runtime_builder import build_mode_runtime
 from src.api.services.search_service import SearchService
 from src.api.gpu.embedding_service import EmbeddingService
 
+# ❌ MCP → common.storage/interfaces/web_utils (FORBIDDEN - use HTTP API only)
+from src.common.storage.database import Database
+from src.common.storage.repository import Repository
+from src.common.interfaces.search import SearchProvider
+from src.common.web_utils.docs import render_markdown
+
 # ❌ CPU → GPU (FORBIDDEN - violates isolation)
 from src.api.gpu.embedding_client import GPUEmbeddingClient
 
@@ -402,10 +413,10 @@ from src.api.gpu.embedding_service import EmbeddingService # in rebuild_index.py
 
 ```bash
 # API Server (CPU mode)
-CHL_SEARCH_MODE=sqlite_only python -m src.api.server
+CHL_SEARCH_MODE=cpu python -m src.api.server
 
 # API Server (GPU mode)
-CHL_SEARCH_MODE=auto python -m src.api.server
+CHL_SEARCH_MODE=gpu python -m src.api.server
 
 # MCP Server (requires API running)
 python -m src.mcp.server
