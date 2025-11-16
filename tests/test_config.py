@@ -27,7 +27,7 @@ def _with_env(env: dict):
 
 
 def test_config_initializes_in_sqlite_only_mode(tmp_path: Path):
-    from src.config import Config, SearchMode
+    from src.common.config.config import Config, SearchMode
     data_dir = tmp_path / "data"
     with _with_env({
         "CHL_EXPERIENCE_ROOT": str(data_dir),
@@ -47,7 +47,7 @@ def test_config_initializes_in_sqlite_only_mode(tmp_path: Path):
 
 
 def test_config_invalid_search_mode_raises(tmp_path: Path):
-    from src.config import Config
+    from src.common.config.config import Config
     with _with_env({
         "CHL_EXPERIENCE_ROOT": str(tmp_path),
         "CHL_SEARCH_MODE": "bogus_mode",

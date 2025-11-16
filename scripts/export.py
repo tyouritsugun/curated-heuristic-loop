@@ -22,7 +22,6 @@ from _config_loader import (
 from src.common.storage.database import Database
 from src.common.storage.schema import Category, Experience, CategoryManual
 from src.common.storage.sheets_client import SheetsClient
-from src.api.services.settings_service import SettingsService
 
 # Column definitions (order matters for round-tripping via Sheets)
 EXPERIENCE_COLUMNS = [

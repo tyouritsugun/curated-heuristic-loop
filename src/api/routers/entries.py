@@ -19,8 +19,7 @@ from src.common.storage.repository import (
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.common.dto import ExperienceWritePayload, format_validation_error
-from src.mcp.utils import normalize_context
+from src.common.dto.models import ExperienceWritePayload, format_validation_error, normalize_context
 from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)
