@@ -299,7 +299,7 @@ class BackgroundEmbeddingWorker:
                 try:
                     lock = OperationLock(
                         name=self._lease_name,
-                        owner=self._lease_owner,
+                        owner_id=self._lease_owner,
                         created_at=utc_now(),
                         expires_at=next_expiry.isoformat(),
                     )
@@ -318,9 +318,9 @@ class BackgroundEmbeddingWorker:
                 except Exception:
                     expires_at = None
 
-                if lock.owner == self._lease_owner or (expires_at is None or expires_at <= now_dt):
+                if lock.owner_id == self._lease_owner or (expires_at is None or expires_at <= now_dt):
                     # Take over or renew
-                    lock.owner = self._lease_owner
+                    lock.owner_id = self._lease_owner
                     lock.expires_at = next_expiry.isoformat()
                     lock.created_at = utc_now()
                     _commit_refresh()
@@ -367,7 +367,7 @@ class BackgroundEmbeddingWorker:
                 session.query(OperationLock)
                 .filter(
                     OperationLock.name == self._lease_name,
-                    OperationLock.owner == self._lease_owner,
+                    OperationLock.owner_id == self._lease_owner,
                 )
                 .one_or_none()
             )

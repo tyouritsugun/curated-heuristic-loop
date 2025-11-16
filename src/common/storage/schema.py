@@ -14,7 +14,6 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Boolean,
-    Float,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -135,7 +134,9 @@ class Setting(Base):
 
     id = Column(Integer, primary_key=True)
     key = Column(String(64), unique=True, nullable=False)
-    value = Column(Text, nullable=True)
+    value_json = Column("value", Text, nullable=True)
+    checksum = Column(String(128), nullable=True)
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -144,19 +145,22 @@ class TelemetrySample(Base):
     __tablename__ = "telemetry_samples"
 
     id = Column(Integer, primary_key=True)
-    sample_type = Column(String(64), nullable=False)
-    payload = Column(JSON, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    metric = Column(String(64), nullable=False)
+    value_json = Column(JSON, nullable=False)
+    recorded_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class WorkerMetric(Base):
     __tablename__ = "worker_metrics"
 
     id = Column(Integer, primary_key=True)
-    worker_name = Column(String(128), nullable=False)
-    metric_name = Column(String(128), nullable=False)
-    value = Column(Float, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    worker_id = Column(String(128), nullable=False, index=True)
+    status = Column(String(32), nullable=False)
+    heartbeat_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    queue_depth = Column(Integer, nullable=True)
+    processed = Column(Integer, nullable=True)
+    failed = Column(Integer, nullable=True)
+    payload = Column(Text, nullable=True)
 
 
 class OperationLock(Base):

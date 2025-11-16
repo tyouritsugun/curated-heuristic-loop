@@ -148,9 +148,14 @@ class Database:
             return any(row[1] == column for row in rows)
 
         with self.engine.begin() as conn:
+            def _add_column(table: str, column: str, ddl: str, fill_sql: str | None = None):
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                if fill_sql:
+                    conn.execute(text(fill_sql))
+
             # Job history: add job_id + error_detail columns
             if not _has_column(conn, "job_history", "job_id"):
-                conn.execute(text("ALTER TABLE job_history ADD COLUMN job_id TEXT"))
+                _add_column("job_history", "job_id", "TEXT")
                 conn.execute(
                     text(
                         "UPDATE job_history SET job_id = printf('legacy-%s', id) "
@@ -165,7 +170,7 @@ class Database:
                 )
 
             if not _has_column(conn, "job_history", "error_detail"):
-                conn.execute(text("ALTER TABLE job_history ADD COLUMN error_detail TEXT"))
+                _add_column("job_history", "error_detail", "TEXT")
                 if _has_column(conn, "job_history", "error"):
                     conn.execute(
                         text(
@@ -176,11 +181,9 @@ class Database:
 
             # Operation locks: add owner_id/created_at/expires_at
             if not _has_column(conn, "operation_locks", "owner_id"):
-                conn.execute(text("ALTER TABLE operation_locks ADD COLUMN owner_id TEXT"))
+                _add_column("operation_locks", "owner_id", "TEXT")
             if not _has_column(conn, "operation_locks", "created_at"):
-                conn.execute(
-                    text("ALTER TABLE operation_locks ADD COLUMN created_at TEXT")
-                )
+                _add_column("operation_locks", "created_at", "TEXT")
                 conn.execute(
                     text(
                         "UPDATE operation_locks SET created_at = "
@@ -188,7 +191,62 @@ class Database:
                     )
                 )
             if not _has_column(conn, "operation_locks", "expires_at"):
-                conn.execute(text("ALTER TABLE operation_locks ADD COLUMN expires_at TEXT"))
+                _add_column("operation_locks", "expires_at", "TEXT")
+
+            # Settings extras used by Phase 0 UI
+            if not _has_column(conn, "settings", "checksum"):
+                _add_column("settings", "checksum", "TEXT")
+            if not _has_column(conn, "settings", "notes"):
+                _add_column("settings", "notes", "TEXT")
+
+            # Telemetry samples upgraded schema
+            if not _has_column(conn, "telemetry_samples", "metric"):
+                _add_column(
+                    "telemetry_samples",
+                    "metric",
+                    "TEXT",
+                    "UPDATE telemetry_samples SET metric = sample_type WHERE metric IS NULL",
+                )
+            if not _has_column(conn, "telemetry_samples", "value_json"):
+                _add_column(
+                    "telemetry_samples",
+                    "value_json",
+                    "TEXT",
+                    "UPDATE telemetry_samples SET value_json = payload WHERE value_json IS NULL",
+                )
+            if not _has_column(conn, "telemetry_samples", "recorded_at"):
+                _add_column(
+                    "telemetry_samples",
+                    "recorded_at",
+                    "TEXT",
+                    "UPDATE telemetry_samples SET recorded_at = created_at WHERE recorded_at IS NULL",
+                )
+
+            # Worker metrics upgraded schema
+            if not _has_column(conn, "worker_metrics", "worker_id"):
+                _add_column(
+                    "worker_metrics",
+                    "worker_id",
+                    "TEXT",
+                    "UPDATE worker_metrics SET worker_id = worker_name WHERE worker_id IS NULL",
+                )
+            if not _has_column(conn, "worker_metrics", "status"):
+                _add_column("worker_metrics", "status", "TEXT")
+            if not _has_column(conn, "worker_metrics", "heartbeat_at"):
+                _add_column(
+                    "worker_metrics",
+                    "heartbeat_at",
+                    "TEXT",
+                    "UPDATE worker_metrics SET heartbeat_at = created_at WHERE heartbeat_at IS NULL",
+                )
+            if not _has_column(conn, "worker_metrics", "queue_depth"):
+                _add_column("worker_metrics", "queue_depth", "INTEGER")
+            if not _has_column(conn, "worker_metrics", "processed"):
+                _add_column("worker_metrics", "processed", "INTEGER")
+            if not _has_column(conn, "worker_metrics", "failed"):
+                _add_column("worker_metrics", "failed", "INTEGER")
+            if not _has_column(conn, "worker_metrics", "payload"):
+                _add_column("worker_metrics", "payload", "TEXT")
 
 
 # Global database instance (will be initialized by config)

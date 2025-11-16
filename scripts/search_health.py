@@ -90,7 +90,7 @@ def main():
 
         # Embedding status counts (across both types)
         emb_repo = EmbeddingRepository(session)
-        report["embedding_status"] = emb_repo.count_by_status()  # type: ignore[arg-type]
+        report["embedding_status"] = emb_repo.count_by_status()
 
     pend = report["embedding_status"].get("pending", 0)
     fail = report["embedding_status"].get("failed", 0)

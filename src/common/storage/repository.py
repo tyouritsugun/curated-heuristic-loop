@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import numpy as np
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .schema import (
@@ -130,6 +131,35 @@ class ExperienceRepository:
         )
         return result or 0
 
+    def update(self, experience_id: str, updates: dict) -> Experience:
+        experience = self.get_by_id(experience_id)
+        if experience is None:
+            raise ValueError(f"Experience not found: {experience_id}")
+
+        allowed = {"title", "playbook", "context", "section"}
+        invalid = set(updates) - allowed
+        if invalid:
+            raise ValueError(f"Unsupported fields: {', '.join(sorted(invalid))}")
+
+        if "title" in updates:
+            experience.title = str(updates["title"]).strip()
+        if "playbook" in updates:
+            experience.playbook = str(updates["playbook"])
+        if "section" in updates:
+            experience.section = str(updates["section"]).strip()
+        if "context" in updates:
+            ctx = updates["context"]
+            if ctx is None:
+                experience.context = None
+            elif isinstance(ctx, (dict, list)):
+                experience.context = json.dumps(ctx, ensure_ascii=False)
+            else:
+                experience.context = str(ctx)
+
+        experience.updated_at = utc_now()
+        self.session.flush()
+        return experience
+
 
 class CategoryManualRepository:
     """Repository for category manual operations."""
@@ -176,6 +206,36 @@ class CategoryManualRepository:
             .delete(synchronize_session=False)
         )
         return result or 0
+
+    def delete(self, manual_id: str) -> int:
+        result = (
+            self.session.query(CategoryManual)
+            .filter(CategoryManual.id == manual_id)
+            .delete(synchronize_session=False)
+        )
+        return result or 0
+
+    def update(self, manual_id: str, updates: dict) -> CategoryManual:
+        manual = self.get_by_id(manual_id)
+        if manual is None:
+            raise ValueError(f"Manual not found: {manual_id}")
+
+        allowed = {"title", "content", "summary"}
+        invalid = set(updates) - allowed
+        if invalid:
+            raise ValueError(f"Unsupported fields: {', '.join(sorted(invalid))}")
+
+        if "title" in updates:
+            manual.title = str(updates["title"]).strip()
+        if "content" in updates:
+            manual.content = str(updates["content"])
+        if "summary" in updates:
+            summary = updates["summary"]
+            manual.summary = None if summary is None else str(summary)
+
+        manual.updated_at = utc_now()
+        self.session.flush()
+        return manual
 
 
 class EmbeddingRepository:
@@ -232,6 +292,29 @@ class EmbeddingRepository:
             .delete(synchronize_session=False)
         )
         return result or 0
+
+    def count_by_status(self) -> dict:
+        """Aggregate embedding_status counts across experiences and manuals."""
+        counts: dict[str, int] = {}
+
+        exp_rows = (
+            self.session.query(Experience.embedding_status, func.count(Experience.id))
+            .group_by(Experience.embedding_status)
+            .all()
+        )
+        man_rows = (
+            self.session.query(CategoryManual.embedding_status, func.count(CategoryManual.id))
+            .group_by(CategoryManual.embedding_status)
+            .all()
+        )
+
+        for status, total in exp_rows + man_rows:
+            key = status or "unknown"
+            counts[key] = counts.get(key, 0) + (total or 0)
+
+        for bucket in ("pending", "embedded", "failed"):
+            counts.setdefault(bucket, 0)
+        return counts
 
 
 class FAISSMetadataRepository:
@@ -376,12 +459,24 @@ class WorkerMetricRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def record_metric(self, worker_name: str, metric_name: str, value: float) -> WorkerMetric:
+    def record_metric(
+        self,
+        worker_id: str,
+        status: str,
+        *,
+        queue_depth: Optional[int] = None,
+        processed: Optional[int] = None,
+        failed: Optional[int] = None,
+        payload: Optional[str] = None,
+    ) -> WorkerMetric:
         metric = WorkerMetric(
-            worker_name=worker_name,
-            metric_name=metric_name,
-            value=value,
-            created_at=utc_now(),
+            worker_id=worker_id,
+            status=status,
+            queue_depth=queue_depth,
+            processed=processed,
+            failed=failed,
+            payload=payload,
+            heartbeat_at=utc_now(),
         )
         self.session.add(metric)
         self.session.flush()

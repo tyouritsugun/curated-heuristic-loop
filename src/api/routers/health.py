@@ -45,9 +45,16 @@ def health_check(
         components["database"] = {"status": "unhealthy", "detail": str(e)}
         overall_status = "unhealthy"
 
+    semantic_enabled = True
+    if config and hasattr(config, "is_semantic_enabled"):
+        try:
+            semantic_enabled = config.is_semantic_enabled()
+        except Exception:
+            semantic_enabled = True
+
     # Check FAISS/embedding status via diagnostics adapter
     adapter = getattr(mode_runtime, "diagnostics_adapter", None) if mode_runtime else None
-    if adapter and hasattr(adapter, "faiss_status"):
+    if semantic_enabled and adapter and hasattr(adapter, "faiss_status"):
         try:
             faiss_path = Path(getattr(config, "faiss_index_path", getattr(config, "experience_root", "data")))
             faiss_status = adapter.faiss_status(faiss_path, session)
@@ -62,6 +69,47 @@ def health_check(
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to collect FAISS diagnostics: %s", exc)
             components["faiss_index"] = {"status": "unknown", "detail": str(exc)}
+
+    if semantic_enabled and "faiss_index" not in components:
+        components["faiss_index"] = {
+            "status": "degraded",
+            "detail": "Diagnostics unavailable; vector status unknown",
+        }
+        if overall_status == "healthy":
+            overall_status = "degraded"
+
+    if not semantic_enabled:
+        components.setdefault(
+            "faiss_index",
+            {
+                "status": "disabled",
+                "detail": "Vector search disabled in sqlite_only mode",
+            },
+        )
+        components["embedding_model"] = {
+            "status": "disabled",
+            "detail": "Semantic stack disabled (sqlite_only)",
+        }
+    else:
+        vector_provider = None
+        try:
+            if search_service and hasattr(search_service, "get_vector_provider"):
+                vector_provider = search_service.get_vector_provider()
+        except Exception as exc:
+            logger.debug("Vector provider probe failed: %s", exc)
+
+        if vector_provider and getattr(vector_provider, "is_available", False):
+            components["embedding_model"] = {
+                "status": "healthy",
+                "detail": getattr(config, "embedding_model", "configured"),
+            }
+        else:
+            components["embedding_model"] = {
+                "status": "degraded",
+                "detail": "Vector provider unavailable; falling back to SQLite",
+            }
+            if overall_status == "healthy":
+                overall_status = "degraded"
 
     # Add timestamp
     timestamp = datetime.now(timezone.utc).isoformat()

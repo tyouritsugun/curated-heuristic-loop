@@ -370,12 +370,19 @@ class OperationsService:
         
         try:
             # Get sheets data from payload (sent by HTTP client)
-            categories_rows = payload.get("categories", [])
-            experiences_rows = payload.get("experiences", [])
-            manuals_rows = payload.get("manuals", [])
-            
+            categories_rows = payload.get("categories") or []
+            experiences_rows = payload.get("experiences") or []
+            manuals_rows = payload.get("manuals") or []
+
             if not categories_rows:
-                raise ValueError("No category data provided in payload")
+                logger.info(
+                    "Import payload missing categories; treating as compatibility no-op"
+                )
+                return {
+                    "success": True,
+                    "counts": {"categories": 0, "experiences": 0, "manuals": 0},
+                    "message": "Import skipped (no payload provided). Use scripts/import.py to submit data.",
+                }
             
             # Import via service
             import_service = ImportService(self._data_path, self._faiss_index_path)

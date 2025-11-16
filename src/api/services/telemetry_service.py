@@ -140,7 +140,7 @@ class TelemetryService:
                 session.add(
                     TelemetrySample(
                         metric=metric,
-                        value_json=json.dumps(value, ensure_ascii=False),
+                        value_json=value,
                         recorded_at=utc_now(),
                     )
                 )
@@ -204,19 +204,25 @@ class TelemetryService:
         if queue_sample:
             queue_total = queue_sample.get("pending", {}).get("total", 0)
         for worker in pool_status.get("workers", []):
-            worker_id = str(worker.get("worker_id"))
+            worker_id = str(worker.get("worker_id")) or "unknown"
             status = "paused" if worker.get("paused") else ("running" if worker.get("running") else "idle")
             heartbeat = utc_now()
-            record = session.query(WorkerMetric).filter(WorkerMetric.worker_id == worker_id).one_or_none()
+            record = (
+                session.query(WorkerMetric)
+                .filter(WorkerMetric.worker_id == worker_id)
+                .one_or_none()
+            )
             payload = json.dumps(worker, ensure_ascii=False)
+            processed = int(worker.get("jobs_processed", 0))
+            failed = int(worker.get("jobs_failed", 0))
             if record is None:
                 record = WorkerMetric(
                     worker_id=worker_id,
                     status=status,
                     heartbeat_at=heartbeat,
                     queue_depth=queue_total,
-                    processed=int(worker.get("jobs_processed", 0)),
-                    failed=int(worker.get("jobs_failed", 0)),
+                    processed=processed,
+                    failed=failed,
                     payload=payload,
                 )
                 session.add(record)
@@ -224,8 +230,8 @@ class TelemetryService:
                 record.status = status
                 record.heartbeat_at = heartbeat
                 record.queue_depth = queue_total
-                record.processed = int(worker.get("jobs_processed", 0))
-                record.failed = int(worker.get("jobs_failed", 0))
+                record.processed = processed
+                record.failed = failed
                 record.payload = payload
 
     def _latest_sample(self, session: Session, metric: str) -> Optional[Dict[str, Any]]:
@@ -237,10 +243,13 @@ class TelemetryService:
         )
         if not row:
             return None
-        try:
-            return json.loads(row.value_json)
-        except json.JSONDecodeError:
-            return None
+        payload = row.value_json
+        if isinstance(payload, str):
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return None
+        return payload
 
     def _current_worker_metrics(self, session: Session):
         rows = (
