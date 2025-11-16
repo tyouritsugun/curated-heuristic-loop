@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from src.api.dependencies import get_db_session
 from src.api.models import ListCategoriesResponse, CategoryResponse
-from src.storage.repository import CategoryRepository
+from src.common.storage.repository import CategoryRepository
 
 router = APIRouter(prefix="/api/v1/categories", tags=["categories"])
 

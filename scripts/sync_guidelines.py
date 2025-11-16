@@ -3,9 +3,9 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-from src.config import get_config
-from src.storage.database import Database
-from src.storage.repository import CategoryRepository, CategoryManualRepository
+from src.common.config.config import get_config
+from src.common.storage.database import Database
+from src.common.storage.repository import CategoryRepository, CategoryManualRepository
 
 GUIDELINES_CATEGORY_CODE = "GLN"
 GENERATOR_GUIDE_TITLE = "Generator workflow guidelines"

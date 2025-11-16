@@ -11,7 +11,7 @@ graph TB
         CA[Code Assistant<br/>Generator / Evaluator]
     end
 
-    subgraph "MCP Server (src/server.py)"
+    subgraph "MCP Server (src/mcp/server.py)"
         HNDL[Tool Handlers<br/>src/mcp/*]
     end
 
@@ -53,8 +53,8 @@ graph TB
 
 The system consists of several key components:
 
--   **MCP Server (`src/server.py`):** A lightweight server that exposes the CHL functionality to AI assistants via the Model Context Protocol (MCP). It handles tool calls like `read_entries` and `write_entry`.
--   **API Server (`src/api_server.py`):** A FastAPI server that provides a REST API for programmatic access and serves the web-based UI for operations and settings.
+-   **MCP Server (`src/mcp/server.py`):** A lightweight server that exposes the CHL functionality to AI assistants via the Model Context Protocol (MCP). It handles tool calls like `read_entries` and `write_entry`.
+-   **API Server (`src/api/server.py`):** A FastAPI server that provides a REST API for programmatic access and serves the web-based UI for operations and settings.
 -   **Application Services (`src/services`):** Core logic for operations, settings management, and telemetry.
 -   **Search Service (`src/search`):** An abstraction layer for finding relevant entries. It uses a provider-based model, with the primary implementation using FAISS for vector search and a fallback SQLite provider.
 -   **Storage Layer (`src/storage`):** Manages all data persistence. It includes the SQLAlchemy-based repository for interacting with the SQLite database and a client for Google Sheets.
@@ -236,7 +236,7 @@ The MCP server provides a simple, tool-based interface for AI assistants:
 
 ### 6.2. REST API
 
-The FastAPI server (`src/api_server.py`) exposes a REST API for programmatic control and monitoring. Key endpoints include:
+The FastAPI server (`src/api/server.py`) exposes a REST API for programmatic control and monitoring. Key endpoints include:
 
 -   `/health`: Health checks for the server and its components.
 -   `/api/v1/operations/*`: Trigger and monitor import/export jobs.

@@ -1,0 +1,38 @@
+<section class="card onboarding-card" id="settings-onboarding-card">
+  <header>
+    <div>
+      <p class="muted">This page displays system status and provides diagnostic tools. Configuration is managed via <code>.env</code> file.</p>
+    </div>
+  </header>
+  <div class="info-box">
+    <h3>New User Setup (Semantic / GPU)</h3>
+    <p>If you haven't set up the system yet, follow these steps:</p>
+    <ol>
+      <li>Edit the <code>.env</code> file in the project root (copy from <code>.env.sample</code> if needed):
+        <ul>
+          <li><code>GOOGLE_CREDENTIAL_PATH</code> - Path to service account JSON</li>
+          <li><code>IMPORT_SPREADSHEET_ID</code> - Published spreadsheet ID</li>
+          <li><code>EXPORT_SPREADSHEET_ID</code> - Review spreadsheet ID</li>
+        </ul>
+        <small class="muted">See <code>.env.sample</code> for complete list of available configuration options. Changes take effect on next import/export operation (no restart needed).</small>
+      </li>
+      <li>Run the GPU/semantic setup script:
+        <ul>
+          <li><code>python scripts/setup-gpu.py</code> (downloads ML models)</li>
+        </ul>
+      </li>
+      <li>Start the server and begin using the Settings dashboard</li>
+    </ol>
+    <p class="muted">See README.md and semantic search docs for detailed setup instructions.</p>
+  </div>
+  <div class="info-box">
+    <h3>What's on this page</h3>
+    <ul>
+      <li><strong>Configuration Status:</strong> View current .env settings (read-only)</li>
+      <li><strong>System Diagnostics:</strong> Check database, models, and FAISS index health</li>
+      <li><strong>Audit Log:</strong> Review recent configuration and operation changes</li>
+      <li><strong>Backup/Restore:</strong> Export or import database contents as JSON</li>
+    </ul>
+  </div>
+</section>
+

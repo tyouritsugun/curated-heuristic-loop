@@ -8,7 +8,7 @@ import pytest
 import contextlib
 from typing import Iterator
 from fastapi.testclient import TestClient
-from src.api_server import app
+from src.api.server import app
 
 
 @pytest.fixture

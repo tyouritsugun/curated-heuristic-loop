@@ -21,9 +21,9 @@ from _config_loader import (
     ScriptConfigError,
     load_scripts_config,
 )
-from src.storage.database import Database
-from src.api_client import CHLAPIClient
-from src.storage.schema import (
+from src.common.storage.database import Database
+from src.common.api_client.client import CHLAPIClient
+from src.common.storage.schema import (
     Category,
     CategoryManual,
     Embedding,
@@ -31,7 +31,7 @@ from src.storage.schema import (
     FAISSMetadata,
     utc_now,
 )
-from src.storage.sheets_client import SheetsClient
+from src.common.storage.sheets_client import SheetsClient
 
 EXPERIENCE_COLUMNS = [
     "id",

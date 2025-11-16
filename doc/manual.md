@@ -87,7 +87,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 
 ## 3. Web UI Guide
 
-The simplest way to manage CHL is through the built-in web interface, available by running `uvicorn src.api_server:app` and navigating to `http://127.0.0.1:8000`.
+The simplest way to manage CHL is through the built-in web interface, available by running `uvicorn src.api.server:app` and navigating to `http://127.0.0.1:8000`.
 
 ### 3.1. Settings Dashboard (`/settings`)
 This page is for initial configuration and system management.
@@ -220,7 +220,7 @@ CHL_SEARCH_MODE=sqlite_only uv run python scripts/setup-cpu.py
 
 Start the server:
 ```bash
-CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
+CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 ```
 
 ### 9.3. Behavior Differences

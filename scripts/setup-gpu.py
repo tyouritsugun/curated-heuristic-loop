@@ -51,15 +51,15 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import get_config
-from src.storage.database import Database
-from src.storage.repository import (
+from src.common.config.config import get_config
+from src.common.storage.database import Database
+from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.storage.schema import Experience, CategoryManual
-from src.services import gpu_installer
+from src.common.storage.schema import Experience, CategoryManual
+from src.api.services import gpu_installer
 
 # Configure logging
 logging.basicConfig(
@@ -404,7 +404,7 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities (retry once if a missing column is detected)
         def _do_counts():
             with db.session_scope() as session:
-                from src.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategoryManual, Category
                 exp_count_ = session.query(Experience).count()
                 manual_count_ = session.query(CategoryManual).count()
                 cat_count_ = session.query(Category).count()
@@ -852,7 +852,7 @@ def print_next_steps():
     print("\nNext steps:\n")
 
     print("  1. Start the FastAPI server:")
-    print("     uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000\n")
+    print("     uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000\n")
     print("  2. Visit http://127.0.0.1:8000/settings to finish onboarding, then open /operations to rebuild or upload a FAISS snapshot.")
     print("  3. (Optional) Rebuild index from scratch:")
     print("     python scripts/rebuild_index.py\n")

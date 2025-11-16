@@ -367,5 +367,5 @@ def test_error_recovery_after_failed_operation(test_client):
 @pytest.fixture
 def test_client():
     """Create a TestClient for the FastAPI app."""
-    from src.api_server import app
+    from src.api.server import app
     return TestClient(app)

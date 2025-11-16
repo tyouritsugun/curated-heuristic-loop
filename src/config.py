@@ -8,7 +8,7 @@ Example MCP configuration in ~/.cursor/mcp.json (using project venv):
 {
   "chl": {
     "command": "/absolute/path/to/curated-heuristic-loop/.venv/bin/python",
-    "args": ["src/server.py"],
+    "args": ["-m", "src.mcp.server"],
     "env": {
       "CHL_EXPERIENCE_ROOT": "/absolute/path/to/curated-heuristic-loop/data",
       "CHL_DATABASE_PATH": "/absolute/path/to/curated-heuristic-loop/data/chl.db",

@@ -1,0 +1,27 @@
+<section class="card onboarding-card" id="operations-onboarding-card">
+  <header>
+    <div>
+      <h2>How to use this page (Semantic / GPU)</h2>
+      <p class="muted">Each card mirrors an API endpoint, so everything you do here is logged and protected by the same safety checks.</p>
+    </div>
+  </header>
+  <ol>
+    <li>
+      <strong>Start with data operations.</strong> Use Import to pull from Google Sheets and Export to push local edits out.
+      Embeddings are generated automatically after import. Each trigger records the actor, lock status, and result in Job History.
+    </li>
+    <li>
+      <strong>Manage models as needed.</strong> The Model Management card lets you change embedding and reranker models.
+      Model changes will automatically trigger re-embedding of all content (Phase 4).
+    </li>
+    <li>
+      <strong>Watch queue + telemetry.</strong> The SSE stream refreshes queue depth, worker heartbeats (when available), and recent jobs without reloading the page.
+      If SSE is blocked, press the "Refresh" buttons on each card.
+    </li>
+    <li>
+      <strong>Handle FAISS snapshots.</strong> Use the snapshot card to download the current index or upload a prepared ZIP (stays on disk, logged in audit trail).
+      This is the safest way to move vectors between machines.
+    </li>
+  </ol>
+</section>
+

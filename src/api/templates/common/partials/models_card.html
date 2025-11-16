@@ -1,0 +1,53 @@
+{% set models = snapshot.models %}
+{% set model_diag = diagnostics.models %}
+<section id="models-card" class="card">
+  <header>
+    <div>
+      <h2>Embedding &amp; Reranker Models</h2>
+      <p class="muted">Embeddings turn every sentence into a vector so FAISS can search it. Rerankers re-order the top hits using a tiny cross-encoder for better relevance.</p>
+      <p class="muted">This deployment pins the repos to <strong>Qwen/Qwen3-Embedding</strong> and <strong>Mungert/Qwen3-Reranker</strong>. Pick the bundle size/quantization that matches your RAM/VRAM budget (0.6B Q4_K_M is the minimum, 4B Q4_K_M is the recommended sweet spot).</p>
+    </div>
+    <span class="status-pill {{ model_diag.state }}">{{ model_diag.headline }}</span>
+  </header>
+  <form
+    method="post"
+    action="/ui/settings/models"
+    hx-post="/ui/settings/models"
+    hx-target="#models-card"
+    hx-swap="outerHTML"
+    hx-indicator="#models-indicator"
+  >
+    <div class="grid">
+      <label>
+        Embedding bundle
+        <select name="embedding_choice" required>
+          {% for option in embedding_choices %}
+            {% set selected = models and models.embedding_repo == option.repo and models.embedding_quant == option.quant %}
+            <option value="{{ option.repo }}|{{ option.quant }}" {% if selected or (not models and loop.first) %}selected{% endif %}>
+              {{ option.label }}{% if option.tag %} ({{ option.tag }}){% endif %} — {{ option.notes }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Reranker bundle
+        <select name="reranker_choice" required>
+          {% for option in reranker_choices %}
+            {% set selected = models and models.reranker_repo == option.repo and models.reranker_quant == option.quant %}
+            <option value="{{ option.repo }}|{{ option.quant }}" {% if selected or (not models and loop.first) %}selected{% endif %}>
+              {{ option.label }}{% if option.tag %} ({{ option.tag }}){% endif %} — {{ option.notes }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <button type="submit">Save Model Preferences</button>
+  </form>
+  <span class="htmx-indicator" id="models-indicator">Saving…</span>
+
+  {% if is_partial and (message or error) %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+</section>

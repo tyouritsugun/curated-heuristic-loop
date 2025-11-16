@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
 
 from src.api.dependencies import get_db_session, get_config
-from src.storage.repository import CategoryManualRepository, CategoryRepository
-from src.config import Config
+from src.common.storage.repository import CategoryManualRepository, CategoryRepository
+from src.common.config.config import Config
 
 router = APIRouter(prefix="/api/v1/guidelines", tags=["guidelines"])
 

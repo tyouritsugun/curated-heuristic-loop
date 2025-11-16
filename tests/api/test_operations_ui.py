@@ -4,8 +4,8 @@ from pathlib import Path
 import io
 import zipfile
 
-import src.api_server as api_server
-from src.storage.schema import JobHistory
+from src.api import server as api_server
+from src.common.storage.schema import JobHistory
 
 
 @contextmanager

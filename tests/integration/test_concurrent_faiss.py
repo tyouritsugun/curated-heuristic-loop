@@ -283,5 +283,5 @@ def test_stress_concurrent_operations(test_client):
 @pytest.fixture
 def test_client():
     """Create a TestClient for the FastAPI app."""
-    from src.api_server import app
+    from src.api.server import app
     return TestClient(app)

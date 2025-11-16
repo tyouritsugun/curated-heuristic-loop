@@ -37,15 +37,15 @@ from src.api.dependencies import (
     get_telemetry_service,
     get_worker_control_service,
 )
-from src.services import gpu_installer
-from src.services.settings_service import SettingValidationError, SettingsService
-from src.services.operations_service import OperationConflict, JobNotFoundError
-from src.services.worker_control import WorkerUnavailableError
-from src.storage.repository import AuditLogRepository
-from src.storage.schema import AuditLog, utc_now
+from src.api.services import gpu_installer
+from src.api.services.settings_service import SettingValidationError, SettingsService
+from src.api.services.operations_service import OperationConflict, JobNotFoundError
+from src.api.services.worker_control import WorkerUnavailableError
+from src.common.storage.repository import AuditLogRepository
+from src.common.storage.schema import AuditLog, utc_now
 
 
-TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "web" / "templates"
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 MAX_INDEX_ARCHIVE_BYTES = 512 * 1024 * 1024  # 512 MiB cap for FAISS snapshots
@@ -139,7 +139,7 @@ def _invalidate_categories_cache_safe() -> None:
     """Best-effort MCP categories cache invalidation (may run out-of-process)."""
     import sys
 
-    mcp_server = sys.modules.get("src.server")
+    mcp_server = sys.modules.get("src.mcp.server")
     if not mcp_server:
         # Don't import lazily here; importing would try to auto-start the MCP server and
         # block the current FastAPI request. Skipping this keeps the UI responsive when
@@ -455,7 +455,11 @@ def _render_full(
         error=error,
     )
     context["is_partial"] = False
-    return templates.TemplateResponse("settings.html", context)
+    cfg = get_config()
+    search_mode = getattr(cfg, "search_mode", "auto")
+    context["search_mode"] = search_mode
+    template_name = "cpu/settings_cpu.html" if search_mode == "sqlite_only" else "gpu/settings_gpu.html"
+    return templates.TemplateResponse(template_name, context)
 
 
 def _render_partial(
@@ -922,7 +926,7 @@ def settings_page(
     context["search_mode"] = config.search_mode
 
     # Select template based on search mode
-    template_name = "settings_cpu.html" if config.search_mode == "sqlite_only" else "settings.html"
+    template_name = "cpu/settings_cpu.html" if config.search_mode == "sqlite_only" else "gpu/settings_gpu.html"
     return templates.TemplateResponse(template_name, context)
 
 
@@ -1053,7 +1057,9 @@ async def telemetry_stream(
     config=Depends(get_config),
 ):
     """Server-sent events stream powering dashboard live updates."""
-    from src.api_server import db  # Local import to avoid circulars at module import time
+    from src.api import server as api_server  # Local import to avoid circulars at module import time
+
+    session_factory = api_server.db.get_session
 
     try:
         cycles_param = request.query_params.get("cycles")
@@ -1067,8 +1073,6 @@ async def telemetry_stream(
     except ValueError:
         interval_seconds = 2.0
     interval_seconds = max(0.5, interval_seconds)
-
-    session_factory = db.get_session
 
     async def event_generator():
         cycles = 0
@@ -1141,7 +1145,7 @@ def operations_page(
             "search_mode": config.search_mode,
         }
     )
-    template_name = "operations_cpu.html" if config.search_mode == "sqlite_only" else "operations_gpu.html"
+    template_name = "cpu/operations_cpu.html" if config.search_mode == "sqlite_only" else "gpu/operations_gpu.html"
     return templates.TemplateResponse(template_name, context)
 
 
@@ -1231,7 +1235,7 @@ def get_model_change_modal(
     session: Session = Depends(get_db_session),
 ):
     """Render the model change modal with current selections and impact estimate."""
-    from src.storage.repository import ExperienceRepository, ManualRepository
+    from src.common.storage.repository import ExperienceRepository, ManualRepository
 
     # Get current model info
     current_models = _get_model_info()
@@ -1695,7 +1699,7 @@ async def test_connection(
 
     # Test connection by attempting to create sheets client
     try:
-        from src.storage.sheets_client import SheetsClient
+        from src.common.storage.sheets_client import SheetsClient
         sheets = SheetsClient(str(cred_file))
         # If we got this far, credentials are valid
         return _respond(

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from src.api.dependencies import get_db_session, get_operations_service
 from src.api.models import OperationRequest, OperationResponse, JobStatusResponse
-from src.services.operations_service import OperationConflict, JobNotFoundError
+from src.api.services.operations_service import OperationConflict, JobNotFoundError
 
 router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
 

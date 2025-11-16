@@ -19,10 +19,10 @@ from _config_loader import (
     ScriptConfigError,
     load_scripts_config,
 )
-from src.storage.database import Database
-from src.storage.schema import Category, Experience, CategoryManual
-from src.storage.sheets_client import SheetsClient
-from src.services.settings_service import SettingsService
+from src.common.storage.database import Database
+from src.common.storage.schema import Category, Experience, CategoryManual
+from src.common.storage.sheets_client import SheetsClient
+from src.api.services.settings_service import SettingsService
 
 # Column definitions (order matters for round-tripping via Sheets)
 EXPERIENCE_COLUMNS = [

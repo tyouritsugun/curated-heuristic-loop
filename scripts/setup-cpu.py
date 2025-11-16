@@ -35,14 +35,14 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import get_config
-from src.storage.database import Database
-from src.storage.repository import (
+from src.common.config.config import get_config
+from src.common.storage.database import Database
+from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategoryManual
 
 # Configure logging
 logging.basicConfig(
@@ -249,7 +249,7 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities
         def _do_counts():
             with db.session_scope() as session:
-                from src.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategoryManual, Category
                 exp_count_ = session.query(Experience).count()
                 manual_count_ = session.query(CategoryManual).count()
                 cat_count_ = session.query(Category).count()
@@ -365,7 +365,7 @@ def print_next_steps():
     print("\nNext steps:\n")
 
     print("  1. Start the FastAPI server in CPU-only mode:")
-    print("     CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000\n")
+    print("     CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000\n")
     print("  2. Visit http://127.0.0.1:8000/settings to verify configuration")
     print("  3. Use the web UI to add experiences and guidelines\n")
 

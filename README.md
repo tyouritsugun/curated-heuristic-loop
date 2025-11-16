@@ -49,7 +49,7 @@ Choose your installation path based on your hardware and use case:
 
 6. **Start the bundled FastAPI server**:
    ```bash
-   uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
+   uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000
    ```
 
 7. **Open http://127.0.0.1:8000/settings** to verify configuration:
@@ -104,7 +104,7 @@ If you don't have a GPU or don't need semantic search, you can run CHL in SQLite
 
 6. **Start the bundled FastAPI server**:
    ```bash
-   CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api_server:app --host 127.0.0.1 --port 8000
+CHL_SEARCH_MODE=sqlite_only uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000
    ```
    > The `CHL_SEARCH_MODE=sqlite_only` flag disables vector search components and uses SQLite text search exclusively.
 
@@ -155,7 +155,7 @@ Add CHL to `~/.cursor/mcp.json` or another MCP-aware client if you want the assi
   "mcpServers": {
     "chl": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
+      "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "-m", "src.mcp.server"]
     }
   }
 }
@@ -168,7 +168,7 @@ For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
 ```toml
 [mcp_servers.chl]
 command = "uv"
-args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
+args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "-m", "src.mcp.server"]
 
 # Optional: Override .env values with explicit environment variables
 # [mcp_servers.chl.env]

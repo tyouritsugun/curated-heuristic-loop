@@ -34,10 +34,11 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import get_config
-from src.storage.database import Database
-from src.storage.schema import Experience, CategoryManual, FAISSMetadata
-from src.storage.repository import EmbeddingRepository
+from src.common.config.config import get_config
+from src.common.api_client.client import CHLAPIClient
+from src.common.storage.database import Database
+from src.common.storage.schema import Experience, CategoryManual, FAISSMetadata
+from src.common.storage.repository import EmbeddingRepository
 
 log = logging.getLogger("search_health")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -53,7 +54,17 @@ def iso_utc(ts: float) -> str:
 def main():
     config = get_config()
 
-    # Init DB
+    # Prefer HTTP diagnostics when API server is running
+    client = CHLAPIClient(base_url=getattr(config, "api_base_url", "http://localhost:8000"))
+    if client.check_health():
+        try:
+            health = client.search_health()
+            print(json.dumps(health, indent=2, ensure_ascii=False))
+            return
+        except Exception as exc:
+            log.warning("HTTP search health check failed, falling back to local mode: %s", exc)
+
+    # Fallback: local-only diagnostics via DB (legacy behavior)
     db = Database(config.database_path, echo=config.database_echo)
     db.init_database()
 
@@ -62,7 +73,7 @@ def main():
         "embedding_status": {"pending": 0, "embedded": 0, "failed": 0},
         "faiss": {
             "available": False,
-            "model": config.embedding_model,
+            "model": getattr(config, "embedding_model", None),
             "dimension": None,
             "vectors": 0,
             "by_type": {"experience": 0, "manual": 0},
@@ -79,55 +90,8 @@ def main():
 
         # Embedding status counts (across both types)
         emb_repo = EmbeddingRepository(session)
-        report["embedding_status"] = emb_repo.count_by_status()
+        report["embedding_status"] = emb_repo.count_by_status()  # type: ignore[arg-type]
 
-        # Try FAISS status
-        try:
-            from src.embedding.client import EmbeddingClient
-            from src.search.faiss_index import FAISSIndexManager
-
-            embed_client = EmbeddingClient(
-                model_repo=config.embedding_repo,
-                quantization=config.embedding_quant
-            )
-            index_mgr = FAISSIndexManager(
-                index_dir=config.faiss_index_path,
-                model_name=config.embedding_model,  # Legacy field (repo:quant format)
-                dimension=embed_client.embedding_dimension,
-                session=session,
-            )
-
-            # Availability and basics
-            faiss_block = report["faiss"]
-            faiss_block["available"] = index_mgr.is_available
-            faiss_block["dimension"] = index_mgr.dimension
-            faiss_block["vectors"] = index_mgr.index.ntotal if index_mgr.is_available else 0
-            faiss_block["index_path"] = str(index_mgr.index_path)
-            if index_mgr.index_path.exists():
-                faiss_block["last_updated"] = iso_utc(index_mgr.index_path.stat().st_mtime)
-
-            # Count mapped vectors by type (non-deleted)
-            try:
-                by_type = {"experience": 0, "manual": 0}
-                rows = (
-                    session.query(FAISSMetadata.entity_type,)
-                    .filter(FAISSMetadata.deleted == False)
-                    .all()
-                )
-                for (etype,) in rows:
-                    if etype in by_type:
-                        by_type[etype] += 1
-                faiss_block["by_type"] = by_type
-            except Exception as e:
-                log.warning("Failed counting FAISS metadata: %s", e)
-
-        except Exception as e:
-            # FAISS or models not ready: keep defaults and add a hint
-            report["warnings"].append(
-                "Vector search unavailable. Install ML deps (pip install -e \".[ml]\") and run setup."
-            )
-
-    # Warnings based on embedding status
     pend = report["embedding_status"].get("pending", 0)
     fail = report["embedding_status"].get("failed", 0)
     if pend:

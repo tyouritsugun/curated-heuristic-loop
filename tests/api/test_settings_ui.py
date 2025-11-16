@@ -3,8 +3,8 @@ import json
 import textwrap
 from pathlib import Path
 
-from src.storage.schema import Setting
-import src.api_server as api_server
+from src.common.storage.schema import Setting
+from src.api import server as api_server
 
 CREDENTIAL_FILE = Path("credentials/curated-heuristic-loop-2c8a35dde6e9.json").resolve()
 

@@ -5,6 +5,8 @@ import time
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
+from src.api import server as api_server
+
 
 def get_db_session() -> Generator[Session, None, None]:
     """
@@ -13,9 +15,7 @@ def get_db_session() -> Generator[Session, None, None]:
     Note: Uses scoped_session which is thread-local. FastAPI uses thread pools
     for sync endpoints, so each request gets its own session.
     """
-    from src.api_server import db
-
-    session = db.get_session()
+    session = api_server.db.get_session()
     try:
         yield session
         # Commit with a short retry loop to mitigate transient SQLite locks
@@ -43,41 +43,34 @@ def get_db_session() -> Generator[Session, None, None]:
 
 def get_search_service():
     """Provide singleton SearchService instance."""
-    from src.api_server import search_service
-    return search_service
+    return api_server.search_service
 
 
 def get_config():
     """Provide singleton Config instance."""
-    from src.api_server import config
-    return config
+    return api_server.config
 
 
 def get_settings_service():
     """Provide initialized SettingsService instance."""
-    from src.api_server import settings_service
-    return settings_service
+    return api_server.settings_service
 
 
 def get_operations_service():
     """Provide OperationsService singleton."""
-    from src.api_server import operations_service
-    return operations_service
+    return api_server.operations_service
 
 
 def get_worker_control_service():
     """Provide WorkerControlService singleton."""
-    from src.api_server import worker_control_service
-    return worker_control_service
+    return api_server.worker_control_service
 
 
 def get_telemetry_service():
     """Provide TelemetryService singleton."""
-    from src.api_server import telemetry_service
-    return telemetry_service
+    return api_server.telemetry_service
 
 
 def get_mode_runtime():
     """Provide ModeRuntime singleton with search/worker wiring."""
-    from src.api_server import mode_runtime
-    return mode_runtime
+    return api_server.mode_runtime

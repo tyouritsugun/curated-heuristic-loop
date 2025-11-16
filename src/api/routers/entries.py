@@ -14,12 +14,12 @@ from src.api.models import (
     UpdateEntryRequest,
     UpdateEntryResponse,
 )
-from src.storage.repository import (
+from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
     CategoryManualRepository,
 )
-from src.mcp.models import ExperienceWritePayload, format_validation_error
+from src.common.dto import ExperienceWritePayload, format_validation_error
 from src.mcp.utils import normalize_context
 from pydantic import ValidationError as PydanticValidationError
 

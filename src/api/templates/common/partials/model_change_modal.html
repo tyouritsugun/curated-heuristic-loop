@@ -1,0 +1,83 @@
+<div class="modal-content">
+  <header class="modal-header">
+    <h2>Change Embedding & Reranker Models</h2>
+    <button type="button" class="close-button" onclick="document.getElementById('model-change-modal').close()">×</button>
+  </header>
+
+  <form
+    id="model-change-form"
+    hx-post="/ui/operations/models/change"
+    hx-target="#ops-models-card"
+    hx-swap="outerHTML"
+    hx-indicator="#model-change-indicator"
+  >
+    <div class="modal-body">
+      <p class="info-text">
+        Changing models will automatically re-generate embeddings for all content and rebuild the search index.
+        This process runs in the background and may take several minutes depending on your content volume.
+      </p>
+
+      {% if impact_estimate %}
+        <div class="impact-estimate">
+          <h3>Impact Estimate</h3>
+          <dl>
+            <div>
+              <dt>Experiences:</dt>
+              <dd>{{ impact_estimate.experience_count or 0 }}</dd>
+            </div>
+            <div>
+              <dt>Manuals:</dt>
+              <dd>{{ impact_estimate.manual_count or 0 }}</dd>
+            </div>
+            <div>
+              <dt>Estimated Time:</dt>
+              <dd>{{ impact_estimate.estimated_time or '~5 minutes' }}</dd>
+            </div>
+          </dl>
+        </div>
+      {% endif %}
+
+      <div class="form-grid">
+        <label>
+          <span class="label-text">Embedding Model</span>
+          <select name="embedding_choice" required>
+            {% for option in embedding_choices %}
+              {% set selected = current_models and current_models.embedding_repo == option.repo and current_models.embedding_quant == option.quant %}
+              <option value="{{ option.repo }}|{{ option.quant }}" {% if selected %}selected{% endif %}>
+                {{ option.label }}{% if option.tag %} ({{ option.tag }}){% endif %} — {{ option.notes }}
+              </option>
+            {% endfor %}
+          </select>
+          <small class="muted">Controls the vector representation quality</small>
+        </label>
+
+        <label>
+          <span class="label-text">Reranker Model</span>
+          <select name="reranker_choice" required>
+            {% for option in reranker_choices %}
+              {% set selected = current_models and current_models.reranker_repo == option.repo and current_models.reranker_quant == option.quant %}
+              <option value="{{ option.repo }}|{{ option.quant }}" {% if selected %}selected{% endif %}>
+                {{ option.label }}{% if option.tag %} ({{ option.tag }}){% endif %} — {{ option.notes }}
+              </option>
+            {% endfor %}
+          </select>
+          <small class="muted">Refines search result ordering</small>
+        </label>
+      </div>
+
+      <div class="warning-box">
+        <strong>⚠ Warning:</strong> Model downloads may be large (0.3-5 GB). Ensure you have sufficient disk space and bandwidth.
+      </div>
+    </div>
+
+    <footer class="modal-footer">
+      <button type="button" class="secondary" onclick="document.getElementById('model-change-modal').close()">
+        Cancel
+      </button>
+      <button type="submit" class="primary">
+        Download & Re-embed Now
+      </button>
+      <span class="htmx-indicator" id="model-change-indicator">Processing…</span>
+    </footer>
+  </form>
+</div>

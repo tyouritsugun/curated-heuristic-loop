@@ -1,0 +1,48 @@
+{% set sheets = snapshot.sheets %}
+{% set sheet_diag = diagnostics.sheets %}
+{% set cred_diag = diagnostics.credentials %}
+<section id="sheets-card" class="card">
+  <header>
+    <div>
+      <h2>Google Sheets</h2>
+      <p class="muted">Point the UI at your <code>scripts_config.yaml</code>; it will read sheet IDs, the Google credential path, and the data directory from that file.</p>
+    </div>
+    <span class="status-pill {{ sheet_diag.state }}">{{ sheet_diag.headline }}</span>
+  </header>
+
+  <details open>
+    <summary>Load scripts_config.yaml</summary>
+    <form
+      method="post"
+      action="/ui/settings/sheets"
+      hx-post="/ui/settings/sheets"
+      hx-target="#sheets-card"
+      hx-swap="outerHTML"
+      hx-indicator="#sheets-indicator"
+    >
+      <label>
+        Config path
+        <input type="text" name="config_path" value="{{ sheets.config_path if sheets else default_scripts_config_path }}" placeholder="/path/to/scripts_config.yaml" required />
+      </label>
+      <button type="submit">Load &amp; Verify</button>
+    </form>
+    <small class="muted">The UI reads only metadata (paths + sheet IDs). It never edits your YAML file, so CLI scripts keep using the same source of truth.</small>
+  </details>
+
+  <div class="status-chip-row">
+    <span class="status-chip {{ sheet_diag.state if sheet_diag else 'warn' }}">Config YAML</span>
+    {% if cred_diag %}
+      <span class="status-chip {{ cred_diag.state }}">Credentials</span>
+    {% endif %}
+  </div>
+  <p class="muted compact-note">
+    Badges reflect the last validation run. Use the diagnostics card to re-check connectivity whenever needed.
+  </p>
+  <span class="htmx-indicator" id="sheets-indicator">Loading…</span>
+
+  {% if is_partial and (message or error) %}
+    {% with oob=True %}
+      {% include "partials/flash.html" %}
+    {% endwith %}
+  {% endif %}
+</section>
