@@ -12,13 +12,22 @@ This document details the migration strategy for 13+ operational scripts in the 
 - **Exceptions**: Setup/testing scripts that configure internal components
 
 ### 2. **Mode-Aware Orchestration**
-- Scripts detect runtime mode (CPU/GPU) via API endpoints (e.g., `GET /settings`)
+- Scripts detect runtime mode (CPU/GPU) via API endpoints (e.g., `GET /api/v1/settings/`)
 - Scripts trigger mode-specific operations when needed (e.g., embeddings sync for GPU)
 - Common utilities (e.g., spreadsheet reading, DB access) remain in `src.common.*`
 
 ### 3. **Shared Utilities**
 - Low-level operations live in `src.common/storage/` (DB, schema, sheets_client)
 - Scripts compose common utilities + HTTP calls for higher-level workflows
+
+### 4. **Backend Prerequisites**
+- The FastAPI surface must expose the same capabilities the scripts rely on today. Concretely:
+  - Keep every public endpoint under `/api/v1/...` and update examples to use that prefix (e.g., `/api/v1/entries/read`, `/api/v1/settings/`, `/api/v1/operations/{job}`).
+  - Add operation job handlers for “sync-embeddings”, “rebuild-index”, “sync-guidelines”, and “import-sheets” that internally run the existing script logic (or delegate to those scripts via `OperationsService`). Scripts will call `POST /api/v1/operations/{job}` and poll `/api/v1/operations/jobs/{id}` instead of shelling out.
+  - Expose a read-only `/api/v1/search/health` endpoint mirroring `scripts/search_health.py` output so diagnostics can drop their direct SQL dependency.
+  - Provide bulk export/import endpoints (e.g., `/api/v1/entries/export`, `/api/v1/entries/import`) or streaming payloads so scripts are not forced to loop over thousands of individual `/entries/write` calls.
+- Extend `CHLAPIClient` with small `.get()`/`.post()` helpers plus typed wrappers for the new endpoints before removing `src/api_client.py`.
+- The destructive import/export flows currently truncate tables, reset FAISS directories, and coordinate background workers. Either re-implement that behavior as an API operation or declare script-only escape hatches in this doc so expectations stay realistic.
 
 ## Global Import Updates
 
@@ -63,20 +72,23 @@ def import_from_sheets():
     # Step 1: Read from spreadsheet (common utility)
     entries = sheets.read_entries()
 
-    # Step 2: Import entries via API (mode-agnostic)
-    for entry in entries:
-        api_client.post("/entries", json=entry)
+    # Step 2: Send payload to API (mode-agnostic)
+    job = api_client.post(
+        "/api/v1/operations/import-sheets",
+        json={"payload": {"entries": entries}},
+    )
+    job_id = job["job_id"]
 
     # Step 3: Detect mode and trigger GPU operations if needed
-    settings = api_client.get("/settings")
+    settings = api_client.get("/api/v1/settings/")
     if settings["search_mode"] == "auto":
         # Trigger embedding sync (GPU-specific operation)
-        job = api_client.post("/operations/sync-embeddings")
-        job_id = job["id"]
+        sync_job = api_client.post("/api/v1/operations/sync-embeddings")
+        sync_job_id = sync_job["job_id"]
 
         # Optional: Poll for completion
         while True:
-            status = api_client.get(f"/operations/{job_id}")
+            status = api_client.get(f"/api/v1/operations/jobs/{sync_job_id}")
             if status["state"] in ["completed", "failed"]:
                 break
             time.sleep(1)
@@ -87,7 +99,7 @@ def import_from_sheets():
 **Key Points:**
 - ✅ Uses common utilities for spreadsheet reading
 - ✅ HTTP-only communication with API server
-- ✅ Mode detection via `/settings` endpoint
+- ✅ Mode detection via `/api/v1/settings/`
 - ✅ GPU operations triggered conditionally
 - ❌ No direct imports from `src.api.*`
 
@@ -114,8 +126,8 @@ def export_to_sheets():
     sheets = GoogleSheetsClient()
     api_client = CHLAPIClient(base_url=config.api_url)
 
-    # Step 1: Fetch entries via API (mode-agnostic)
-    entries = api_client.get("/entries")
+    # Step 1: Fetch entries via API (mode-agnostic). Endpoint should stream/paginate.
+    entries = api_client.get("/api/v1/entries/export")
 
     # Step 2: Write to spreadsheet (common utility)
     sheets.write_entries(entries)
@@ -146,7 +158,7 @@ def seed_content():
     api_client = CHLAPIClient(base_url=config.api_url)
 
     # Detect mode
-    settings = api_client.get("/settings")
+    settings = api_client.get("/api/v1/settings/")
     mode = settings["search_mode"]
 
     # Call appropriate setup script via subprocess (not dynamic import)
@@ -156,7 +168,7 @@ def seed_content():
         subprocess.run(["python", "scripts/setup-cpu.py"], check=True)
 
     # Seed default entries via HTTP
-    api_client.post("/admin/seed-defaults")
+    api_client.post("/api/v1/operations/seed-defaults")
 ```
 
 **Key Points:**
@@ -182,12 +194,12 @@ def rebuild_index():
     api_client = CHLAPIClient(base_url=config.api_url)
 
     # Trigger rebuild (mode-aware on server side)
-    job = api_client.post("/operations/rebuild-index")
+    job = api_client.post("/api/v1/operations/rebuild-index")
     job_id = job["id"]
 
     # Poll for completion
     while True:
-        status = api_client.get(f"/operations/{job_id}")
+            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -218,12 +230,12 @@ def sync_embeddings():
     api_client = CHLAPIClient(base_url=config.api_url)
 
     # Trigger sync (GPU-only endpoint)
-    job = api_client.post("/operations/sync-embeddings")
+    job = api_client.post("/api/v1/operations/sync-embeddings")
     job_id = job["id"]
 
     # Poll for completion
     while True:
-        status = api_client.get(f"/operations/{job_id}")
+            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -253,12 +265,12 @@ def sync_guidelines():
     api_client = CHLAPIClient(base_url=config.api_url)
 
     # Trigger sync
-    job = api_client.post("/operations/sync-guidelines")
+    job = api_client.post("/api/v1/operations/sync-guidelines")
     job_id = job["id"]
 
     # Poll for completion
     while True:
-        status = api_client.get(f"/operations/{job_id}")
+            status = api_client.get(f"/api/v1/operations/jobs/{job_id}")
         if status["state"] in ["completed", "failed"]:
             break
         time.sleep(1)
@@ -396,10 +408,10 @@ def check_search_health():
     api_client = CHLAPIClient(base_url=config.api_url)
 
     # Get health status
-    health = api_client.get("/search/health")
+    health = api_client.get("/api/v1/search/health")
 
     # Get current mode
-    settings = api_client.get("/settings")
+    settings = api_client.get("/api/v1/settings/")
     mode = settings["search_mode"]
 
     print(f"Search mode: {mode}")
@@ -431,7 +443,7 @@ def read_entry(entry_id: str):
 
     # Also fetch via API for comparison
     api_client = CHLAPIClient(base_url=config.api_url)
-    api_entry = api_client.get(f"/entries/{entry_id}")
+    api_entry = api_client.get(f"/api/v1/entries/{entry_id}")
 
     print("DB entry:", entry)
     print("API entry:", api_entry)
@@ -441,6 +453,7 @@ def read_entry(entry_id: str):
 - ✅ Uses common utilities for direct DB access
 - ✅ HTTP for comparison/validation
 - ✅ Low-level diagnostic tool
+- 🔧 Implementation detail: the existing script imports `src.mcp.handlers_entries`. Move the shared handler helpers into `src/common/diagnostics/handlers.py` (or similar) so this “tweak” tool no longer depends on MCP internals, and keep its HTTP fallback as the source of truth.
 
 ---
 
@@ -467,15 +480,16 @@ def write_entry(entry_data: dict):
 
     # Trigger embeddings sync if GPU mode
     api_client = CHLAPIClient(base_url=config.api_url)
-    settings = api_client.get("/settings")
+    settings = api_client.get("/api/v1/settings/")
     if settings["search_mode"] == "auto":
-        api_client.post("/operations/sync-embeddings")
+        api_client.post("/api/v1/operations/sync-embeddings")
 ```
 
 **Key Points:**
 - ✅ Direct DB write for low-level operations
 - ✅ Mode-aware embedding sync via HTTP
 - ✅ Maintenance tool
+- 🔧 Implementation detail: relocate `make_write_entry_handler` (currently under `src.mcp.handlers_entries`) into a common diagnostics module or rework it into an internal API so this script no longer depends on MCP internals when crafting payloads.
 
 ---
 
@@ -483,7 +497,7 @@ def write_entry(entry_data: dict):
 
 | Script | Strategy | Imports from src.api.* | HTTP Calls | Mode Detection |
 |--------|----------|------------------------|------------|----------------|
-| import.py | HTTP + Mode Detection | ❌ | ✅ | ✅ (via /settings) |
+| import.py | HTTP + Mode Detection | ❌ | ✅ | ✅ (via /api/v1/settings/) |
 | export.py | Pure HTTP | ❌ | ✅ | ❌ (mode-agnostic) |
 | seed_default_content.py | HTTP + Subprocess | ❌ | ✅ | ✅ |
 | rebuild_index.py | HTTP | ❌ | ✅ | ❌ (server-side) |
@@ -533,17 +547,18 @@ After migration, verify each script:
 
 Scripts depend on these API endpoints (ensure they exist):
 
-- `GET /settings` - Get current configuration (including search_mode)
-- `GET /entries` - List all entries
-- `POST /entries` - Create entry
-- `GET /entries/{id}` - Get single entry
-- `POST /operations/sync-embeddings` - Trigger embedding sync (GPU)
-- `POST /operations/rebuild-index` - Trigger index rebuild
-- `POST /operations/sync-guidelines` - Trigger guidelines sync
-- `GET /operations/{id}` - Get operation status
-- `GET /search/health` - Get search system health
+- `GET /api/v1/settings/` - Get current configuration (including search_mode)
+- `GET /api/v1/entries/export` (or paginated `/api/v1/entries/read`) - List entries for export
+- `POST /api/v1/entries/write` - Create entry
+- `GET /api/v1/entries/{id}` - Get single entry
+- `POST /api/v1/operations/import-sheets` - Bulk import rows from Sheets
+- `POST /api/v1/operations/sync-embeddings` - Trigger embedding sync (GPU)
+- `POST /api/v1/operations/rebuild-index` - Trigger index rebuild
+- `POST /api/v1/operations/sync-guidelines` - Trigger guidelines sync
+- `POST /api/v1/operations/seed-defaults` - Seed default content
+- `GET /api/v1/operations/jobs/{id}` - Get operation status
+- `GET /api/v1/search/health` - Get search system health
 - `GET /health` - Get API health
-- `POST /admin/seed-defaults` - Seed default content
 
 ## Import Validation
 

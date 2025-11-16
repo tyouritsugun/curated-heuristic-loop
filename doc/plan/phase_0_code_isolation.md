@@ -149,6 +149,7 @@ src/
   - Include `OperationsModeAdapter` and `DiagnosticsModeAdapter` as **typing.Protocol definitions ONLY**
   - **CRITICAL**: These protocols must NOT import from `src.api.*` - they define abstract interfaces that api/cpu/gpu implementations will satisfy
   - Use `typing.Protocol` with abstract methods; no concrete implementations or service imports
+- **DTO relocation**: Move the MCP-specific DTOs/utilities consumed by API routers (`ExperienceWritePayload`, `ManualWritePayload`, `format_validation_error`, `normalize_context`) into `src/common/dto/` so `src/api` no longer reaches into `src/mcp`. Update both API and MCP imports accordingly before deleting the old module paths.
 
 **3. Migrate Shared API Client** (`src/common/api_client/`)
 - Move `src/api_client.py` → `src/common/api_client/client.py`
@@ -156,6 +157,9 @@ src/
   - `CHLAPIError`, `APIConnectionError`, `APIOperationError`
 - Update imports: `from src.api_client import CHLAPIClient` → `from src.common.api_client.client import CHLAPIClient`
   - Current consumers: `scripts/import.py`, `scripts/export.py`, `src/services/operations_service.py`
+- Extend the client surface while moving it:
+  - Add lightweight `.get()/.post()` helpers plus typed wrappers for `/api/v1/settings`, `/api/v1/operations/*`, `/api/v1/entries/*`, and `/health/metrics` so the scripts migration plan remains accurate.
+  - Keep compatibility with existing queue helpers but note that Phase 3 will port the circuit-breaker/tenacity stack from `src/mcp/api_client.py` into this shared client before the MCP module is deleted (see Step 16).
 
 **4. Migrate Configuration**
 - Move `src/config.py` → `src/common/config/config.py`
@@ -206,6 +210,13 @@ src/
 - Remove MCP coupling from UI routers (e.g., `_invalidate_categories_cache_safe` should emit an event via a service, not `sys.modules["src.server"]`)
 - Delete `src/api_server.py`
 
+**10a. API Surface Alignment (new)**
+- Keep all public routes under `/api/v1/...` and update every script/doc example accordingly (no bare `/entries` or `/settings`). If we want short aliases later, add FastAPI sub-routers that simply 307 to the versioned paths.
+- Promote script-only workflows into first-class operations endpoints so Phase 0 doesn’t block on “manual DB work”:
+  - Add operation handlers for “import from Sheets”, “sync embeddings”, “rebuild index”, and “sync guidelines” that wrap the existing script logic (ideally by delegating through `OperationsService` job types). `POST /api/v1/operations/{job}` already exists—ensure job names (`sync-embeddings`, `rebuild-index`, `sync-guidelines`, `import-sheets`) are wired up server-side before scripts switch to HTTP.
+  - Expose a read-only `/api/v1/search/health` JSON endpoint that surfaces the data currently produced by `scripts/search_health.py` (counts, FAISS status, warnings) so diagnostics stay available without shelling into SQLite.
+- Make sure `SettingsService.snapshot()` is reachable via the versioned API (`GET /api/v1/settings/` already exists); document that these responses include `search_mode`, eliminating the need for scripts to peek into config files.
+
 **11. TEST CPU MODE** ✅ **CHECKPOINT 1**
 - Set `CHL_SEARCH_MODE=sqlite_only`
 - Start: `python -m src.api.server`
@@ -250,6 +261,7 @@ src/
   - Replace repository calls with HTTP requests for `list_categories`, `read_entries`, `write_entry`, etc.
   - Remove direct FAISS/SQLite logic; defer to API responses for degraded vs vector metadata
   - Delete helper code that inspects `search_service` state (e.g., `_runtime_search_mode`)
+- Before cutting over, port the resiliency features from `src/mcp/api_client.py` (circuit breaker, tenacity retries, transport-specific exceptions) into the shared `CHLAPIClient` so MCP behavior does not regress when the dedicated client is deleted.
 - Delete `src/server.py` and `src/mcp/api_client.py`
 
 **17. TEST MCP** ✅ **CHECKPOINT 3**
