@@ -100,8 +100,10 @@ async def lifespan(app: FastAPI):
 
         settings_service = SettingsService(db.get_session, config.experience_root)
         worker_control_service = WorkerControlService(db.get_session)
-        operations_mode = os.getenv("CHL_OPERATIONS_MODE")
-        operations_service = OperationsService(db.get_session, mode=operations_mode)
+        operations_service = OperationsService(
+            session_factory=db.get_session,
+            data_path=config.experience_root,
+        )
         logger.info("Core services initialized (settings, worker control, operations)")
 
         background_worker = None

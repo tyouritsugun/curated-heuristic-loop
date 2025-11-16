@@ -56,21 +56,33 @@ class OperationsService:
         session_factory,
         max_workers: int = 3,
         lock_ttl_seconds: int = 3600,
-        mode: Optional[str] = None,
-        project_root: Optional[Path] = None,
+        data_path: Optional[Path] = None,
     ):
+        """Initialize operations service.
+
+        Args:
+            session_factory: Factory function that creates database sessions
+            max_workers: Maximum concurrent operations
+            lock_ttl_seconds: Time-to-live for operation locks
+            data_path: Path to data directory (for imports/FAISS index)
+        """
         self._session_factory = session_factory
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._lock = threading.Lock()
         self._lock_ttl = lock_ttl_seconds
         self._active_jobs: Dict[str, str] = {}
-        self._mode = (mode or os.getenv("CHL_OPERATIONS_MODE", "scripts")).strip().lower()
-        self._project_root = Path(project_root).resolve() if project_root else Path(__file__).resolve().parents[2]
-        self._scripts_dir = self._project_root / "scripts"
         self._handlers: Dict[str, OperationHandler] = {}
-        # Hard cap duration for external scripts (seconds)
-        self._timeout_seconds = self._load_timeout_config()
-        self._operations_adapter: Optional[Any] = None
+
+        # Get data path for import service
+        if data_path is None:
+            project_root = Path(__file__).resolve().parents[3]
+            data_path = project_root / "data"
+        self._data_path = Path(data_path)
+
+        # Mode adapter for GPU operations (set later by runtime)
+        self._mode_adapter: Optional[Any] = None
+
+        # Register handlers
         self._register_builtin_handlers()
 
     # ------------------------------------------------------------------
@@ -81,50 +93,19 @@ class OperationsService:
 
     def set_mode_adapter(self, adapter: Any) -> None:
         """Attach a mode-specific adapter for vector-capable operations."""
-        self._operations_adapter = adapter
+        self._mode_adapter = adapter
 
     def _register_builtin_handlers(self):
-        """Register default handlers based on the configured mode."""
-        if self._mode not in {"scripts", "noop"}:
-            logger.warning("Unknown CHL_OPERATIONS_MODE '%s'; defaulting to 'noop'.", self._mode)
-            self._mode = "noop"
+        """Register operation handlers that call services directly."""
+        # Core operations
+        self._handlers["import-sheets"] = self._import_sheets_handler
+        self._handlers["sync-embeddings"] = self._sync_embeddings_handler
+        self._handlers["rebuild-index"] = self._rebuild_index_handler
 
-        if self._mode == "scripts":
-            if self._scripts_dir.exists():
-                # Legacy job names
-                self._handlers["import"] = self._import_handler
-                self._handlers["export"] = self._export_handler
-                self._handlers["index"] = self._index_handler
-                self._handlers["sync"] = self._sync_handler
-                self._handlers["reembed"] = self._reembed_handler
-                self._handlers["guidelines"] = self._guidelines_handler
-
-                # API-facing aliases (Phase 0 contract)
-                self._handlers.setdefault("import-sheets", self._import_handler)
-                self._handlers.setdefault("sync-embeddings", self._sync_handler)
-                self._handlers.setdefault("rebuild-index", self._index_handler)
-                self._handlers.setdefault("sync-guidelines", self._guidelines_handler)
-                self._handlers.setdefault("seed-defaults", self._seed_defaults_handler)
-                return
-            logger.warning(
-                "OperationsService mode 'scripts' requested but scripts directory '%s' is missing. "
-                "Falling back to no-op handlers.",
-                self._scripts_dir,
-            )
-            self._mode = "noop"
-
-        # Default noop handlers
-        self._handlers.setdefault("import", self._noop_handler)
-        self._handlers.setdefault("export", self._noop_handler)
-        self._handlers.setdefault("index", self._noop_handler)
-        self._handlers.setdefault("sync", self._noop_handler)
-        self._handlers.setdefault("reembed", self._noop_handler)
-        self._handlers.setdefault("guidelines", self._noop_handler)
-        self._handlers.setdefault("import-sheets", self._noop_handler)
-        self._handlers.setdefault("sync-embeddings", self._noop_handler)
-        self._handlers.setdefault("rebuild-index", self._noop_handler)
-        self._handlers.setdefault("sync-guidelines", self._noop_handler)
-        self._handlers.setdefault("seed-defaults", self._noop_handler)
+        # Legacy aliases (kept for compatibility with old job names in DB)
+        self._handlers["import"] = self._import_sheets_handler
+        self._handlers["sync"] = self._sync_embeddings_handler
+        self._handlers["index"] = self._rebuild_index_handler
 
     def shutdown(self):
         self._executor.shutdown(wait=False, cancel_futures=True)
@@ -369,229 +350,116 @@ class OperationsService:
         self._release_lock(job_type, job_id)
         logger.info("Job %s completed with status=%s", job_id, status)
 
-    def _noop_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        self._simulate_delay(payload)
-        return {"message": "no-op", "received": payload or {}, "mode": self._mode}
-
-    def _import_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        del session  # Handler is side-effect only; DB session not required
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "import.py"),
-            "--yes",
-        ]
-        # Allow reverting to legacy behavior via env flag
-        if os.getenv("CHL_SKIP_API_COORDINATION", "0") == "1":
-            command.append("--skip-api-coordination")
-        payload = payload or {}
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        result = self._run_script(command, payload)
-
-        # Auto-trigger sync job if import succeeded
-        if result.get("exit_code") == 0:
-            adapter = getattr(self, "_operations_adapter", None)
-            vector_enabled = bool(adapter is None or adapter.can_run_vector_jobs())
-            if vector_enabled:
+    # ------------------------------------------------------------------
+    # Operation Handlers (direct service calls)
+    # ------------------------------------------------------------------
+    def _import_sheets_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Import data from Google Sheets into the database."""
+        from src.api.services.import_service import ImportService
+        from src.common.sheets_client import SheetsClient
+        
+        try:
+            # Get sheets data from payload (sent by HTTP client)
+            categories_rows = payload.get("categories", [])
+            experiences_rows = payload.get("experiences", [])
+            manuals_rows = payload.get("manuals", [])
+            
+            if not categories_rows:
+                raise ValueError("No category data provided in payload")
+            
+            # Import via service
+            import_service = ImportService(self._data_path)
+            counts = import_service.import_from_sheets(
+                session=session,
+                categories_rows=categories_rows,
+                experiences_rows=experiences_rows,
+                manuals_rows=manuals_rows,
+            )
+            
+            logger.info("Import completed: %s", counts)
+            
+            # Auto-trigger sync job if import succeeded and GPU mode is enabled
+            if self._mode_adapter and self._mode_adapter.can_run_vector_jobs():
                 try:
-                    logger.info("Import succeeded, triggering automatic sync job...")
-                    self.trigger(job_type="sync", payload={}, actor="system:auto_import")
+                    logger.info("Import succeeded, triggering automatic embedding sync...")
+                    self.trigger(job_type="sync-embeddings", payload={}, actor="system:auto_import")
                 except OperationConflict:
                     logger.warning("Sync job already running, skipping automatic trigger")
                 except Exception as e:
                     logger.error(f"Failed to trigger automatic sync job: {e}")
-            else:
-                logger.info("Import succeeded; skipping automatic sync (vector jobs disabled by mode)")
+            
+            return {
+                "success": True,
+                "counts": counts,
+                "message": f"Imported {counts['experiences']} experiences, {counts['manuals']} manuals, {counts['categories']} categories"
+            }
+            
+        except Exception as exc:
+            logger.exception("Import failed")
+            raise ValueError(f"Import operation failed: {exc}") from exc
 
-        return result
+    def _sync_embeddings_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        """Sync embeddings for pending/failed entities."""
+        if not self._mode_adapter:
+            raise ValueError("Embedding sync requires GPU mode (mode adapter not set)")
+        
+        if not self._mode_adapter.can_run_vector_jobs():
+            raise ValueError("Vector operations not available in current mode")
+        
+        try:
+            # Get embedding service from mode adapter
+            embedding_service = self._mode_adapter.get_embedding_service()
+            if not embedding_service:
+                raise ValueError("Embedding service not available")
+            
+            # Get parameters
+            retry_failed = payload.get("retry_failed", False)
+            max_count = payload.get("max_count")
+            
+            # Process pending embeddings
+            stats = embedding_service.process_pending(max_count=max_count)
+            
+            logger.info("Embedding sync completed: %s", stats)
+            
+            return {
+                "success": True,
+                "stats": stats,
+                "message": f"Processed {stats['processed']} entities: {stats['succeeded']} succeeded, {stats['failed']} failed"
+            }
+            
+        except Exception as exc:
+            logger.exception("Embedding sync failed")
+            raise ValueError(f"Embedding sync operation failed: {exc}") from exc
 
-    def _export_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        del session
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "export.py"),
-        ]
-        payload = payload or {}
-        if payload.get("dry_run"):
-            command.append("--dry-run")
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    def _guidelines_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Refresh generator/evaluator manuals from markdown sources."""
-        del session
-        payload = payload or {}
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "seed_default_content.py"),
-            "--skip-seed",
-        ]
-        if payload.get("skip_guidelines"):
-            command.append("--skip-guidelines")
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    def _sync_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Synchronize embeddings in the background worker."""
-        del session
-        payload = payload or {}
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "sync_embeddings.py"),
-        ]
-        if payload.get("retry_failed"):
-            command.append("--retry-failed")
-        if max_count := payload.get("max_count"):
-            command.extend(["--max-count", str(max_count)])
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    def _index_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+    def _rebuild_index_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
         """Rebuild FAISS index from existing embeddings."""
-        del session
-        payload = payload or {}
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "rebuild_index.py"),
-        ]
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    def _reembed_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Recompute embeddings for all entries (legacy)."""
-        del session
-        payload = payload or {}
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "rebuild_index.py"),
-            "--reembed",
-        ]
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    def _seed_defaults_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Seed default content and/or guidelines based on payload flags."""
-        del session
-        payload = payload or {}
-        command = [
-            sys.executable,
-            str(self._scripts_dir / "seed_default_content.py"),
-        ]
-        if payload.get("skip_seed"):
-            command.append("--skip-seed")
-        if payload.get("skip_guidelines"):
-            command.append("--skip-guidelines")
-        if config := payload.get("config"):
-            command.extend(["--config", str(config)])
-        return self._run_script(command, payload)
-
-    # ------------------------------------------------------------------
-    # Script helpers
-    # ------------------------------------------------------------------
-    def _run_script(self, command: list[str], payload: Dict[str, Any]) -> Dict[str, Any]:
-        start = time.time()
-        logger.info("Running script: %s", " ".join(map(str, command)))
-        env = os.environ.copy()
-        env.setdefault("PYTHONUNBUFFERED", "1")
-
+        if not self._mode_adapter:
+            raise ValueError("Index rebuild requires GPU mode (mode adapter not set)")
+        
+        if not self._mode_adapter.can_run_vector_jobs():
+            raise ValueError("Vector operations not available in current mode")
+        
         try:
-            proc = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=str(self._scripts_dir),
-                env=env,
-            )
-        except FileNotFoundError as exc:
-            logger.error("Failed to start script %s: %s", command[0], exc)
+            # Get search provider from mode adapter
+            search_provider = self._mode_adapter.get_search_provider()
+            if not search_provider:
+                raise ValueError("Search provider not available")
+            
+            # Rebuild index
+            search_provider.rebuild_index(session)
+            
+            logger.info("FAISS index rebuild completed successfully")
+            
             return {
-                "exit_code": 127,
-                "stdout": "",
-                "stderr": str(exc),
-                "duration": 0.0,
+                "success": True,
+                "message": "FAISS index rebuilt successfully from existing embeddings"
             }
+            
+        except Exception as exc:
+            logger.exception("Index rebuild failed")
+            raise ValueError(f"Index rebuild operation failed: {exc}") from exc
 
-        try:
-            stdout, stderr = proc.communicate(timeout=self._timeout_seconds)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            logger.warning(
-                "Script %s timed out after %ss (pid=%s)",
-                command[0],
-                self._timeout_seconds,
-                proc.pid,
-            )
-            return {
-                "exit_code": -1,
-                "stdout": stdout,
-                "stderr": f"Script timed out after {self._timeout_seconds}s\n{stderr}",
-                "duration": time.time() - start,
-            }
 
-        duration = time.time() - start
-        logger.info("Script %s exited with code %s in %.2fs", command[0], proc.returncode, duration)
-
-        # Best-effort structured extraction from stdout/stderr
-        parsed_stdout = self._extract_json(stdout)
-        parsed_stderr = self._extract_json(stderr)
-
-        return {
-            "exit_code": proc.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "duration": duration,
-            "stdout_json": parsed_stdout,
-            "stderr_json": parsed_stderr,
-            "payload": payload,
-        }
-
-    def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
-        """Best-effort extraction of a JSON object from script output."""
-        text = text.strip()
-        if not text:
-            return None
-        # Look for a JSON object anywhere in the output (last one wins)
-        candidates = re.findall(r"(\{.*\})", text, flags=re.DOTALL)
-        for raw in reversed(candidates):
-            try:
-                obj = json.loads(raw)
-                if isinstance(obj, dict):
-                    return obj
-            except json.JSONDecodeError:
-                continue
-        return None
-
-    def _load_timeout_config(self) -> int:
-        """Load script timeout from environment with sane bounds."""
-        default_timeout = 1800  # 30min
-        min_timeout = 60
-        raw = os.getenv("CHL_OPERATIONS_TIMEOUT_SEC")
-        if not raw:
-            return default_timeout
-        try:
-            configured = int(raw)
-        except ValueError:
-            logger.warning(
-                "Invalid CHL_OPERATIONS_TIMEOUT_SEC=%r; using default %ds",
-                raw,
-                default_timeout,
-            )
-            return default_timeout
-        if configured < min_timeout:
-            logger.warning(
-                "CHL_OPERATIONS_TIMEOUT_SEC=%d below minimum %ds, using minimum",
-                configured,
-                min_timeout,
-            )
-            return min_timeout
-        return configured
 
 
 __all__ = [

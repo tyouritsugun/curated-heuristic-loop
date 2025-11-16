@@ -40,8 +40,35 @@ logger = logging.getLogger(__name__)
 class GpuOperationsModeAdapter(OperationsModeAdapter):
     """Operations adapter for vector-capable (GPU) mode."""
 
+    def __init__(
+        self,
+        embedding_client=None,
+        thread_safe_faiss=None,
+        vector_provider=None,
+        session_factory=None,
+    ):
+        self._embedding_client = embedding_client
+        self._thread_safe_faiss = thread_safe_faiss
+        self._vector_provider = vector_provider
+        self._session_factory = session_factory
+
     def can_run_vector_jobs(self) -> bool:
         return True
+
+    def get_embedding_service(self):
+        """Get or create embedding service for operations."""
+        if not self._embedding_client or not self._thread_safe_faiss:
+            return None
+        from src.api.gpu.embedding_service import EmbeddingService
+        return EmbeddingService(
+            session_factory=self._session_factory,
+            embedding_client=self._embedding_client,
+            faiss_manager=self._thread_safe_faiss,
+        )
+
+    def get_search_provider(self):
+        """Get vector search provider (contains FAISS manager and rebuild logic)."""
+        return self._vector_provider
 
 
 class GpuDiagnosticsAdapter(DiagnosticsModeAdapter):
@@ -322,7 +349,12 @@ def build_gpu_runtime(
     return ModeRuntime(
         search_service=search_service,
         thread_safe_faiss=thread_safe_faiss,
-        operations_mode_adapter=GpuOperationsModeAdapter(),
+        operations_mode_adapter=GpuOperationsModeAdapter(
+            embedding_client=embedding_client,
+            thread_safe_faiss=thread_safe_faiss,
+            vector_provider=vector_provider,
+            session_factory=db.get_session,
+        ),
         diagnostics_adapter=GpuDiagnosticsAdapter(),
         background_worker=background_worker,
         worker_pool=worker_pool,
