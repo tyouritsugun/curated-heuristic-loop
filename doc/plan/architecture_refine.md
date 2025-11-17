@@ -63,7 +63,8 @@
 - The MCP server may import only `Config`, `CHLAPIClient`, and shared DTOs from `src/common.*` (specifically: `src.common.config.*`, `src.common.api_client.*`, and `src.common.dto.*`); all other behavior must go through HTTP endpoints.
 - API and MCP communicate only via HTTP (CHLAPIClient).
 - Boundary tests enforce these architectural rules (including forbidden MCP imports from `src.common.storage.*`, `src.common.web_utils.*`, etc.).
- - Setup and internal diagnostic scripts (e.g., `scripts/setup-gpu.py`, `scripts/gpu_smoke_test.py`) are explicit exceptions: they may import `src.api.*` directly but only run with the API server stopped, and never act as general orchestration tools.
+- Setup and internal diagnostic scripts live under `scripts/` and **by default** follow the same boundaries (only `src.common.*` + stdlib), with a single narrow exception introduced in Phase B:
+  - `scripts/check_api_env.py` may import `src.api.services.gpu_installer` to reuse GPU detection and wheel metadata helpers. It must not import any other `src.api.*` modules and must never start or manage the API server process.
 
 ### ADR-004: Local-Only Deployment Model
 
@@ -126,10 +127,12 @@
 
 2. **Phase B – Diagnostics & Environment Guardrails**
    - Implement `scripts/check_api_env.py` (or similar) that:
-     - Detects OS/GPU/toolchain readiness.
-     - Attempts a minimal `llama_cpp` import targeting the selected backend.
-     - Emits a JSON/text summary + “LLM prompt” saved to disk when failures occur.
-   - Hook the script into onboarding docs so users run it before/after installing their venv.
+     - Ensures the API server is not running (HTTP probe) before performing checks; if it is running, prints a clear warning and exits with code 1 (with an optional `--force` override for emergencies).
+     - Detects OS/GPU/toolchain readiness for Metal, CUDA, and CPU-only environments (AMD ROCm and Intel GPU remain TBD per README).
+     - Runs GPU diagnostics by reusing `src/api.services.gpu_installer` for backend detection, VRAM estimation, and wheel metadata lookup (narrow ADR-003 exception for this script only).
+     - Attempts a minimal `llama_cpp` import targeting the selected backend when GPU prerequisites appear satisfied.
+     - Emits a JSON/text summary + “LLM prompt” saved to disk when failures occur, including dynamic wheel compatibility information fetched from the configured wheel index (strict network requirement for this phase).
+   - Hook the script into onboarding docs so users run it **before** creating or installing their API venv, and update README “Quick Start” to treat a successful run (exit code 0) as a mandatory prerequisite.
 
 3. **Phase C – Runtime Isolation**
    - Enforce MCP ↔ API separation: introduce clear service boundaries, ensure MCP never opens SQLite/FAISS, and relies on HTTP endpoints.
