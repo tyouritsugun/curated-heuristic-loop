@@ -116,8 +116,7 @@ The user copies this prompt to ChatGPT/Claude to get step-by-step remediation gu
 - `build_support_prompt(gpu_state: Dict, prereq: Dict, verify_log: Optional[str]) -> str`: Generate LLM troubleshooting prompt
 - Includes all diagnostic information, wheel requirements, and official resource links
 - Template-based generation (could use Jinja2 or string formatting)
-
-These helpers are shared between the CLI diagnostics script and the GPU settings card in the web UI. The UI reuses them for **status and display only**; all wheel installation and support-prompt generation actions move to `check_api_env.py`.
+These helpers are consumed exclusively by the CLI diagnostics script. The web UI no longer calls `gpu_installer` directly; it reflects configuration and model selection state derived from `data/model_selection.json` and environment variables, and points users to `python scripts/check_api_env.py` for hardware diagnostics and troubleshooting prompts.
 
 ### 3. README.md Workflow Update
 
@@ -150,27 +149,22 @@ Update "Quick Start" to reference this prerequisite and to align CUDA/Metal inst
 #### Remove from src/api/routers/gpu_ui.py
 
 **Endpoints to remove (duplicate functionality now in CLI):**
-- `POST /ui/settings/gpu/install`: Wheel installation now handled pre-deployment
-- `POST /ui/settings/gpu/support-prompt`: Prompt generation now in check_api_env.py
+- `GET /ui/settings/gpu/card`: GPU runtime card no longer performs hardware detection or installation
+- `POST /ui/settings/gpu/detect`: Hardware detection is CLI-only (`check_api_env.py`)
+- `POST /ui/settings/gpu/install`: Wheel installation now handled pre-deployment in the CLI
+- `POST /ui/settings/gpu/support-prompt`: Prompt generation now in `check_api_env.py`
 
 **Endpoints to keep (unique web UI value):**
-- `GET /ui/settings/gpu/card`: Display current GPU status for dashboard
-- `POST /ui/settings/gpu/detect`: Real-time re-detection for web UI
 - `POST /ui/operations/models/change`: Model selection/download after setup
 - `GET /ui/operations/models`: Model management card
 
 #### Template Updates
 
 Remove from `src/api/templates/gpu/partials/settings_gpu_runtime.html`:
-- GPU wheel installation button/form
-- Support prompt generation button
-
-Keep:
-- GPU status display (backend, version, detected via)
-- Link to re-run detection
+- Entire card (file removed). The settings page no longer includes a GPU runtime card; instead, it should briefly explain that hardware diagnostics and wheel compatibility checks live in `scripts/check_api_env.py` and are performed before API server installation.
 
 Remove from `src/api/templates/gpu/settings_gpu.html`:
-- Environment setup card (duplicates check_api_env.py)
+- GPU runtime/settings card include (no longer rendered in the settings layout)
 
 Keep:
 - Model selection/download card (operations use case)

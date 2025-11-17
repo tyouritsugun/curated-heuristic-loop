@@ -5,23 +5,16 @@
 #
 # Prerequisites:
 #   - NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer)
-#   - CUDA Toolkit 12.x installed (e.g., /usr/local/cuda-12.5)
-#   - cuDNN libraries
-#   - CMake 3.18+
+#   - NVIDIA drivers with compatible CUDA runtime installed
 #
 # Installation:
 #   python -m venv .venv-cuda
 #   source .venv-cuda/bin/activate
 #   python -m pip install --upgrade pip
 #
-#   # Set CUDA environment variables for llama-cpp-python build
-#   export CUDA_HOME=/usr/local/cuda-12.5
-#   export LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib64:$LD_LIBRARY_PATH
-#   export LLAMA_CUBLAS=1
-#   export LLAMA_CUDA=1
-#   export CMAKE_ARGS="-DGGML_CUDA=on -DLLAMA_CUBLAS=on"
-#
-#   python -m pip install -r requirements_cuda.txt
+#   # Use abetlen's CUDA wheel index for llama-cpp-python
+#   PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cuda \
+#     python -m pip install -r requirements_cuda.txt
 #
 # Starting the API server:
 #   CHL_SEARCH_MODE=gpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
@@ -60,5 +53,5 @@ markdown>=3.6
 faiss-cpu>=1.7.4
 huggingface-hub>=0.20.0
 sentence-transformers>=3.1.1
-# Source install so CUDA flags take effect during build
-llama-cpp-python @ git+https://github.com/abetlen/llama-cpp-python.git@v0.3.16
+# llama-cpp-python with CUDA support from abetlen's wheel index
+llama-cpp-python==0.3.16

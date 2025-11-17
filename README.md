@@ -18,6 +18,25 @@ The API and MCP servers communicate exclusively via HTTP (default: `http://local
 
 ## Quick Start
 
+### Step 0: Verify Your Environment
+
+Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
+
+```bash
+python scripts/check_api_env.py
+```
+
+This script checks:
+- GPU hardware detection (Metal/CUDA/CPU)
+- Driver and toolchain availability
+- VRAM capacity and model size recommendations
+- llama-cpp-python wheel compatibility (via the official wheel index)
+
+If checks pass, it writes recommended model choices to `data/model_selection.json` and prints a suggested `CHL_SEARCH_MODE` value.  
+If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` – copy this text into ChatGPT/Claude and follow the steps to fix your environment before proceeding.
+
+**Do not proceed to Step 1 until this script exits with code 0.**
+
 ### Step 1: Install API Server
 
 Choose your hardware platform and install the API server runtime:
@@ -79,16 +98,10 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 python -m venv .venv-cuda
 source .venv-cuda/bin/activate  # On Windows: .venv-cuda\Scripts\activate
 
-# Set CUDA environment variables for llama-cpp-python build
-export CUDA_HOME=/usr/local/cuda-12.5
-export LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib64:$LD_LIBRARY_PATH
-export LLAMA_CUBLAS=1
-export LLAMA_CUDA=1
-export CMAKE_ARGS="-DGGML_CUDA=on -DLLAMA_CUBLAS=on"
-
-# Install API server dependencies with CUDA-accelerated ML
+# Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
 python -m pip install --upgrade pip
-python -m pip install -r requirements_cuda.txt
+PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cuda \
+  python -m pip install -r requirements_cuda.txt
 ```
 
 </details>
