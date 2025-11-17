@@ -864,7 +864,9 @@ def get_wheel_metadata(backend: str, suffix: str) -> Dict[str, Any]:
     if backend not in {"cpu", "metal", "cuda", "rocm"}:
         raise GPUInstallerError(f"Unsupported backend for wheel metadata: {backend}")
 
-    index_url = f"{LLAMA_CPP_WHEEL_BASE}/llama-cpp-python/{backend}/"
+    # Layout matches abetlen's simple index:
+    #   {base}/{backend}/llama-cpp-python/
+    index_url = f"{LLAMA_CPP_WHEEL_BASE}/{backend}/llama-cpp-python/"
 
     try:
         with urllib.request.urlopen(index_url, timeout=10) as resp:
@@ -876,12 +878,17 @@ def get_wheel_metadata(backend: str, suffix: str) -> Dict[str, Any]:
     pattern = re.compile(r'href=[\'"](?P<href>[^\'"]*llama_cpp_python-[^\'"]+\.whl)[\'"]')
     for match in pattern.finditer(html):
         href = match.group("href")
+        if backend == "metal":
+            # Metal wheels are separated by index path, not filename suffix.
+            wheel_href = href
+            break
         if f"-{suffix}-" in href:
             wheel_href = href
             break
     if not wheel_href:
         raise GPUInstallerError(
-            f"Could not find a llama_cpp_python wheel with suffix '{suffix}' in index {index_url}"
+            f"Could not find a llama_cpp_python wheel in index {index_url} "
+            f"for backend '{backend}' (suffix filter '{suffix}')."
         )
 
     if wheel_href.startswith("http://") or wheel_href.startswith("https://"):

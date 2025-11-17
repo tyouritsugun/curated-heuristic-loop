@@ -635,18 +635,41 @@ class SettingsService:
             )
 
     def _diagnose_models(self, settings: Optional[ModelSettings]) -> DiagnosticStatus:
-        if settings is None:
+        # Prefer explicit DB-backed settings, but fall back to Config defaults
+        # when available so that environments configured via scripts/check_api_env.py
+        # and scripts/setup-gpu.py are treated as "configured".
+        cfg = self._config
+        effective_embedding_repo = settings.embedding_repo if settings and settings.embedding_repo else getattr(
+            cfg, "embedding_repo", None
+        )
+        effective_embedding_quant = settings.embedding_quant if settings and settings.embedding_quant else getattr(
+            cfg, "embedding_quant", None
+        )
+        effective_reranker_repo = settings.reranker_repo if settings and settings.reranker_repo else getattr(
+            cfg, "reranker_repo", None
+        )
+        effective_reranker_quant = settings.reranker_quant if settings and settings.reranker_quant else getattr(
+            cfg, "reranker_quant", None
+        )
+
+        if not any(
+            [effective_embedding_repo, effective_embedding_quant, effective_reranker_repo, effective_reranker_quant]
+        ):
             return DiagnosticStatus(
                 name="models",
                 state="warn",
                 headline="Models not configured",
-                detail="Set CHL_EMBED_MODEL/CHL_RERANK_MODEL in .env to configure recommendations.",
+                detail=(
+                    "Run scripts/check_api_env.py and scripts/setup-gpu.py to record model preferences, "
+                    "or set CHL_EMBEDDING_REPO/CHL_RERANKER_REPO in .env."
+                ),
                 validated_at=None,
             )
+
         problems = []
-        if not settings.embedding_repo:
+        if not effective_embedding_repo:
             problems.append("embedding model")
-        if not settings.reranker_repo:
+        if not effective_reranker_repo:
             problems.append("reranker model")
         if problems:
             return DiagnosticStatus(
@@ -654,14 +677,14 @@ class SettingsService:
                 state="warn",
                 headline="Model preferences incomplete",
                 detail=f"Missing configuration for: {', '.join(sorted(problems))}.",
-                validated_at=settings.validated_at,
+                validated_at=settings.validated_at if settings else None,
             )
         return DiagnosticStatus(
             name="models",
             state="ok",
             headline="Models configured",
             detail=None,
-            validated_at=settings.validated_at,
+            validated_at=settings.validated_at if settings else None,
         )
 
 

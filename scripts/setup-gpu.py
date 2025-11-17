@@ -5,9 +5,10 @@ This script initializes the database, downloads ML models (if not cached), and
 prepares the environment for running the MCP server.
 
 Usage:
-    python scripts/setup-gpu.py                  # Automatic setup with smallest models (recommended)
-    python scripts/setup-gpu.py --download-models # Interactive menu to select model sizes
-    python scripts/setup-gpu.py --force-models   # Re-download models (advanced)
+    python scripts/setup-gpu.py                      # Automatic setup using recommended/active models
+    python scripts/setup-gpu.py --download-models    # Ensure models are downloaded (non-interactive)
+    python scripts/setup-gpu.py --select-models      # Interactive menu to select model sizes
+    python scripts/setup-gpu.py --force-models       # Re-download models (advanced)
 
 The setup script is fully automatic:
 - Auto-creates data/ directory if missing
@@ -494,6 +495,91 @@ def _seed_default_content(config) -> bool:
         return False
 
 
+def _build_initial_embeddings_and_index(config) -> bool:
+    """Generate embeddings for existing content and build initial FAISS index.
+
+    This runs offline during setup so that once the API server starts, the
+    FAISS index already contains vectors for any seeded experiences/manuals.
+    """
+    logger.info("Building initial embeddings and FAISS index (if needed)...")
+    try:
+        # Late imports to keep module import surface minimal
+        from src.api.gpu.embedding_client import EmbeddingClient, EmbeddingClientError
+        from src.api.gpu.embedding_service import EmbeddingService
+        from src.api.gpu.faiss_manager import initialize_faiss_with_recovery
+        from src.common.storage.schema import Experience, CategoryManual
+
+        db = Database(config.database_path, echo=False)
+        db.init_database()
+
+        # Quick check: if there is no content yet, nothing to embed
+        with db.session_scope() as session:
+            exp_count = session.query(Experience).count()
+            man_count = session.query(CategoryManual).count()
+            if exp_count == 0 and man_count == 0:
+                logger.info("No experiences/manuals found; skipping initial embedding/index build.")
+                return True
+
+        # Initialize embedding client once (outside session scope)
+        try:
+            embedding_client = EmbeddingClient(
+                model_repo=config.embedding_repo,
+                quantization=config.embedding_quant,
+                n_ctx=2048,
+                n_gpu_layers=0,
+            )
+        except EmbeddingClientError as exc:
+            logger.error("Embedding client initialization failed: %s", exc)
+            return False
+
+        # Build embeddings and FAISS index inside a DB session
+        with db.session_scope() as session:
+            faiss_manager = initialize_faiss_with_recovery(
+                config,
+                session,
+                embedding_client=embedding_client,
+                session_factory=db.get_session,
+            )
+            if faiss_manager is None:
+                logger.warning("FAISS manager unavailable; skipping initial index build.")
+                return True
+
+            service = EmbeddingService(
+                session=session,
+                embedding_client=embedding_client,
+                model_name=config.embedding_model,
+                faiss_index_manager=faiss_manager,
+            )
+
+            # Mark any content with unknown embedding status as pending so it is picked up
+            session.query(Experience).filter(Experience.embedding_status.is_(None)).update(
+                {"embedding_status": "pending"}, synchronize_session=False
+            )
+            session.query(CategoryManual).filter(CategoryManual.embedding_status.is_(None)).update(
+                {"embedding_status": "pending"}, synchronize_session=False
+            )
+            session.flush()
+
+            stats = service.process_pending()
+            logger.info(
+                "Initial embedding pass: processed=%s, succeeded=%s, failed=%s",
+                stats.get("processed"),
+                stats.get("succeeded"),
+                stats.get("failed"),
+            )
+
+            try:
+                faiss_manager.save()
+                logger.info("Initial FAISS index saved to %s", faiss_manager.index_path)
+            except Exception as exc:
+                logger.warning("Failed to save FAISS index: %s", exc)
+
+        return True
+    except Exception as e:
+        logger.error(f"Failed to build initial embeddings/FAISS index: {e}", exc_info=True)
+        return False
+
+
 def select_models_interactive(current_selection: dict | None = None) -> tuple[str, str, str, str]:
     """Interactive model selection menu with GGUF quantization
 
@@ -901,6 +987,11 @@ def main():
     parser.add_argument(
         '--download-models',
         action='store_true',
+        help='Ensure models are downloaded using the current active selection (non-interactive)'
+    )
+    parser.add_argument(
+        '--select-models',
+        action='store_true',
         help='Show interactive menu to select model sizes (0.6B, 4B, 8B)'
     )
     parser.add_argument(
@@ -977,7 +1068,7 @@ def main():
         print("\n" + "="*60)
         print("  Model Setup")
         print("="*60)
-        interactive = bool(args.download_models and sys.stdin and sys.stdin.isatty())
+        interactive = bool(args.select_models and sys.stdin and sys.stdin.isatty())
         if interactive:
             try:
                 embedding_repo, embedding_quant, reranker_repo, reranker_quant = select_models_interactive(active_selection)
@@ -1016,7 +1107,17 @@ def main():
         if not validate_setup(config):
             sys.exit(1)
 
-        # 7. Print next steps
+        # 7. Seed default content (categories, sample experiences/manuals)
+        if not _seed_default_content(config):
+            sys.exit(1)
+
+        # 8. Build initial embeddings and FAISS index for existing content
+        if not _build_initial_embeddings_and_index(config):
+            # Not fatal for overall setup, but we log and continue so that
+            # operators can still start the API server and inspect logs.
+            logger.warning("Initial embedding/FAISS index build encountered issues; see logs for details.")
+
+        # 9. Print next steps
         print_next_steps()
 
     except KeyboardInterrupt:

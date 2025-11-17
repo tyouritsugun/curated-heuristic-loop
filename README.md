@@ -37,6 +37,8 @@ If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` 
 
 **Do not proceed to Step 1 until this script exits with code 0.**
 
+**Python version note:** CHL currently targets CPython 3.10–3.12. Python 3.13 is not yet supported by some dependencies (for example, NumPy 1.x), and `pip` may try – and fail – to build them from source. If `python --version` shows 3.13, use `python3` or a specific compatible interpreter (for example, `python3.12` or `python3.11`) in all commands below when creating and using virtual environments.
+
 ### Step 1: Install API Server
 
 Choose your hardware platform and install the API server runtime:
@@ -68,10 +70,11 @@ python -m pip install -r requirements_cpu.txt
 **Prerequisites:**
 - macOS with Apple Silicon (M1, M2, M3, etc.)
 - Xcode Command Line Tools: `xcode-select --install`
+- Python 3.12 installed (for example via Homebrew: `brew install python@3.12`)
 
 ```bash
-# Create dedicated venv for API server
-python -m venv .venv-apple
+# Create dedicated venv for API server (Python 3.12)
+python3.12 -m venv .venv-apple
 source .venv-apple/bin/activate
 
 # Install API server dependencies with Metal-accelerated ML
@@ -182,8 +185,11 @@ CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
 # Activate API server venv
 source .venv-apple/bin/activate  # Or .venv-cuda
 
-# Download models and initialize database
-python scripts/setup-gpu.py --download-models
+# Download models and initialize database using recommended/active models
+python scripts/setup-gpu.py
+
+# (Optional) Open interactive model selection menu
+python scripts/setup-gpu.py --select-models
 ```
 
 ### Step 4: Start API Server

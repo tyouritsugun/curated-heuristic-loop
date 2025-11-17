@@ -76,6 +76,84 @@ def _gpu_features_enabled(*, search_mode: Optional[str] = None) -> bool:
     return (mode or "auto").lower() != "cpu"
 
 
+def _render_gpu_full(
+    request: Request,
+    session: Session,
+    settings_service: SettingsService,
+    *,
+    message: Optional[str] = None,
+    message_level: str = "info",
+    error: Optional[str] = None,
+):
+    context = _build_settings_context(
+        request,
+        session,
+        settings_service,
+        message=message,
+        message_level=message_level,
+        error=error,
+    )
+    context["is_partial"] = False
+    return templates.TemplateResponse(GPU_SETTINGS_TEMPLATE, context)
+
+
+def _render_gpu_partial(
+    template_name: str,
+    request: Request,
+    session: Session,
+    settings_service: SettingsService,
+    *,
+    message: Optional[str] = None,
+    message_level: str = "info",
+    error: Optional[str] = None,
+):
+    context = _build_settings_context(
+        request,
+        session,
+        settings_service,
+        message=message,
+        message_level=message_level,
+        error=error,
+    )
+    context["is_partial"] = True
+    return templates.TemplateResponse(template_name, context)
+
+
+def _gpu_respond(
+    template_name: Optional[str],
+    request: Request,
+    session: Session,
+    settings_service: SettingsService,
+    *,
+    message: Optional[str] = None,
+    message_level: str = "info",
+    error: Optional[str] = None,
+    trigger_event: Optional[str] = None,
+):
+    if template_name and _is_htmx(request):
+        response = _render_gpu_partial(
+            template_name,
+            request,
+            session,
+            settings_service,
+            message=message,
+            message_level=message_level,
+            error=error,
+        )
+    else:
+        response = _render_gpu_full(
+            request,
+            session,
+            settings_service,
+            message=message,
+            message_level=message_level,
+            error=error,
+        )
+    if trigger_event and hasattr(response, "headers"):
+        response.headers.setdefault("HX-Trigger", trigger_event)
+    return response
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,

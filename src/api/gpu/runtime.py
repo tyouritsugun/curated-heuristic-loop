@@ -127,11 +127,10 @@ class GpuDiagnosticsAdapter(DiagnosticsModeAdapter):
                 .order_by(FAISSMetadata.created_at.desc())
                 .first()
             )
-            built_date = (
-                latest_entry.created_at[:10]
-                if latest_entry and latest_entry.created_at
-                else "N/A"
-            )
+            if latest_entry and latest_entry.created_at:
+                built_date = latest_entry.created_at.date().isoformat()
+            else:
+                built_date = "N/A"
             return {
                 "state": "ok",
                 "headline": "FAISS index ready",

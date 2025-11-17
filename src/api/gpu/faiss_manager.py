@@ -62,7 +62,12 @@ class FAISSIndexManager:
 
         self.index_dir.mkdir(parents=True, exist_ok=True)
 
-        model_slug = model_name.lower().replace("/", "_").replace(".", "")
+        model_slug = (
+            model_name.lower()
+            .replace("/", "_")
+            .replace(":", "_")
+            .replace(".", "")
+        )
         self.index_filename = f"unified_{model_slug}.index"
         self.meta_filename = f"unified_{model_slug}.meta.json"
 
@@ -111,8 +116,10 @@ class FAISSIndexManager:
 
     def _create_new_index(self, reset_metadata: bool = False) -> None:
         faiss = self.faiss
-        index = faiss.index_factory(self.dimension, "IDMap,FlatIP")
-        self._index = index
+        # Use a simple inner-product index. We manage ID mapping in SQLite
+        # via FAISSMetadata, so we don't need FAISS' IDMap wrapper. This keeps
+        # compatibility with faiss-cpu builds that require add_with_ids for IDMap.
+        self._index = faiss.IndexFlatIP(self.dimension)
         if reset_metadata:
             self._reset_metadata()
 
