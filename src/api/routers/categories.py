@@ -21,7 +21,7 @@ def list_categories(session: Session = Depends(get_db_session)):
                 code=cat.code,
                 name=cat.name,
                 description=cat.description,
-                created_at=cat.created_at,
+                created_at=cat.created_at.isoformat() if cat.created_at else None,
             )
             for cat in categories
         ]

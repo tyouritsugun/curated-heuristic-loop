@@ -218,22 +218,56 @@ cd /path/to/curated-heuristic-loop
 uv sync --python 3.11
 ```
 
-**Configure MCP client** (e.g., Cursor, Claude Code):
+**Configure MCP client** (e.g., Claude Code, Claude Desktop, Cursor, ChatGPT Codex):
 
-Add to `~/.cursor/mcp.json`:
+Add to your MCP configuration file:
+
+**For Claude Code** - Choose one of these configuration scopes:
+
+*Option 1: User-level (recommended)* - Available across all projects on your machine:
+```bash
+claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/path/to/curated-heuristic-loop run python -m src.mcp.server
+```
+
+*Option 2: Project-level* - Create `.mcp.json` in the project root (good for team sharing):
 ```json
 {
   "mcpServers": {
     "chl": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
-      "env": {
-        "CHL_API_BASE_URL": "http://localhost:8000"
-      }
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
     }
   }
 }
 ```
+
+> **Important**: After adding the MCP server via command or creating `.mcp.json`, restart Claude Code/Cursor for the MCP server to be recognized. User-scope configuration avoids reconfiguring for each project.
+
+**For Cursor** (`~/.cursor/mcp.json`) or **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+```json
+{
+  "mcpServers": {
+    "chl": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+    }
+  }
+}
+```
+
+**For ChatGPT Codex** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.chl]
+command = "uv"
+args = ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+```
+
+**Note:** All environment variables have defaults and are optional:
+- `CHL_API_BASE_URL` defaults to `http://localhost:8000`
+- `CHL_EXPERIENCE_ROOT` defaults to `<project>/data` (auto-created if missing)
+- `CHL_DATABASE_PATH` defaults to `<experience_root>/chl.db`
+
+Only add `env` section if you need non-default values.
 
 **Test MCP integration:**
 - Restart your MCP client (Cursor, Claude Code, etc.)

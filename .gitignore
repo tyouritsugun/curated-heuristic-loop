@@ -37,6 +37,8 @@ src/storage/migrations/
 .env
 .env.local
 .env.*.local
+.mcp.json
+
 
 # OS
 .DS_Store
