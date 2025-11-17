@@ -174,6 +174,7 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 - `CHL_DATABASE_PATH` - Path to SQLite database file
 - `CHL_SEARCH_MODE` - Search mode (`auto` or `cpu`); see section 9 for details
 - `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
+- `CHL_EMBEDDING_N_GPU_LAYERS` / `CHL_RERANKER_N_GPU_LAYERS` - Optional GPU offload depth for GGUF models (`0` = CPU-only, `-1` = all layers, `N` = first N layers). Works with Metal, CUDA, and ROCm wheels.
 - `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
 - `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
 

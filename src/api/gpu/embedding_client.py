@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional
@@ -50,6 +51,11 @@ class EmbeddingClient:
         self.quantization = quantization
         self.normalize = normalize
         self.batch_size = batch_size
+        # llama-cpp is not thread-safe across Python threads when sharing a
+        # single Llama instance. Use a lock to serialize all calls into the
+        # underlying model to avoid crashes (segfaults) when the background
+        # worker and HTTP handlers both use this client.
+        self._lock = threading.Lock()
 
         try:
             from llama_cpp import Llama
@@ -72,7 +78,6 @@ class EmbeddingClient:
                     n_gpu_layers=n_gpu_layers,
                     verbose=False,
                 )
-
                 test_emb = self.model.create_embedding("test")
             self.dimension = len(test_emb["data"][0]["embedding"])
 
@@ -154,7 +159,10 @@ class EmbeddingClient:
                     logger.info("Encoding progress: %s/%s", i, len(texts))
 
                 text_with_token = f"{text}<|endoftext|>"
-                result = self.model.create_embedding(text_with_token)
+                # Serialize access to the shared llama-cpp model and suppress
+                # its noisy stderr logs for each embedding call.
+                with self._lock, _suppress_llama_stderr():
+                    result = self.model.create_embedding(text_with_token)
                 embedding = result["data"][0]["embedding"]
                 embeddings.append(embedding)
 

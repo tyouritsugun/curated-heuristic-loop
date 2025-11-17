@@ -169,7 +169,7 @@ def _build_embedding_stack(
             embedding_client = EmbeddingClient(
                 model_repo=config.embedding_repo,
                 quantization=config.embedding_quant,
-                n_gpu_layers=0,  # CPU-only by default; GPU offload handled by model config
+                n_gpu_layers=getattr(config, "embedding_n_gpu_layers", 0),
             )
             logger.info(
                 "✓ Embedding client loaded successfully: %s", config.embedding_model
@@ -227,7 +227,7 @@ def _build_embedding_stack(
                 reranker_client = RerankerClient(
                     model_repo=config.reranker_repo,
                     quantization=config.reranker_quant,
-                    n_gpu_layers=0,
+                    n_gpu_layers=getattr(config, "reranker_n_gpu_layers", 0),
                 )
                 logger.info("✓ Reranker loaded: %s", config.reranker_model)
             except Exception as exc:

@@ -14,7 +14,7 @@
   </header>
 
   <div class="ops-last-run">
-    {% set sync_summary = (job_summaries or {}).get('sync') %}
+    {% set sync_summary = ((job_summaries or {}).get('sync-embeddings') or (job_summaries or {}).get('sync')) %}
     <div class="run-row" data-job-type="sync">
       <div>
         <p class="run-label">Sync Status</p>

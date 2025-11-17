@@ -526,7 +526,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
                 model_repo=config.embedding_repo,
                 quantization=config.embedding_quant,
                 n_ctx=2048,
-                n_gpu_layers=0,
+                n_gpu_layers=getattr(config, "embedding_n_gpu_layers", 0),
             )
         except EmbeddingClientError as exc:
             logger.error("Embedding client initialization failed: %s", exc)

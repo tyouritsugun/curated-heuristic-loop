@@ -55,6 +55,10 @@
       document.body.addEventListener('htmx:sseOpen', function () {
         setSseState('ok', 'Live');
       });
+      document.body.addEventListener('htmx:sseMessage', function () {
+        // Treat any successful message as proof the stream is healthy.
+        setSseState('ok', 'Live');
+      });
       document.body.addEventListener('htmx:sseReconnect', function () {
         setSseState('warn', 'Reconnecting…');
       });

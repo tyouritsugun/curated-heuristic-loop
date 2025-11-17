@@ -167,7 +167,11 @@ class Config:
         self.reranker_repo = os.getenv("CHL_RERANKER_REPO", default_reranker_repo)
         self.reranker_quant = os.getenv("CHL_RERANKER_QUANT", default_reranker_quant)
 
-        # Model migration settings
+        # Optional GPU offload settings for llama.cpp (number of layers to place on GPU).
+        # 0  -> CPU-only; -1 -> all layers; N -> first N layers.
+        # Defaults to 0 to remain conservative unless explicitly configured.
+        self.embedding_n_gpu_layers = int(os.getenv("CHL_EMBEDDING_N_GPU_LAYERS", "0"))
+        self.reranker_n_gpu_layers = int(os.getenv("CHL_RERANKER_N_GPU_LAYERS", "0"))
 
         # Threshold settings
         self.duplicate_threshold_update = float(os.getenv("CHL_DUPLICATE_THRESHOLD_UPDATE", "0.85"))
@@ -312,6 +316,18 @@ class Config:
         if self.topk_rerank <= 0:
             raise ValueError(
                 f"Invalid CHL_TOPK_RERANK={self.topk_rerank}. Must be > 0."
+            )
+
+        # Basic sanity check for GPU layer settings (allow -1 for "all layers").
+        if self.embedding_n_gpu_layers < -1:
+            raise ValueError(
+                f"Invalid CHL_EMBEDDING_N_GPU_LAYERS={self.embedding_n_gpu_layers}. "
+                f"Must be -1 (all layers) or >= 0."
+            )
+        if self.reranker_n_gpu_layers < -1:
+            raise ValueError(
+                f"Invalid CHL_RERANKER_N_GPU_LAYERS={self.reranker_n_gpu_layers}. "
+                f"Must be -1 (all layers) or >= 0."
             )
 
         # Create FAISS index directory if it doesn't exist (skip in CPU mode)

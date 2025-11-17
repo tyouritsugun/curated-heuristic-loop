@@ -44,9 +44,9 @@
     </div>
     <div class="stat-pair">
       <p class="stat-label">Sync Status</p>
-      {% set sync_summary = (job_summaries or {}).get('sync') %}
+      {% set sync_summary = ((job_summaries or {}).get('sync-embeddings') or (job_summaries or {}).get('sync')) %}
       {% if sync_summary %}
-        <p class="stat-value">
+        <p class="stat-value" style="font-size: 0.9rem;">
           <span class="status-pill {{ sync_summary.pill_class }}" data-job-status="{{ sync_summary.status }}" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">
             {{ sync_summary.status_label }}
           </span>

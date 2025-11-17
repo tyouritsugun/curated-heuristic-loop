@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional
@@ -45,6 +46,9 @@ class RerankerClient:
     ):
         self.model_repo = model_repo
         self.quantization = quantization
+        # llama-cpp is not thread-safe across Python threads; use a lock to
+        # serialize calls into the shared Llama instance.
+        self._lock = threading.Lock()
 
         try:
             from llama_cpp import Llama
@@ -67,7 +71,12 @@ class RerankerClient:
                     verbose=False,
                 )
 
-            logger.info("GGUF reranker model loaded: %s [%s], path=%s", model_repo, quantization, model_path)
+            logger.info(
+                "GGUF reranker model loaded: %s [%s], path=%s",
+                model_repo,
+                quantization,
+                model_path,
+            )
         except ImportError as exc:
             raise RerankerClientError(
                 "llama-cpp-python not installed. Install ML extras with: uv sync --python 3.11 --extra ml"
@@ -119,9 +128,12 @@ class RerankerClient:
 
         try:
             logger.debug("Reranking %s documents with GGUF reranker", len(documents))
-
             query_text = f"{query}<|endoftext|>"
-            query_result = self.model.create_embedding(query_text)
+
+            # Serialize access to llama-cpp and suppress noisy stderr logs
+            # around embedding calls for query and documents.
+            with self._lock, _suppress_llama_stderr():
+                query_result = self.model.create_embedding(query_text)
             query_emb = np.array(query_result["data"][0]["embedding"], dtype=np.float32)
             if query_emb.ndim == 2:
                 query_emb = query_emb.mean(axis=0)
@@ -130,7 +142,8 @@ class RerankerClient:
             scores: List[float] = []
             for doc in documents:
                 doc_text = f"{doc}<|endoftext|>"
-                doc_result = self.model.create_embedding(doc_text)
+                with self._lock, _suppress_llama_stderr():
+                    doc_result = self.model.create_embedding(doc_text)
                 doc_emb = np.array(doc_result["data"][0]["embedding"], dtype=np.float32)
                 if doc_emb.ndim == 2:
                     doc_emb = doc_emb.mean(axis=0)
