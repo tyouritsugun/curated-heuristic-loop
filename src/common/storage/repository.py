@@ -102,6 +102,7 @@ class ExperienceRepository:
             source=experience_data.get("source", "local"),
             sync_status=experience_data.get("sync_status", 1),
             author=experience_data.get("author", get_author()),
+             embedding_status=experience_data.get("embedding_status", "pending"),
             created_at=now,
             updated_at=now,
             synced_at=experience_data.get("synced_at"),
@@ -156,6 +157,8 @@ class ExperienceRepository:
             else:
                 experience.context = str(ctx)
 
+        # Any update to an experience should trigger re-embedding.
+        experience.embedding_status = "pending"
         experience.updated_at = utc_now()
         self.session.flush()
         return experience
@@ -180,6 +183,7 @@ class CategoryManualRepository:
             source=manual_data.get("source", "local"),
             sync_status=manual_data.get("sync_status", 1),
             author=manual_data.get("author", get_author()),
+            embedding_status=manual_data.get("embedding_status", "pending"),
             created_at=now,
             updated_at=now,
             synced_at=manual_data.get("synced_at"),
@@ -233,6 +237,8 @@ class CategoryManualRepository:
             summary = updates["summary"]
             manual.summary = None if summary is None else str(summary)
 
+        # Any update to a manual should trigger re-embedding.
+        manual.embedding_status = "pending"
         manual.updated_at = utc_now()
         self.session.flush()
         return manual

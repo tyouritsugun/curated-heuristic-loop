@@ -74,6 +74,10 @@ def configure_logging():
     logging.root.handlers = [handler]
     logging.root.setLevel(logging.INFO)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # Reduce noise from high-frequency background components. Embedding and
+    # telemetry internals are still logged at WARNING+ for troubleshooting,
+    # but INFO-level heartbeat messages are suppressed.
+    logging.getLogger("src.api.gpu.embedding_service").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

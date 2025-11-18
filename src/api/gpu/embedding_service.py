@@ -241,14 +241,20 @@ class EmbeddingService:
     def get_pending_experiences(self) -> List[Experience]:
         return (
             self.session.query(Experience)
-            .filter(Experience.embedding_status == "pending")
+            .filter(
+                (Experience.embedding_status == "pending")
+                | (Experience.embedding_status.is_(None))
+            )
             .all()
         )
 
     def get_pending_manuals(self) -> List[CategoryManual]:
         return (
             self.session.query(CategoryManual)
-            .filter(CategoryManual.embedding_status == "pending")
+            .filter(
+                (CategoryManual.embedding_status == "pending")
+                | (CategoryManual.embedding_status.is_(None))
+            )
             .all()
         )
 
@@ -331,4 +337,3 @@ class EmbeddingService:
             stats["failed"],
         )
         return stats
-
