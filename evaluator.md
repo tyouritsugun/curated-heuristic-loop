@@ -28,7 +28,8 @@ Decide how to capture each insight:
 
 Before writing:
 1. Reuse `read_entries("experience", category_code, ids=[...])` to ensure you are not duplicating an existing entry. Similarity scores from the server are hints, not hard rules—apply judgement.
-2. Keep new playbooks generic: avoid repository-specific filenames, user handles, or transient ticket numbers.
+2. When proposing a new entry, call `check_duplicates` with the candidate title and full playbook/content (`limit=1`) before `write_entry`. If the top candidate has a high similarity score, prefer updating/merging that entry or explain explicitly why a new atomic entry is warranted.
+3. Keep new playbooks generic: avoid repository-specific filenames, user handles, or transient ticket numbers.
 
 When you call the MCP tools:
 - Omit IDs—the server assigns them.

@@ -250,50 +250,6 @@ def write_entry(
             })
             entry_id = new_obj.id
 
-            # Duplicate suggestions with decision hints
-            duplicates_payload = []
-            recommendation = None
-            try:
-                if search_service is not None:
-                    dup_candidates = search_service.find_duplicates(
-                        session=session,
-                        title=validated.title,
-                        content=validated.playbook,
-                        entity_type='experience',
-                        category_code=request.category_code,
-                        exclude_id=None,
-                        threshold=(config.duplicate_threshold_insert if config else 0.60),
-                    )
-
-                    for c in dup_candidates:
-                        duplicates_payload.append({
-                            "entity_id": c.entity_id,
-                            "entity_type": c.entity_type,
-                            "score": c.score,
-                            "reason": getattr(c.reason, 'value', str(c.reason)),
-                            "provider": c.provider,
-                            "title": c.title,
-                            "summary": c.summary,
-                        })
-
-                    if dup_candidates:
-                        highest = max(c.score for c in dup_candidates)
-                        if highest >= 0.90:
-                            recommendation = (
-                                "MERGE_RECOMMENDED: Very high similarity detected. Consider updating the existing entry."
-                            )
-                        elif highest >= 0.75:
-                            recommendation = (
-                                "REVIEW_SUGGESTED: High similarity detected. Review similar entries before proceeding."
-                            )
-                        else:
-                            recommendation = (
-                                "PROCEED_WITH_CAUTION: Moderate similarity detected. Review similar entries to avoid duplication."
-                            )
-            except Exception:
-                # Best-effort; do not fail write on duplicate check issues
-                pass
-
             # Build full entry for read-after-write
             entry_dict = {
                 "id": new_obj.id,
@@ -319,8 +275,8 @@ def write_entry(
                 success=True,
                 entry_id=entry_id,
                 entry=entry_dict,
-                duplicates=duplicates_payload or None,
-                recommendation=recommendation,
+                duplicates=None,
+                recommendation=None,
                 warnings=warnings or None,
                 message=(
                     "Experience created successfully. Indexing is in progress and may take up to 15 seconds. "
@@ -362,49 +318,6 @@ def write_entry(
             })
             manual_id = new_manual.id
 
-            # Duplicate detection for manuals with decision hints
-            duplicates_payload = []
-            recommendation = None
-            try:
-                if search_service is not None:
-                    dup_candidates = search_service.find_duplicates(
-                        session=session,
-                        title=title,
-                        content=content,
-                        entity_type='manual',
-                        category_code=request.category_code,
-                        exclude_id=None,
-                        threshold=(config.duplicate_threshold_insert if config else 0.60),
-                    )
-
-                    for c in dup_candidates:
-                        duplicates_payload.append({
-                            "entity_id": c.entity_id,
-                            "entity_type": c.entity_type,
-                            "score": c.score,
-                            "reason": getattr(c.reason, 'value', str(c.reason)),
-                            "provider": c.provider,
-                            "title": c.title,
-                            "summary": c.summary,
-                        })
-
-                    if dup_candidates:
-                        highest = max(c.score for c in dup_candidates)
-                        if highest >= 0.90:
-                            recommendation = (
-                                "MERGE_RECOMMENDED: Very high similarity detected. Consider updating the existing manual."
-                            )
-                        elif highest >= 0.75:
-                            recommendation = (
-                                "REVIEW_SUGGESTED: High similarity detected. Review the similar manuals before proceeding."
-                            )
-                        else:
-                            recommendation = (
-                                "PROCEED_WITH_CAUTION: Moderate similarity detected. Review similar manuals to avoid duplication."
-                            )
-            except Exception:
-                pass
-
             manual_dict = {
                 "id": new_manual.id,
                 "title": new_manual.title,
@@ -419,8 +332,8 @@ def write_entry(
                 success=True,
                 entry_id=manual_id,
                 entry=manual_dict,
-                duplicates=duplicates_payload or None,
-                recommendation=recommendation,
+                duplicates=None,
+                recommendation=None,
                 message=(
                     "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."

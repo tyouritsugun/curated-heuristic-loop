@@ -111,7 +111,7 @@
       </div>
       <div class="status-row">
         <p class="muted">
-          Spreadsheet imports overwrite the Generator/Evaluator manuals (category <code>GLN</code>). Run this to restore <code>generator.md</code>, <code>evaluator.md</code>, and <code>evaluator_cpu.md</code> via <code>scripts/seed_default_content.py --skip-seed</code>.
+          Spreadsheet imports overwrite the Generator/Evaluator manuals stored in the database (category <code>GLN</code>). MCP always reads <code>generator.md</code>, <code>evaluator.md</code>, and <code>evaluator_cpu.md</code> from disk; use this to resync those files into the API/Operations UI via <code>scripts/seed_default_content.py --skip-seed</code>.
         </p>
       </div>
       {% if guidelines_summary %}

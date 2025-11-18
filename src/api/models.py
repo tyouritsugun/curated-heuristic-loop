@@ -100,6 +100,36 @@ class SearchResponse(BaseModel):
     count: int
 
 
+class DuplicateCheckRequest(BaseModel):
+    """Request model for duplicate detection."""
+
+    entity_type: str = Field(..., description="'experience' or 'manual'")
+    category_code: Optional[str] = None
+    title: str
+    content: str
+    limit: Optional[int] = 1
+    threshold: Optional[float] = None
+
+
+class DuplicateCandidateResponse(BaseModel):
+    """Single duplicate candidate returned by duplicate check."""
+
+    entity_id: str
+    entity_type: str
+    score: float
+    reason: str
+    provider: str
+    title: str
+    summary: Optional[str] = None
+
+
+class DuplicateCheckResponse(BaseModel):
+    """Response model for duplicate detection."""
+
+    candidates: List[DuplicateCandidateResponse]
+    count: int
+
+
 # Health check models
 class HealthResponse(BaseModel):
     """Response model for health check."""

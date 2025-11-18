@@ -119,5 +119,40 @@ def update_entry(
         raise MCPError(f"Unexpected error: {exc}") from exc
 
 
-__all__ = ["list_categories", "read_entries", "write_entry", "update_entry"]
+def check_duplicates(
+    entity_type: str,
+    category_code: str,
+    title: str,
+    content: str,
+    limit: int = 1,
+    threshold: float | None = None,
+) -> Dict[str, Any]:
+    """
+    Check for potential duplicate entries before writing.
 
+    Args:
+        entity_type: 'experience' or 'manual'
+        category_code: Category shelf code (e.g., 'PGS')
+        title: Proposed entry title
+        content: Proposed playbook/content body
+        limit: Maximum number of candidates to return (default: 1)
+        threshold: Optional minimum similarity score (provider-specific)
+    """
+    try:
+        payload: Dict[str, Any] = {
+            "entity_type": entity_type,
+            "category_code": category_code,
+            "title": title,
+            "content": content,
+            "limit": limit,
+        }
+        if threshold is not None:
+            payload["threshold"] = threshold
+        return request_api("POST", "/api/v1/search/duplicates", payload=payload)
+    except MCPError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise MCPError(f"Unexpected error: {exc}") from exc
+
+
+__all__ = ["list_categories", "read_entries", "write_entry", "update_entry", "check_duplicates"]

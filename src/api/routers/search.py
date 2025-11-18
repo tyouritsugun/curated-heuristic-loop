@@ -6,7 +6,13 @@ from typing import Dict, Any
 import logging
 
 from src.api.dependencies import get_search_service, get_db_session, get_config
-from src.api.models import SearchRequest, SearchResponse
+from src.api.models import (
+    SearchRequest,
+    SearchResponse,
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
+    DuplicateCandidateResponse,
+)
 from src.common.storage.schema import Experience, CategoryManual
 
 logger = logging.getLogger(__name__)
@@ -166,3 +172,53 @@ def search_health(
         report["warnings"].append(f"{failed} entities have failed embeddings")
 
     return report
+
+
+@router.post("/duplicates", response_model=DuplicateCheckResponse)
+def find_duplicates(
+    request: DuplicateCheckRequest,
+    session: Session = Depends(get_db_session),
+    search_service=Depends(get_search_service),
+) -> DuplicateCheckResponse:
+    """
+    Lightweight duplicate check for a proposed entry.
+
+    This endpoint is intended for MCP/LLM use before writing entries. It does
+    not block writes and is purely advisory.
+    """
+    if search_service is None:
+        raise HTTPException(status_code=503, detail="Search service not initialized")
+
+    try:
+        candidates = search_service.find_duplicates(
+            session=session,
+            title=request.title,
+            content=request.content,
+            entity_type=request.entity_type,
+            category_code=request.category_code,
+            exclude_id=None,
+            threshold=request.threshold,
+        )
+
+        limit = request.limit or 1
+        candidates = candidates[:limit]
+
+        formatted = [
+            DuplicateCandidateResponse(
+                entity_id=c.entity_id,
+                entity_type=c.entity_type,
+                score=c.score,
+                reason=getattr(c.reason, "value", str(c.reason)),
+                provider=c.provider,
+                title=c.title,
+                summary=c.summary,
+            )
+            for c in candidates
+        ]
+
+        return DuplicateCheckResponse(candidates=formatted, count=len(formatted))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error performing duplicate check")
+        raise HTTPException(status_code=500, detail=str(exc))

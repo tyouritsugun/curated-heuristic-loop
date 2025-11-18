@@ -27,6 +27,7 @@ from src.mcp.handlers_entries import (
     read_entries,
     write_entry,
     update_entry,
+    check_duplicates,
 )
 from src.mcp.handlers_guidelines import get_guidelines
 
@@ -136,6 +137,7 @@ def init_server() -> None:
     mcp.tool()(read_entries)
     mcp.tool()(write_entry)
     mcp.tool()(update_entry)
+    mcp.tool()(check_duplicates)
     mcp.tool()(get_guidelines)
 
     try:

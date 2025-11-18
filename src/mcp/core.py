@@ -38,7 +38,7 @@ TOOL_INDEX = [
     },
     {
         "name": "write_entry",
-        "description": "Create a new experience or manual in a category.",
+        "description": "Create a new experience or manual in a category. Prefer calling check_duplicates first to inspect similar entries.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
@@ -63,6 +63,17 @@ TOOL_INDEX = [
         "name": "get_guidelines",
         "description": "Return the generator or evaluator workflow manual seeded in GLN.",
         "example": {"guide_type": "generator"},
+    },
+    {
+        "name": "check_duplicates",
+        "description": "Check for potential duplicate entries before calling write_entry.",
+        "example": {
+            "entity_type": "experience",
+            "category_code": "PGS",
+            "title": "Baseline checklist before drafting a page spec",
+            "content": "Full playbook text here",
+            "limit": 1,
+        },
     },
 ]
 
@@ -266,4 +277,3 @@ __all__ = [
     "build_handshake_payload",
     "startup_health_check",
 ]
-

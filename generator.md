@@ -25,11 +25,19 @@ Load these notes whenever you are in Generator mode. The goal is to surface the 
 2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the query immediately instead of skimming everything.
 3. When you find strong hits, fetch the full text with `read_entries(..., ids=[...])` and note the IDs you intend to use.
 
-### 5. Layer manuals only when they change the plan
+### 5. Run a duplicate check before writing
+1. Before calling `write_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
+   - `check_duplicates(entity_type=\"experience\", category_code=..., title=..., content=..., limit=1)`
+2. If the top candidate has a high similarity score (e.g., >0.85):
+   - Prefer updating/merging the existing entry via `update_entry` when appropriate.
+   - If you still decide to write a new entry (because it captures a genuinely different pattern), explicitly explain why in your response.
+3. If no strong candidate is returned, proceed to `write_entry` as usual.
+
+### 6. Layer manuals only when they change the plan
 - Use `entity_type=\"manual\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
 - Limit yourself to the top 1–2 manuals; if nothing useful appears, treat it as a knowledge gap and flag it later.
 
-### 6. Check coverage and gaps
+### 7. Check coverage and gaps
 - If every variant still yields weak matches, log the gap (include queries tried and their best scores) so an Evaluator can curate a new entry.
 - Otherwise, proceed with the work product, weaving in the cited experience IDs for traceability.
 
