@@ -23,7 +23,7 @@ The API and MCP servers communicate exclusively via HTTP (default: `http://local
 Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
 
 ```bash
-python scripts/check_api_env.py
+python3 scripts/check_api_env.py
 ```
 
 This script checks:
@@ -37,7 +37,7 @@ If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` 
 
 **Do not proceed to Step 1 until this script exits with code 0.**
 
-**Python version note:** CHL currently targets CPython 3.10–3.12. Python 3.13 is not yet supported by some dependencies (for example, NumPy 1.x), and `pip` may try – and fail – to build them from source. If `python --version` shows 3.13, use `python3` or a specific compatible interpreter (for example, `python3.12` or `python3.11`) in all commands below when creating and using virtual environments.
+**Python version note:** CHL currently targets CPython 3.10–3.12. **We recommend Python 3.11 for most platforms** (CPU-only and NVIDIA CUDA) and **Python 3.12 for Apple Silicon**. Python 3.13 is not yet supported by some dependencies (for example, NumPy 1.x), and `pip` may try – and fail – to build them from source. If `python --version` shows 3.13, use a specific compatible interpreter (for example, `python3.12` or `python3.11`) in all commands below when creating and using virtual environments.
 
 ### Step 1: Install API Server
 
@@ -48,9 +48,16 @@ Choose your hardware platform and install the API server runtime:
 
 **Best for:** Limited VRAM, keyword search is sufficient, or testing without GPU overhead.
 
+**Prerequisites:**
+- Python 3.10 or 3.11 (check available versions: `ls /usr/bin/python3.1*`)
+- Install if needed:
+  - Ubuntu 24.04+: `sudo apt install python3.12-venv` (use python3.12)
+  - Ubuntu 22.04: `sudo apt install python3.10-venv` (use python3.10)
+  - Other: `sudo apt install python3.11 python3.11-venv` (recommended)
+
 ```bash
-# Create dedicated venv for API server
-python -m venv .venv-cpu
+# Create dedicated venv for API server (use your available Python 3.10/3.11/3.12)
+python3.11 -m venv .venv-cpu  # Or python3.10 or python3.12
 source .venv-cpu/bin/activate  # On Windows: .venv-cpu\Scripts\activate
 
 # Install API server dependencies (no ML)
@@ -95,10 +102,15 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 - CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.5`)
 - cuDNN libraries
 - CMake 3.18+
+- **Python 3.10 or 3.11** (CUDA wheels don't support Python 3.12 yet)
+- Install if needed:
+  - Ubuntu 22.04: `sudo apt install python3.10 python3.10-venv`
+  - Other: Add deadsnakes PPA: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update && sudo apt install python3.11 python3.11-venv`
 
 ```bash
-# Create dedicated venv for API server
-python -m venv .venv-cuda
+# Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
+# Use full path if you have conda/uv Python that conflicts:
+/usr/bin/python3.11 -m venv .venv-cuda  # Or python3.11 if no PATH conflicts
 source .venv-cuda/bin/activate  # On Windows: .venv-cuda\Scripts\activate
 
 # Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
@@ -106,6 +118,8 @@ python -m pip install --upgrade pip
 PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cuda \
   python -m pip install -r requirements_cuda.txt
 ```
+
+**Troubleshooting:** If `python3.11 -m venv` fails with ensurepip errors and you have conda/uv installed, use the full system path `/usr/bin/python3.11` instead of just `python3.11` to avoid PATH conflicts.
 
 </details>
 

@@ -1,263 +1,314 @@
 #!/usr/bin/env python
-"""Environment diagnostics for CHL API server (Phase B).
+"""Environment diagnostics menu for CHL API server (Phase B).
 
-This script inspects GPU/CPU hardware, toolchain readiness, and
-llama-cpp-python wheel compatibility before installing the API server
-environment. It must be run with the API server stopped.
+This script provides an interactive menu to select your hardware platform
+and dispatches to the appropriate platform-specific diagnostics script:
+  - check_api_env_cpu.py for CPU-only mode (no GPU)
+  - check_api_env_apple.py for Apple Silicon (Metal GPU)
+  - check_api_env_nvidia.py for NVIDIA GPUs (CUDA)
+  - check_api_env_amd.py for AMD GPUs (ROCm) - TBD
+  - check_api_env_intel.py for Intel GPUs (oneAPI) - TBD
+
+It must be run with the API server stopped.
 """
 from __future__ import annotations
 
-import argparse
-import json
-import logging
-import os
+import subprocess
 import sys
-import textwrap
-import urllib.error
-import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 DATA_DIR = PROJECT_ROOT / "data"
-MODEL_SELECTION_PATH = DATA_DIR / "model_selection.json"
-SUPPORT_PROMPT_PATH = DATA_DIR / "support_prompt.txt"
+HELP_PROMPT_PATH = DATA_DIR / "hardware_selection_help.txt"
 
 
-def _extend_sys_path() -> None:
-    """Ensure src/ is importable."""
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
+def _show_menu() -> str:
+    """Display hardware selection menu and return the selected option."""
+    print("=" * 70)
+    print("CHL Environment Diagnostics - Hardware Selection")
+    print("=" * 70)
+    print()
+    print("Please select your hardware platform:")
+    print()
+    print("  1. I do not have a GPU (CPU-only mode)")
+    print("  2. My computer is Apple Silicon (M1/M2/M3/M4)")
+    print("  3. I have an NVIDIA GPU")
+    print("  4. I have an AMD GPU (Coming soon - Not yet supported)")
+    print("  5. I have an Intel GPU (Coming soon - Not yet supported)")
+    print()
+    print("  6. I don't know which option to choose (Get help)")
+    print()
+    print("  0. Exit")
+    print()
+
+    while True:
+        try:
+            choice = input("Enter your choice (0-6): ").strip()
+            if choice in {"0", "1", "2", "3", "4", "5", "6"}:
+                return choice
+            print("✗ Invalid choice. Please enter a number between 0 and 6.")
+        except (EOFError, KeyboardInterrupt):
+            print("\n\nExiting...")
+            sys.exit(0)
 
 
-_extend_sys_path()
+def _build_help_prompt() -> str:
+    """Generate a prompt to help users identify their hardware platform."""
+    import platform
 
-from src.api.services import gpu_installer  # noqa: E402
+    lines = []
+    lines.append("I'm trying to set up llama-cpp-python for the CHL (Curated Heuristic Loop) project, but I'm not sure which hardware option to choose.")
+    lines.append("")
+    lines.append("## My System Information")
+    lines.append(f"- Operating System: {platform.system()} {platform.release()}")
+    lines.append(f"- Architecture: {platform.machine()}")
+    lines.append(f"- Python Version: {platform.python_version()}")
+    lines.append("")
+
+    lines.append("## Available Hardware Options")
+    lines.append("")
+
+    lines.append("### Option 1: CPU-Only Mode (No GPU)")
+    lines.append("**When to choose:**")
+    lines.append("- You don't have a dedicated GPU")
+    lines.append("- You only have integrated graphics (Intel HD, Intel Iris, etc.)")
+    lines.append("- You want minimal setup complexity")
+    lines.append("- You're okay with keyword-based search instead of semantic search")
+    lines.append("")
+    lines.append("**Requirements:**")
+    lines.append("- No special hardware or drivers needed")
+    lines.append("- Works on any system with Python 3.10-3.12")
+    lines.append("")
+    lines.append("**Trade-offs:**")
+    lines.append("- Search uses SQLite LIKE queries (exact phrase matching)")
+    lines.append("- No semantic similarity or AI-powered reranking")
+    lines.append("- Faster setup, but less powerful search")
+    lines.append("")
+
+    lines.append("### Option 2: Apple Silicon (M1/M2/M3/M4)")
+    lines.append("**When to choose:**")
+    lines.append("- You have a Mac with Apple Silicon chip (NOT Intel Mac)")
+    lines.append("- You want GPU-accelerated semantic search")
+    lines.append("")
+    lines.append("**Requirements:**")
+    lines.append("- macOS with Apple M1, M2, M3, or M4 chip")
+    lines.append("- Xcode Command Line Tools installed")
+    lines.append("- At least 8GB unified memory (16GB+ recommended)")
+    lines.append("- Python 3.10-3.12 (NOT Python 3.13)")
+    lines.append("")
+    lines.append("**How to check:**")
+    lines.append("- Open \"About This Mac\" → Check if it says \"Chip: Apple M1/M2/M3/M4\"")
+    lines.append("- Or run: `sysctl -n machdep.cpu.brand_string` (should show \"Apple\")")
+    lines.append("")
+
+    lines.append("### Option 3: NVIDIA GPU (CUDA)")
+    lines.append("**When to choose:**")
+    lines.append("- You have an NVIDIA GPU (desktop or laptop)")
+    lines.append("- You want GPU-accelerated semantic search on Linux/Windows")
+    lines.append("")
+    lines.append("**Requirements:**")
+    lines.append("- NVIDIA GPU with Compute Capability 6.0+ (Pascal or newer)")
+    lines.append("  - Examples: GTX 1060+, RTX 2000/3000/4000 series, Tesla, etc.")
+    lines.append("- NVIDIA GPU drivers installed")
+    lines.append("- CUDA Toolkit 11.8+ (12.x recommended)")
+    lines.append("- At least 4GB VRAM (8GB+ recommended)")
+    lines.append("- CMake build tools")
+    lines.append("- Python 3.10-3.12 (NOT Python 3.13)")
+    lines.append("")
+    lines.append("**How to check:**")
+    lines.append("- Run: `nvidia-smi` (should show your GPU and driver version)")
+    lines.append("- Run: `nvcc --version` (should show CUDA toolkit version)")
+    lines.append("")
+
+    lines.append("### Option 4: AMD GPU (ROCm) - Coming Soon")
+    lines.append("**Status:** Not yet supported. Use CPU-only mode for now.")
+    lines.append("")
+    lines.append("**Planned requirements:**")
+    lines.append("- AMD GPU with ROCm support (RX 6000/7000 series, etc.)")
+    lines.append("- ROCm 5.x or 6.x drivers installed")
+    lines.append("- Linux only (ROCm doesn't support Windows/macOS)")
+    lines.append("")
+
+    lines.append("### Option 5: Intel GPU (oneAPI) - Coming Soon")
+    lines.append("**Status:** Not yet supported. Use CPU-only mode for now.")
+    lines.append("")
+    lines.append("**Planned requirements:**")
+    lines.append("- Intel Arc GPU or integrated graphics with oneAPI support")
+    lines.append("- Intel oneAPI Base Toolkit installed")
+    lines.append("")
+
+    lines.append("## Investigation Commands")
+    lines.append("")
+    lines.append("Please run these commands and paste the output below:")
+    lines.append("")
+
+    if platform.system() == "Darwin":
+        lines.append("**For macOS:**")
+        lines.append("```bash")
+        lines.append("# Check if you have Apple Silicon")
+        lines.append("sysctl -n machdep.cpu.brand_string")
+        lines.append("")
+        lines.append("# Check total memory")
+        lines.append("sysctl hw.memsize")
+        lines.append("")
+        lines.append("# Check macOS version")
+        lines.append("sw_vers")
+        lines.append("```")
+    elif platform.system() == "Linux":
+        lines.append("**For Linux:**")
+        lines.append("```bash")
+        lines.append("# Check for NVIDIA GPU")
+        lines.append("nvidia-smi 2>/dev/null || echo 'nvidia-smi not found'")
+        lines.append("")
+        lines.append("# Check for AMD GPU")
+        lines.append("lspci | grep -i 'vga\\|3d\\|display' | grep -i amd")
+        lines.append("")
+        lines.append("# Check CUDA toolkit")
+        lines.append("nvcc --version 2>/dev/null || echo 'nvcc not found'")
+        lines.append("")
+        lines.append("# Check ROCm")
+        lines.append("rocm-smi --showdriverversion 2>/dev/null || echo 'rocm-smi not found'")
+        lines.append("```")
+    elif platform.system() == "Windows":
+        lines.append("**For Windows:**")
+        lines.append("```powershell")
+        lines.append("# Check for NVIDIA GPU")
+        lines.append("nvidia-smi")
+        lines.append("")
+        lines.append("# Check CUDA toolkit")
+        lines.append("nvcc --version")
+        lines.append("")
+        lines.append("# List all GPUs")
+        lines.append("wmic path win32_VideoController get name")
+        lines.append("```")
+
+    lines.append("")
+    lines.append("## What I Need Help With")
+    lines.append("")
+    lines.append("Based on my system information and the investigation commands output above:")
+    lines.append("")
+    lines.append("**Please tell me which hardware option (1, 2, 3, 4, or 5) I should choose, and why.**")
+    lines.append("")
+    lines.append("Then, instruct me to go back to the CHL environment diagnostics script:")
+    lines.append("```bash")
+    lines.append("python3 scripts/check_api_env.py")
+    lines.append("```")
+    lines.append("")
+    lines.append("And select the option you recommended. The script will handle all installation steps automatically.")
+
+    return "\n".join(lines)
 
 
-logger = logging.getLogger(__name__)
+def _save_help_prompt(prompt: str) -> None:
+    """Save help prompt to disk."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with HELP_PROMPT_PATH.open("w", encoding="utf-8") as fh:
+        fh.write(prompt)
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Check GPU/CPU environment and llama-cpp-python compatibility before API setup.",
-    )
-    parser.add_argument(
-        "--api-url",
-        default=os.getenv("CHL_API_BASE_URL", "http://127.0.0.1:8000"),
-        help="API base URL to probe for a running server (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Allow running even if the API server appears to be running.",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging to stderr.",
-    )
-    return parser.parse_args()
+def _handle_help_request() -> None:
+    """Generate and display help prompt for hardware selection."""
+    print("\n" + "=" * 70)
+    print("Generating Hardware Selection Help Prompt")
+    print("=" * 70)
+    print()
+
+    prompt = _build_help_prompt()
+    _save_help_prompt(prompt)
+
+    print("A detailed help prompt has been saved to:")
+    print(f"  {HELP_PROMPT_PATH}")
+    print()
+    print("Please:")
+    print("  1. Open this file and copy its entire contents")
+    print("  2. Paste it into ChatGPT, Claude, or another LLM")
+    print("  3. Follow the LLM's guidance to identify your hardware")
+    print("  4. Run this script again and choose the recommended option")
+    print()
+    print("=" * 70)
+    print()
+
+    # Show a preview of the prompt
+    print("Preview of the help prompt:")
+    print("-" * 70)
+    lines = prompt.split("\n")
+    for line in lines[:30]:  # Show first 30 lines
+        print(line)
+    if len(lines) > 30:
+        print("...")
+        print(f"({len(lines) - 30} more lines in the full file)")
+    print("-" * 70)
+    print()
+
+    sys.exit(0)
 
 
-def _configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(levelname)s: %(message)s",
-    )
-
-
-def _api_server_running(api_url: str) -> bool:
-    """Best-effort probe to see if anything responds at api_url."""
-    try:
-        with urllib.request.urlopen(api_url, timeout=2) as resp:
-            # Any HTTP response (even 404) means "server is running".
-            logger.debug("API probe to %s returned status %s", api_url, getattr(resp, "status", "unknown"))
-            return True
-    except urllib.error.URLError as exc:
-        logger.debug("API probe to %s failed: %s (treating as not running)", api_url, exc)
-        return False
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("API probe to %s raised %s (treating as not running)", api_url, exc)
-        return False
-
-
-def _ensure_api_stopped(api_url: str, force: bool) -> None:
-    if force:
-        return
-    if _api_server_running(api_url):
-        msg = textwrap.dedent(
-            f"""
-            ✗ API server appears to be running at {api_url}
-
-            Please stop the API server before running environment diagnostics.
-            This script is intended for pre-installation checks only.
-
-            If you are sure it is safe to proceed, re-run with:
-              python scripts/check_api_env.py --force
-            """
-        ).strip()
-        print(msg)
-        sys.exit(1)
-
-
-def _detect_gpu_state() -> Dict[str, Any]:
-    priority_raw = os.getenv("CHL_GPU_PRIORITY")
-    priority = gpu_installer.parse_gpu_priority(priority_raw)
-    backend_override = os.getenv("CHL_GPU_BACKEND")
-    state, cached = gpu_installer.ensure_gpu_state(priority, backend_override, force_detect=True)
-    logger.debug("GPU state (cached=%s): %s", cached, state)
-    return state
-
-
-def _recommend_models(backend: str, vram_gb: Optional[float]) -> Dict[str, str]:
-    """Recommend embedding/reranker models based on backend and VRAM."""
-    # Model identifiers mirror scripts/setup-gpu.py
-    EMB_SMALL = ("Qwen/Qwen3-Embedding-0.6B-GGUF", "Q8_0")
-    EMB_MED = ("Qwen/Qwen3-Embedding-4B-GGUF", "Q4_K_M")
-    RER_SMALL_Q4 = ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q4_K_M")
-    RER_SMALL_Q8 = ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q8_0")
-    RER_MED = ("Mungert/Qwen3-Reranker-4B-GGUF", "Q4_K_M")
-
-    if backend == "cpu" or vram_gb is None:
-        emb_repo, emb_quant = EMB_SMALL
-        rer_repo, rer_quant = RER_SMALL_Q8
-    else:
-        if vram_gb >= 6.0:
-            emb_repo, emb_quant = EMB_MED
-            rer_repo, rer_quant = RER_MED
-        elif vram_gb >= 2.0:
-            emb_repo, emb_quant = EMB_SMALL
-            rer_repo, rer_quant = RER_SMALL_Q8
-        else:
-            emb_repo, emb_quant = EMB_SMALL
-            rer_repo, rer_quant = RER_SMALL_Q4
-
-    return {
-        "embedding_repo": emb_repo,
-        "embedding_quant": emb_quant,
-        "reranker_repo": rer_repo,
-        "reranker_quant": rer_quant,
+def _get_platform_script(choice: str) -> Path:
+    """Return the path to the platform-specific check script based on user choice."""
+    script_map = {
+        "1": ("check_api_env_cpu.py", "CPU-only"),
+        "2": ("check_api_env_apple.py", "Apple Silicon"),
+        "3": ("check_api_env_nvidia.py", "NVIDIA CUDA"),
+        "4": ("check_api_env_amd.py", "AMD ROCm"),
+        "5": ("check_api_env_intel.py", "Intel oneAPI"),
     }
 
+    if choice == "0":
+        print("\nExiting...")
+        sys.exit(0)
 
-def _save_model_selection(selection: Dict[str, str]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        existing: Optional[Dict[str, Any]] = None
-        if MODEL_SELECTION_PATH.exists():
-            with MODEL_SELECTION_PATH.open("r", encoding="utf-8") as fh:
-                existing = json.load(fh)
-        if isinstance(existing, dict) and all(existing.get(k) == v for k, v in selection.items()):
-            logger.info("Model selection unchanged; keeping existing %s", MODEL_SELECTION_PATH)
-            return
-    except (json.JSONDecodeError, OSError):
-        existing = None
+    if choice not in script_map:
+        raise ValueError(f"Invalid choice: {choice}")
 
-    with MODEL_SELECTION_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(selection, fh, indent=2)
-    logger.info("Saved model selection to %s", MODEL_SELECTION_PATH)
+    script_name, platform_name = script_map[choice]
+    script_path = SCRIPTS_DIR / script_name
 
+    # Check if the script exists (for future AMD/Intel support)
+    if not script_path.exists():
+        if choice in {"4", "5"}:
+            print(f"\n✗ {platform_name} support is coming soon!")
+            print(f"  The script '{script_name}' is not yet available.")
+            print("\n  For now, please use CPU-only mode (option 1) or check back in a future release.")
+            sys.exit(1)
+        else:
+            raise FileNotFoundError(f"Platform-specific script not found: {script_path}")
 
-def _save_support_prompt(prompt: str) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with SUPPORT_PROMPT_PATH.open("w", encoding="utf-8") as fh:
-        fh.write(prompt)
-    logger.info("Saved support prompt to %s", SUPPORT_PROMPT_PATH)
+    return script_path, platform_name
 
 
 def main() -> None:
-    args = _parse_args()
-    _configure_logging(args.verbose)
+    # Show menu and get user choice
+    choice = _show_menu()
 
-    _ensure_api_stopped(args.api_url, args.force)
+    # Handle help request (option 6)
+    if choice == "6":
+        _handle_help_request()
+        # This function exits, so we never reach here
 
-    print("Running CHL environment diagnostics...")
-    gpu_state = _detect_gpu_state()
-    backend = gpu_state.get("backend", "cpu")
-
-    vram_info = gpu_installer.get_vram_info(gpu_state)
-    prereq = gpu_installer.prerequisite_check(gpu_state)
-    suffix = gpu_installer.recommended_wheel_suffix(gpu_state)
-
-    wheel_meta: Optional[Dict[str, Any]] = None
-    wheel_error: Optional[str] = None
-
-    has_gpu = backend in {"metal", "cuda", "rocm"}
-
-    if has_gpu and suffix:
-        try:
-            wheel_meta = gpu_installer.get_wheel_metadata(backend, suffix)
-            gpu_state["wheel_metadata"] = wheel_meta
-        except gpu_installer.GPUInstallerError as exc:
-            wheel_error = str(exc)
-            gpu_state["wheel_metadata_error"] = wheel_error
-
-    verify_ok: Optional[bool] = None
-    verify_log: Optional[str] = None
+    # Get the platform-specific script
     try:
-        verify_ok, verify_log = gpu_installer.verify_llama_install(gpu_state)
-    except Exception as exc:  # noqa: BLE001
-        verify_ok = False
-        verify_log = f"verify_llama_install() raised an unexpected error: {exc}"
+        script_path, platform_name = _get_platform_script(choice)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"\n✗ Error: {exc}")
+        sys.exit(1)
 
-    # Decide overall success
-    prereq_status = prereq.get("status") if isinstance(prereq, dict) else "unknown"
-    prereq_ok = prereq_status in {"ok", "warn"}
-    network_ok = (wheel_meta is not None) if has_gpu else True
+    print(f"\nSelected: {platform_name}")
+    print(f"Running diagnostics: {script_path.name}\n")
+    print("=" * 70)
+    print()
 
-    overall_ok = prereq_ok and network_ok
+    # Build command with all arguments from sys.argv (excluding the script name)
+    cmd = [sys.executable, str(script_path)] + sys.argv[1:]
 
-    if overall_ok:
-        vram_gb = vram_info.get("vram_gb") if vram_info else None
-        selection = _recommend_models(backend, vram_gb)
-        _save_model_selection(selection)
-
-        print("\n✓ Environment diagnostics completed successfully.\n")
-        print(f"  - Detected backend: {backend}")
-        if vram_info:
-            print(f"  - VRAM/System memory: {vram_info['vram_gb']} GB (via {vram_info['method']})")
-        if has_gpu:
-            print(f"  - Recommended llama-cpp wheel suffix: {suffix}")
-            if wheel_meta:
-                print(f"  - Wheel URL: {wheel_meta.get('url', 'unknown')}")
-        print("  - Recommended models:")
-        print(f"      Embedding: {selection['embedding_repo']} [{selection['embedding_quant']}]")
-        print(f"      Reranker:  {selection['reranker_repo']} [{selection['reranker_quant']}]")
-
-        if has_gpu:
-            print("\nSuggested CHL_SEARCH_MODE: auto (GPU)")
-        else:
-            print("\nSuggested CHL_SEARCH_MODE: cpu (CPU-only)")
-
-        sys.exit(0)
-
-    # Failure path: build support prompt and exit 1
-    prompt = gpu_installer.build_support_prompt(gpu_state, prereq, verify_log=verify_log)
-    _save_support_prompt(prompt)
-
-    print("\n✗ Environment diagnostics found blocking issues.\n")
-    if not prereq_ok:
-        print(f"  - Prerequisite status: {prereq_status}")
-        issues = prereq.get("issues") or []
-        if issues:
-            print("  - Issues:")
-            for issue in issues:
-                print(f"      - {issue}")
-    if has_gpu and not network_ok:
-        print("  - Failed to fetch llama-cpp wheel metadata (network or index issue).")
-        if wheel_error:
-            print(f"    Details: {wheel_error}")
-
-    print(
-        "\nA detailed troubleshooting prompt has been written to "
-        f"{SUPPORT_PROMPT_PATH}. Copy its contents into ChatGPT/Claude and "
-        "follow the instructions to resolve the environment issues."
-    )
-
-    sys.exit(1)
+    # Execute the platform-specific script
+    try:
+        result = subprocess.run(cmd, check=False)
+        sys.exit(result.returncode)
+    except Exception as exc:
+        print(f"\n✗ Failed to execute {script_path.name}: {exc}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

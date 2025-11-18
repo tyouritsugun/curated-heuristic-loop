@@ -14,6 +14,7 @@ venv/
 ENV/
 env/
 .mypy_cache/
+.claude/
 
 # IDE
 .vscode/

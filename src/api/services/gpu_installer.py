@@ -859,13 +859,28 @@ def get_wheel_metadata(backend: str, suffix: str) -> Dict[str, Any]:
     """Fetch wheel metadata from the configured wheel index.
 
     This requires network access and raises GPUInstallerError on failure.
+
+    Note: CUDA/ROCm backends don't have GitHub Pages indices; they use PyPI/releases.
+    For these backends, this function returns minimal metadata without fetching.
     """
     backend = backend.lower()
     if backend not in {"cpu", "metal", "cuda", "rocm"}:
         raise GPUInstallerError(f"Unsupported backend for wheel metadata: {backend}")
 
-    # Layout matches abetlen's simple index:
+    # CUDA and ROCm don't have GitHub Pages simple indices
+    # They're distributed via PyPI or direct GitHub Releases
+    if backend in {"cuda", "rocm"}:
+        return {
+            "python_requires": ">=3.9",
+            "platforms": ["manylinux_x86_64", "win_amd64"],
+            "url": f"Install via: PIP_EXTRA_INDEX_URL={LLAMA_CPP_WHEEL_BASE}/{backend} pip install llama-cpp-python",
+            "size_mb": 0.0,
+            "note": f"{backend.upper()} wheels are distributed via pip index, not GitHub Pages",
+        }
+
+    # Layout matches PEP 503 simple repository API:
     #   {base}/{backend}/llama-cpp-python/
+    # Where {base} is the PIP_EXTRA_INDEX_URL value
     index_url = f"{LLAMA_CPP_WHEEL_BASE}/{backend}/llama-cpp-python/"
 
     try:
@@ -957,76 +972,137 @@ def build_support_prompt(
         "python": sys.version.replace("\n", " "),
     }
 
+    # Categorize issues
+    issues = (prereq or {}).get("issues") or []
+    build_tool_issues = []
+    driver_issues = []
+    other_issues = []
+
+    for issue in issues:
+        issue_lower = issue.lower()
+        if "cmake" in issue_lower or "gcc" in issue_lower or "clang" in issue_lower or "compiler" in issue_lower:
+            build_tool_issues.append(issue)
+        elif "driver" in issue_lower or "nvidia-smi" in issue_lower or "nvcc" in issue_lower or "rocm" in issue_lower or "hip" in issue_lower:
+            driver_issues.append(issue)
+        else:
+            other_issues.append(issue)
+
     lines: List[str] = []
-    lines.append("You are helping me configure GPU acceleration for llama-cpp-python.")
+    lines.append("I'm trying to set up llama-cpp-python for my CHL (Curated Heuristic Loop) project, but the environment diagnostics script found some missing prerequisites.")
     lines.append("")
-    lines.append("## System Context")
+    lines.append("## What I'm Trying to Achieve")
+    if backend == "metal":
+        lines.append(f"- Install llama-cpp-python with Apple Metal GPU acceleration on macOS")
+    elif backend == "cuda":
+        lines.append(f"- Install llama-cpp-python with NVIDIA CUDA GPU acceleration")
+    elif backend == "rocm":
+        lines.append(f"- Install llama-cpp-python with AMD ROCm GPU acceleration")
+    else:
+        lines.append(f"- Install llama-cpp-python in CPU-only mode")
+    lines.append("")
+
+    lines.append("## My System")
     lines.append(f"- OS: {system_info['os']} {system_info['os_release']} ({system_info['machine']})")
     lines.append(f"- Python: {system_info['python']}")
-    lines.append(f"- Detected backend: {backend}")
-    lines.append(f"- Detection timestamp: {detected_at}")
+    lines.append(f"- Target backend: {backend}")
+    if backend != "cpu" and wheel:
+        lines.append(f"- Required wheel variant: {wheel}")
+    lines.append("")
+
+    lines.append("## Issues Found")
+    lines.append("")
+
+    if build_tool_issues:
+        lines.append("### Build Tools Missing")
+        for issue in build_tool_issues:
+            lines.append(f"- {issue}")
+        lines.append("")
+
+    if driver_issues:
+        lines.append("### GPU Drivers/Toolchains Missing or Misconfigured")
+        for issue in driver_issues:
+            lines.append(f"- {issue}")
+        lines.append("")
+
+    if other_issues:
+        lines.append("### Other Issues")
+        for issue in other_issues:
+            lines.append(f"- {issue}")
+        lines.append("")
+
+    if not issues:
+        lines.append("_(No specific issues were identified, but environment validation failed)_")
+        lines.append("")
+
+    # Installation guidance section
+    lines.append("## Installation Requirements")
+    if wheel and wheel_meta:
+        note = wheel_meta.get("note")
+        if note:
+            lines.append(f"- {note}")
+        url = wheel_meta.get("url", "")
+        if url and not url.startswith("http"):
+            # It's an installation instruction, not a direct URL
+            lines.append(f"- {url}")
+        elif url:
+            lines.append(f"- Wheel URL: {url}")
+        if wheel_meta.get("python_requires"):
+            lines.append(f"- Requires Python: {wheel_meta['python_requires']}")
+    lines.append("")
+
+    # Only show relevant resources based on backend and issues
+    lines.append("## Relevant Resources")
+    if backend == "metal" or any("metal" in str(d).lower() for d in diagnostics):
+        lines.append(f"- Apple Command Line Tools: {APPLE_CLT_URL}")
+        lines.append("- Install with: `xcode-select --install`")
+    elif backend == "cuda" or any("cuda" in str(d).lower() or "nvidia" in str(d).lower() for d in diagnostics):
+        lines.append(f"- NVIDIA GPU Drivers: {NVIDIA_DRIVER_URL}")
+        lines.append(f"- CUDA Toolkit: {CUDA_TOOLKIT_URL}")
+    elif backend == "rocm" or any("rocm" in str(d).lower() or "amd" in str(d).lower() for d in diagnostics):
+        lines.append(f"- AMD ROCm Installation Guide: {ROCM_URL}")
+
+    if build_tool_issues:
+        lines.append("- CMake: Usually installed via package manager (apt, brew, yum, etc.)")
+    lines.append("")
 
     if diagnostics:
-        lines.append("- Detector diagnostics:")
+        lines.append("## Detection Details")
         for item in diagnostics:
-            lines.append(f"  - {item}")
+            lines.append(f"- {item}")
+        lines.append("")
 
-    lines.append("")
-    lines.append("## Prerequisite Check")
-    if prereq:
-        lines.append(f"- Status: {prereq.get('status', 'unknown')}")
-        if prereq.get("message"):
-            lines.append(f"- Message: {prereq['message']}")
-        issues = prereq.get("issues") or []
-        if issues:
-            lines.append("- Issues:")
-            for issue in issues:
-                lines.append(f"  - {issue}")
-    else:
-        lines.append("- Prerequisite checks were not available.")
-
-    lines.append("")
-    lines.append("## Wheel Requirements")
-    if wheel and wheel_meta:
-        lines.append(f"- Selected wheel suffix: {wheel}")
-        lines.append(f"- Wheel URL: {wheel_meta.get('url', 'unknown')}")
-        if wheel_meta.get("python_requires"):
-            lines.append(f"- Requires-Python: {wheel_meta['python_requires']}")
-        platforms = wheel_meta.get("platforms") or []
-        if platforms:
-            lines.append("- Supported tags:")
-            for tag in platforms:
-                lines.append(f"  - {tag}")
-        size_mb = wheel_meta.get("size_mb")
-        if size_mb is not None:
-            lines.append(f"- Approximate size: {size_mb} MB")
-    elif wheel_error:
-        lines.append(f"- Failed to fetch wheel metadata: {wheel_error}")
-    else:
-        lines.append("- Wheel metadata is not available; network access to the wheel index may have failed.")
-
-    lines.append("")
-    lines.append("## Relevant Resources")
-    lines.append(f"- NVIDIA drivers: {NVIDIA_DRIVER_URL}")
-    lines.append(f"- CUDA Toolkit: {CUDA_TOOLKIT_URL}")
-    lines.append(f"- Apple Command Line Tools: {APPLE_CLT_URL}")
-    lines.append(f"- AMD ROCm install guide: {ROCM_URL}")
-
-    lines.append("")
-    lines.append("## Diagnostic Logs")
     if verify_log:
+        lines.append("## Diagnostic Logs")
         lines.append("```")
         lines.append(verify_log)
         lines.append("```")
-    else:
-        lines.append("_No llama-cpp import logs were captured._")
+        lines.append("")
 
+    lines.append("## What I Need Help With")
     lines.append("")
-    lines.append("## Goal")
-    lines.append(
-        "Help me install and configure the correct drivers, toolchains, and llama-cpp-python wheel "
-        "for this machine so that GPU acceleration works reliably for this backend."
-    )
+    lines.append("Please provide step-by-step instructions to:")
+    lines.append("")
+
+    if build_tool_issues:
+        lines.append("1. **Install missing build tools** (CMake, compilers, etc.) for my OS")
+
+    if driver_issues:
+        step_num = 2 if build_tool_issues else 1
+        if backend == "cuda":
+            lines.append(f"{step_num}. **Install or configure NVIDIA drivers and CUDA toolkit** compatible with my system")
+        elif backend == "metal":
+            lines.append(f"{step_num}. **Install Xcode Command Line Tools** for Metal support")
+        elif backend == "rocm":
+            lines.append(f"{step_num}. **Install AMD ROCm drivers and libraries** for my GPU")
+
+    final_step = len([x for x in [build_tool_issues, driver_issues] if x]) + 1
+    lines.append(f"{final_step}. **Install llama-cpp-python** with the correct wheel for {backend} backend")
+    lines.append("")
+    lines.append("Please make sure the instructions are specific to:")
+    lines.append(f"- My OS: {system_info['os']} {system_info['os_release']}")
+    lines.append(f"- My Python version: {platform.python_version()}")
+    if backend != "cpu" and wheel:
+        lines.append(f"- Required wheel variant: {wheel}")
 
     return "\n".join(lines)
 
