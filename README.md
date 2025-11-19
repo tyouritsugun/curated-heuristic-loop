@@ -99,7 +99,7 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 
 **Prerequisites:**
 - NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer: GTX 1060+, RTX series, etc.)
-- CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.5`)
+- CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.4` or `/usr/local/cuda-12.5`)
 - cuDNN libraries
 - CMake 3.18+
 - **Python 3.10 or 3.11** (CUDA wheels don't support Python 3.12 yet)
@@ -115,7 +115,7 @@ source .venv-cuda/bin/activate  # On Windows: .venv-cuda\Scripts\activate
 
 # Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
 python -m pip install --upgrade pip
-PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cuda \
+PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
   python -m pip install -r requirements_cuda.txt
 ```
 

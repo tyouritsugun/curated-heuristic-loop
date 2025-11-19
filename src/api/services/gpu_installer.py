@@ -34,7 +34,8 @@ CUDA_COMPAT_MATRIX = [
     ((12, 1), "cu121"),
     ((12, 2), "cu122"),
     ((12, 4), "cu124"),
-    ((12, 5), "cu125"),
+    # Note: cu125 and newer are not yet available in abetlen's wheel repository
+    # CUDA 12.5+ will use cu124 wheels (forward compatible within CUDA 12.x)
 ]
 
 ROCM_COMPAT_MATRIX = [
@@ -126,7 +127,7 @@ def determine_cuda_wheel(version: Optional[str]) -> Tuple[str, List[str]]:
     diagnostics: List[str] = []
     version_tuple = _parse_version_tuple(version)
     if not version_tuple:
-        diagnostics.append("CUDA version unavailable; defaulting to cu125 wheel")
+        diagnostics.append(f"CUDA version unavailable; defaulting to {CUDA_COMPAT_MATRIX[-1][1]} wheel")
         return CUDA_COMPAT_MATRIX[-1][1], diagnostics
 
     for boundary, suffix in reversed(CUDA_COMPAT_MATRIX):

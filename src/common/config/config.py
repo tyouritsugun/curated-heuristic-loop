@@ -36,6 +36,13 @@ Model selection (GGUF quantized):
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)
 
+GPU Acceleration (Optional - Smart defaults based on CHL_SEARCH_MODE):
+- CHL_EMBEDDING_N_GPU_LAYERS: Number of model layers to offload to GPU (default: -1 for auto/GPU mode, 0 for CPU mode)
+  - -1 = all layers on GPU (best performance, recommended for GPU users)
+  - 0 = CPU-only inference (very slow, for troubleshooting only)
+  - N = specific number of layers (for limited VRAM)
+- CHL_RERANKER_N_GPU_LAYERS: Same as above for reranker model (default: -1 for auto/GPU mode, 0 for CPU mode)
+
 Thresholds:
 - CHL_DUPLICATE_THRESHOLD_UPDATE: Similarity threshold for updates (default: 0.85, range: 0.0-1.0)
 - CHL_DUPLICATE_THRESHOLD_INSERT: Similarity threshold for inserts (default: 0.60, range: 0.0-1.0)
@@ -167,11 +174,14 @@ class Config:
         self.reranker_repo = os.getenv("CHL_RERANKER_REPO", default_reranker_repo)
         self.reranker_quant = os.getenv("CHL_RERANKER_QUANT", default_reranker_quant)
 
-        # Optional GPU offload settings for llama.cpp (number of layers to place on GPU).
-        # 0  -> CPU-only; -1 -> all layers; N -> first N layers.
-        # Defaults to 0 to remain conservative unless explicitly configured.
-        self.embedding_n_gpu_layers = int(os.getenv("CHL_EMBEDDING_N_GPU_LAYERS", "0"))
-        self.reranker_n_gpu_layers = int(os.getenv("CHL_RERANKER_N_GPU_LAYERS", "0"))
+        # GPU offload settings for llama.cpp (number of layers to place on GPU).
+        # -1 -> all layers (best performance, default for GPU/auto mode)
+        # 0  -> CPU-only (very slow, use only for troubleshooting)
+        # N  -> first N layers on GPU
+        # Smart default: use GPU (-1) in auto/GPU modes, CPU (0) only when explicitly in CPU mode
+        default_gpu_layers = "-1" if self._search_mode != SearchMode.CPU else "0"
+        self.embedding_n_gpu_layers = int(os.getenv("CHL_EMBEDDING_N_GPU_LAYERS", default_gpu_layers))
+        self.reranker_n_gpu_layers = int(os.getenv("CHL_RERANKER_N_GPU_LAYERS", default_gpu_layers))
 
         # Threshold settings
         self.duplicate_threshold_update = float(os.getenv("CHL_DUPLICATE_THRESHOLD_UPDATE", "0.85"))
