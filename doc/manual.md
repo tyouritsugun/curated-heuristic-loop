@@ -178,7 +178,7 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 - `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
 - `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
 
-For a complete list of configuration options, see [src/config.py](../src/config.py).
+For a complete list of configuration options, see [src/common/config/config.py](../src/common/config/config.py).
 
 ## 7. Troubleshooting
 
@@ -188,7 +188,7 @@ For a complete list of configuration options, see [src/config.py](../src/config.
 
 ## 8. Script Development Guidelines
 
-Follow the structure in `scripts/_template.py` when adding new scripts. Ensure they use `src.config.get_config()` and have clear documentation.
+When adding new scripts, follow the structure used in existing scripts like `scripts/search_health.py` or `scripts/validate_requirements.py`. Ensure they use `CHLAPIClient` for API communication and have clear documentation.
 
 ## 9. CPU-Only Mode
 

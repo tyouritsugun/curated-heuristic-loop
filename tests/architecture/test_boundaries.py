@@ -176,8 +176,11 @@ def test_scripts_never_import_from_api_except_exceptions():
     exceptions = {
         "setup-gpu.py",
         "setup-cpu.py",
-        "gpu_smoke_test.py",
+        "smoke_test_cuda.py",
         "check_api_env.py",
+        "check_api_env_apple.py",
+        "check_api_env_nvidia.py",
+        "check_api_env_cpu.py",
     }
 
     violations = []

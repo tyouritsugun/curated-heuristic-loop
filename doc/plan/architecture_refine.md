@@ -134,12 +134,35 @@
      - Emits a JSON/text summary + “LLM prompt” saved to disk when failures occur, including dynamic wheel compatibility information fetched from the configured wheel index (strict network requirement for this phase).
    - Hook the script into onboarding docs so users run it **before** creating or installing their API venv, and update README “Quick Start” to treat a successful run (exit code 0) as a mandatory prerequisite.
 
-3. **Phase C – Runtime Isolation**
+3. **Phase C – Runtime Isolation** ✅ COMPLETE
    - Enforce MCP ↔ API separation: introduce clear service boundaries, ensure MCP never opens SQLite/FAISS, and relies on HTTP endpoints.
    - Refine shared modules (`src/common/`) to expose only DTOs/clients both sides need; keep runtime-specific code in dedicated directories.
 
-4. **Phase D – Validation & Hardening**
+   **Deliverables (Completed):**
+   - MCP server communicates exclusively via HTTP using `CHLAPIClient`
+   - Zero direct SQLite/FAISS access in MCP code
+   - MCP import boundaries strictly enforced (only config, api_client, dto from common)
+   - Runtime-specific code (storage, interfaces, web_utils) properly isolated from MCP
+   - Comprehensive boundary tests prevent future violations
+   - Clean separation maintained in `src/common/` (no api/mcp imports)
+
+4. **Phase D – Validation & Hardening** ✅ COMPLETE
    - Provide smoke-test commands per platform (native steps built on the curated requirements) to verify embeddings/rerankers.
    - Add CI or scripted checks that run the diagnostics, ensure requirements files stay in sync with `pyproject`, and keep documentation accurate.
+
+   **Deliverables (Completed):**
+   - **Platform-specific smoke tests:**
+     - `scripts/smoke_test_cpu.py` - Validates CPU mode (text search only, no ML dependencies)
+     - `scripts/smoke_test_apple.py` - Validates Apple Metal GPU acceleration
+     - `scripts/smoke_test_cuda.py` - Validates NVIDIA CUDA GPU acceleration
+   - **Validation scripts:**
+     - `scripts/validate_requirements.py` - Ensures requirements_*.txt files are synchronized
+     - `scripts/validate_docs.py` - Validates documentation accuracy (file references, version consistency)
+   - **Boundary test updates:**
+     - Updated `tests/architecture/test_boundaries.py` to include platform-specific diagnostic scripts
+   - **Documentation fixes:**
+     - Updated references from `gpu_smoke_test.py` to `smoke_test_cuda.py`
+     - Fixed file path references in manual.md and README.md
+     - Added architecture_refine.md to Advanced References in README
 
 Delivering these phases keeps the project native-first with strong diagnostics while preserving the MCP workflow via `uv sync`.

@@ -343,7 +343,33 @@ source .venv-cpu/bin/activate  # Or .venv-apple / .venv-cuda
 - `python scripts/sync_embeddings.py` – syncs embeddings for all entries (GPU mode only)
 - `python scripts/search_health.py` – checks search system health
 
-> **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `gpu_smoke_test.py`) are exceptions that access internal components directly and must run with the API server stopped.
+> **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions that access internal components directly and must run with the API server stopped.
+
+### Validation & Testing Scripts
+
+After installing the API server, verify your setup with platform-specific smoke tests:
+
+**CPU Mode:**
+```bash
+python scripts/smoke_test_cpu.py
+```
+Validates text search, database operations, and API health without ML dependencies.
+
+**Apple Metal:**
+```bash
+python scripts/smoke_test_apple.py
+```
+Validates Metal GPU acceleration, embedding generation, and reranker inference.
+
+**NVIDIA CUDA:**
+```bash
+python scripts/smoke_test_cuda.py
+```
+Validates CUDA GPU acceleration, embedding generation, and reranker inference.
+
+**Validation Scripts** (run anytime to check project health):
+- `python scripts/validate_requirements.py` – ensures requirements_*.txt files are synchronized
+- `python scripts/validate_docs.py` – validates documentation accuracy (file references, versions)
 
 ## Web Dashboards
 
@@ -369,7 +395,7 @@ Both dashboards share the same process as the API server, so every change is log
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
 - Operator runbooks & API details: [doc/manual.md](doc/manual.md)
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
-- Web plan breakdown (Phases 0–3): [doc/plan/06_web_interface/](doc/plan/06_web_interface/)
+- Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
 
 ## License
 

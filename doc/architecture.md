@@ -147,7 +147,7 @@ CLI tools for setup, maintenance, and data synchronization. Scripts run from the
 **Setup Scripts (Exception to HTTP-First Rule):**
 - `setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
 - `setup-cpu.py` - Initialize database schema (direct DB access)
-- `gpu_smoke_test.py` - Test GPU components (direct API imports)
+- `smoke_test_cuda.py` - Test NVIDIA CUDA GPU components (direct API imports)
 
 These setup scripts are **exceptions** that can import from `src.api.*` because they configure internal components during initial setup (see [Phase 0 Scripts Migration](plan/phase_0_scripts_migration.md#exception-policy)).
 
@@ -324,7 +324,7 @@ Human-readable surface for team-based curation. Scripts generate a **Review Shee
 - API server may import any `src/common.*` modules
 - MCP server may import only `src.common.{config,api_client,dto}`
 - API and MCP communicate only via HTTP
-- Setup scripts (`setup-gpu.py`, `gpu_smoke_test.py`) are exceptions
+- Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions
 
 **Enforcement:**
 - Boundary tests enforce these rules via AST parsing (`tests/architecture/test_boundaries.py`)
