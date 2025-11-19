@@ -103,13 +103,13 @@ def _ensure_api_stopped(api_url: str, force: bool) -> None:
         sys.exit(1)
 
 
-def _detect_gpu_state() -> Dict[str, Any]:
+def _detect_runtime_config() -> Dict[str, Any]:
     # Force CUDA backend for NVIDIA-specific script
     priority = ["cuda", "cpu"]
     backend_override = "cuda"
-    state, cached = gpu_installer.ensure_gpu_state(priority, backend_override, force_detect=True)
-    logger.debug("GPU state (cached=%s): %s", cached, state)
-    return state
+    config, cached = gpu_installer.ensure_runtime_config(priority, backend_override, force_detect=True)
+    logger.debug("Runtime config (cached=%s): %s", cached, config)
+    return config
 
 
 def _recommend_models(backend: str, vram_gb: Optional[float]) -> Dict[str, str]:
@@ -175,8 +175,8 @@ def main() -> None:
     _ensure_api_stopped(args.api_url, args.force)
 
     print("Running CHL environment diagnostics (NVIDIA CUDA)...")
-    gpu_state = _detect_gpu_state()
-    backend = gpu_state.get("backend", "cpu")
+    runtime_config = _detect_runtime_config()
+    backend = runtime_config.get("backend", "cpu")
 
     # Verify this is actually CUDA backend
     if backend != "cuda":
@@ -184,9 +184,9 @@ def main() -> None:
         print("  Please use the appropriate check_api_env script for your platform.")
         sys.exit(1)
 
-    vram_info = gpu_installer.get_vram_info(gpu_state)
-    prereq = gpu_installer.prerequisite_check(gpu_state)
-    suffix = gpu_installer.recommended_wheel_suffix(gpu_state)
+    vram_info = gpu_installer.get_vram_info(runtime_config)
+    prereq = gpu_installer.prerequisite_check(runtime_config)
+    suffix = gpu_installer.recommended_wheel_suffix(runtime_config)
 
     wheel_meta: Optional[Dict[str, Any]] = None
     wheel_error: Optional[str] = None
@@ -194,15 +194,15 @@ def main() -> None:
     if suffix:
         try:
             wheel_meta = gpu_installer.get_wheel_metadata(backend, suffix)
-            gpu_state["wheel_metadata"] = wheel_meta
+            runtime_config["wheel_metadata"] = wheel_meta
         except gpu_installer.GPUInstallerError as exc:
             wheel_error = str(exc)
-            gpu_state["wheel_metadata_error"] = wheel_error
+            runtime_config["wheel_metadata_error"] = wheel_error
 
     verify_ok: Optional[bool] = None
     verify_log: Optional[str] = None
     try:
-        verify_ok, verify_log = gpu_installer.verify_llama_install(gpu_state)
+        verify_ok, verify_log = gpu_installer.verify_llama_install(runtime_config)
     except Exception as exc:  # noqa: BLE001
         verify_ok = False
         verify_log = f"verify_llama_install() raised an unexpected error: {exc}"
@@ -230,12 +230,12 @@ def main() -> None:
         print(f"      Embedding: {selection['embedding_repo']} [{selection['embedding_quant']}]")
         print(f"      Reranker:  {selection['reranker_repo']} [{selection['reranker_quant']}]")
 
-        print("\nSuggested CHL_SEARCH_MODE: auto (GPU)")
+        print("\nRuntime configuration saved to data/runtime_config.json")
 
         sys.exit(0)
 
     # Failure path: build support prompt and exit 1
-    prompt = gpu_installer.build_support_prompt(gpu_state, prereq, verify_log=verify_log)
+    prompt = gpu_installer.build_support_prompt(runtime_config, prereq, verify_log=verify_log)
     _save_support_prompt(prompt)
 
     print("\n✗ Environment diagnostics found blocking issues.\n")

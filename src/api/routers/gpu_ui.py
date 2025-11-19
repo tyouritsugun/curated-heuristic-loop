@@ -72,8 +72,9 @@ def _json_serialize_datetime(obj):
 
 
 def _gpu_features_enabled(*, search_mode: Optional[str] = None) -> bool:
-    mode = search_mode or os.getenv("CHL_SEARCH_MODE", "auto")
-    return (mode or "auto").lower() != "cpu"
+    """Check if GPU features are enabled based on backend configuration."""
+    mode = search_mode or os.getenv("CHL_BACKEND", "cpu")
+    return (mode or "cpu").lower() != "cpu"
 
 
 def _render_gpu_full(

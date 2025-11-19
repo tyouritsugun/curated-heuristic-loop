@@ -29,15 +29,25 @@ python3 scripts/check_api_env.py
 This script checks:
 - GPU hardware detection (Metal/CUDA/CPU)
 - Driver and toolchain availability
-- VRAM capacity and model size recommendations
+- VRAM capacity and model size recommendations (GPU modes only)
 - llama-cpp-python wheel compatibility (via the official wheel index)
 
-If checks pass, it writes recommended model choices to `data/model_selection.json` and prints a suggested `CHL_SEARCH_MODE` value.  
+If checks pass:
+- **GPU mode**: Writes recommended model choices to `data/model_selection.json` and runtime configuration to `data/runtime_config.json`
+- **CPU mode**: Writes runtime configuration to `data/runtime_config.json` (no models needed - uses SQLite keyword search only)
+
 If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` – copy this text into ChatGPT/Claude and follow the steps to fix your environment before proceeding.
+
+The API server automatically uses the backend from `runtime_config.json` - no manual configuration needed!
 
 **Do not proceed to Step 1 until this script exits with code 0.**
 
-**Python version note:** CHL currently targets CPython 3.10–3.12. **We recommend Python 3.11 for most platforms** (CPU-only and NVIDIA CUDA) and **Python 3.12 for Apple Silicon**. Python 3.13 is not yet supported by some dependencies (for example, NumPy 1.x), and `pip` may try – and fail – to build them from source. If `python --version` shows 3.13, use a specific compatible interpreter (for example, `python3.12` or `python3.11`) in all commands below when creating and using virtual environments.
+**Python version note:**
+- **CPU-only mode**: Python 3.10 or newer (including 3.13) - no version restrictions
+- **GPU modes** (Metal/CUDA): Python 3.10–3.12 only (Python 3.13 not supported by llama-cpp-python)
+  - Recommended: Python 3.11 for NVIDIA CUDA, Python 3.12 for Apple Silicon
+
+If you have Python 3.13 and want GPU acceleration, install a compatible version (e.g., `brew install python@3.12` or `python3.12`) alongside it.
 
 ### Step 1: Install API Server
 
@@ -49,21 +59,73 @@ Choose your hardware platform and install the API server runtime:
 **Best for:** Limited VRAM, keyword search is sufficient, or testing without GPU overhead.
 
 **Prerequisites:**
-- Python 3.10 or 3.11 (check available versions: `ls /usr/bin/python3.1*`)
-- Install if needed:
-  - Ubuntu 24.04+: `sudo apt install python3.12-venv` (use python3.12)
-  - Ubuntu 22.04: `sudo apt install python3.10-venv` (use python3.10)
-  - Other: `sudo apt install python3.11 python3.11-venv` (recommended)
+
+Python 3.10 or newer (3.11+ recommended, Python 3.13 is supported for CPU mode). Install instructions by platform:
+
+<details>
+<summary>macOS (Intel or Apple Silicon)</summary>
 
 ```bash
-# Create dedicated venv for API server (use your available Python 3.10/3.11/3.12)
-python3.11 -m venv .venv-cpu  # Or python3.10 or python3.12
-source .venv-cpu/bin/activate  # On Windows: .venv-cpu\Scripts\activate
+# Check your current Python version
+python3 --version
 
-# Install API server dependencies (no ML)
+# If you need a newer version, install via Homebrew
+brew install python@3.13
+# Or for older stable versions: brew install python@3.12 or python@3.11
+```
+</details>
+
+<details>
+<summary>Linux (Ubuntu/Debian)</summary>
+
+```bash
+# Check available versions
+ls /usr/bin/python3.1*
+
+# Ubuntu 24.04+ (has Python 3.12, or install 3.13 via deadsnakes)
+sudo apt update
+sudo apt install python3.12 python3.12-venv
+# Or for Python 3.13:
+# sudo add-apt-repository ppa:deadsnakes/ppa
+# sudo apt update
+# sudo apt install python3.13 python3.13-venv
+
+# Ubuntu 22.04 (has Python 3.10, use it or upgrade)
+sudo apt update
+sudo apt install python3.10 python3.10-venv
+
+# Install any specific version via deadsnakes PPA
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.11 python3.11-venv  # Or python3.12, python3.13
+```
+</details>
+
+<details>
+<summary>Windows</summary>
+
+1. Download Python 3.11, 3.12, or 3.13 from [python.org](https://www.python.org/downloads/)
+2. During installation, check "Add Python to PATH"
+3. Verify: `python --version` in Command Prompt or PowerShell
+</details>
+
+**Installation:**
+
+```bash
+# macOS/Linux: Create dedicated venv for API server
+python3 -m venv .venv-cpu
+source .venv-cpu/bin/activate
+
+# Windows: Create dedicated venv for API server
+python -m venv .venv-cpu
+.venv-cpu\Scripts\activate
+
+# All platforms: Install dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements_cpu.txt
 ```
+
+**Note:** CPU mode supports Python 3.13 since it has no ML dependencies.
 
 **Note:** Search will use SQLite text search (LIKE queries) instead of semantic similarity. Good for exact phrase searches but won't find conceptually related entries.
 
@@ -180,7 +242,6 @@ cp .env.sample .env
 # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
 # - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
 # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
-# - CHL_SEARCH_MODE (cpu for CPU-only, auto for GPU with fallback)
 ```
 
 ### Step 3: Initialize API Server
@@ -191,7 +252,7 @@ cp .env.sample .env
 source .venv-cpu/bin/activate
 
 # Initialize database (no models needed)
-CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
+python scripts/setup-cpu.py
 ```
 
 **For GPU modes (Apple Metal or NVIDIA CUDA):**
@@ -208,16 +269,17 @@ python scripts/setup-gpu.py --select-models
 
 ### Step 4: Start API Server
 
-**CPU-only mode:**
+**All modes (CPU and GPU):**
 ```bash
-source .venv-cpu/bin/activate
-CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
-```
+# Activate the appropriate venv
+source .venv-cpu/bin/activate      # For CPU mode
+# OR
+source .venv-apple/bin/activate    # For Apple Metal
+# OR
+source .venv-cuda/bin/activate     # For NVIDIA CUDA
 
-**GPU modes (Apple Metal or NVIDIA CUDA):**
-```bash
-source .venv-apple/bin/activate  # Or .venv-cuda
-CHL_SEARCH_MODE=auto python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+# Start the API server (automatically uses backend from runtime_config.json)
+python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 ```
 
 **Verify installation:**
@@ -311,20 +373,20 @@ Only add `env` section if you need non-default values.
 
 **Switching from CPU-only to GPU mode:**
 1. Stop the API server
-2. Set `CHL_SEARCH_MODE=auto` in `.env`
+2. Run `python scripts/check_api_env.py` and select GPU option (this updates `runtime_config.json`)
 3. Create new GPU venv (`.venv-apple` or `.venv-cuda`) and install corresponding requirements file
 4. Run `python scripts/setup-gpu.py --download-models`
-5. Start API server with GPU mode
+5. Start API server (automatically uses GPU backend from `runtime_config.json`)
 6. Rebuild embeddings/FAISS via `/operations` or `scripts/rebuild_index.py`
 
 **Switching from GPU to CPU-only mode:**
 1. Stop the API server
-2. Set `CHL_SEARCH_MODE=cpu` in `.env`
+2. Run `python scripts/check_api_env.py` and select CPU option (this updates `runtime_config.json`)
 3. Create new CPU venv (`.venv-cpu`) and install `requirements_cpu.txt`
-4. Start API server with CPU mode
+4. Start API server (automatically uses CPU backend from `runtime_config.json`)
 5. FAISS artifacts remain on disk but are ignored
 
-> **Important**: FAISS snapshots are NOT portable between modes. Switching modes requires rebuilding from scratch in the target mode.
+> **Important**: Backend configuration is stored in `data/runtime_config.json`. FAISS snapshots are NOT portable between modes. Switching modes requires rebuilding from scratch in the target mode.
 
 ## Operational Scripts
 

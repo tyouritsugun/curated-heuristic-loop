@@ -81,11 +81,11 @@ The FastAPI server is the sole authority for all data persistence, search operat
 - Web dashboards (Settings, Operations)
 - REST API for MCP and scripts
 
-**Runtime Modes:**
-- **CPU Mode** (`CHL_SEARCH_MODE=cpu`): SQLite text search only, no ML dependencies
-- **GPU Mode** (`CHL_SEARCH_MODE=gpu`): FAISS vector search with embeddings and reranking
+**Runtime Backends:**
+- **CPU Mode** (`backend="cpu"`): SQLite text search only, no ML dependencies
+- **GPU Modes** (`backend="metal"/"cuda"/"rocm"`): FAISS vector search with embeddings and reranking
 
-Mode is fixed at startup and requires full re-setup to change (see [ADR-005](plan/architecture_refine.md#adr-005-fixed-runtime-mode)).
+Backend is automatically detected from `data/runtime_config.json` (created by `scripts/check_api_env.py`). To switch backends, re-run diagnostics and restart the server.
 
 **Key Modules:**
 - `src/api/routers/` - FastAPI route handlers
@@ -355,8 +355,8 @@ Human-readable surface for team-based curation. Scripts generate a **Review Shee
 - Data consistency (avoids partially-synced embeddings)
 
 **Implications:**
-- Mode determined by `CHL_SEARCH_MODE` environment variable at startup
-- Mode change requires: stop server → run setup script → restart server
+- Backend determined from `data/runtime_config.json` at startup
+- Backend change requires: re-run `scripts/check_api_env.py` → restart server → rebuild index
 - Template selection happens once at startup
 - No hot-swapping between CPU and GPU providers
 - No automatic fallback from GPU to CPU mode
@@ -406,11 +406,12 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 
 **Key Environment Variables:**
 - `CHL_EXPERIENCE_ROOT` - Base path for database, FAISS index, and data files
-- `CHL_SEARCH_MODE` - Runtime mode (`cpu` or `gpu`)
 - `CHL_API_BASE_URL` - API server URL for MCP and scripts (default: `http://localhost:8000`)
 - `GOOGLE_CREDENTIAL_PATH` - Path to Google service account JSON
 - `IMPORT_SPREADSHEET_ID` - Published spreadsheet ID for imports
 - `EXPORT_SPREADSHEET_ID` - Review spreadsheet ID for exports
+
+**Note:** Backend selection (cpu/metal/cuda/rocm) is automatically determined from `data/runtime_config.json` - no environment variable needed.
 
 ## 8. Technology Stack
 
@@ -449,7 +450,9 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 python -m venv .venv-cpu
 source .venv-cpu/bin/activate
 pip install -r requirements_cpu.txt
-CHL_SEARCH_MODE=cpu uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+python scripts/check_api_env.py  # Select CPU mode - creates runtime_config.json
+uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+# Backend auto-detected from data/runtime_config.json
 ```
 
 **Tier 2: MCP Server (UV Managed)**

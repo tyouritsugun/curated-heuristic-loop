@@ -2,6 +2,14 @@ body {
   background: #ffffff;
   color: #000000;
   margin: 0;
+  padding: 0;
+}
+
+/* Override Pico CSS container constraints */
+main {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .w3-sidebar {
@@ -17,13 +25,15 @@ body {
 
 .main-content {
   margin-left: 250px;
-  padding: 2rem 2rem 4rem;
+  padding: 2rem 4rem 4rem 4rem;
   min-height: 100vh;
 }
 
 .content-wrapper {
-  max-width: 960px;
+  max-width: 900px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .main-menu {
@@ -85,7 +95,6 @@ body {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
-  padding: 0 1.5rem;
 }
 
 .page-header .muted {

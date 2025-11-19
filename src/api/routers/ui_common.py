@@ -349,7 +349,7 @@ def _build_settings_context(
     error: Optional[str] = None,
 ):
     config_obj = getattr(request.app.state, "config", None)
-    search_mode = getattr(config_obj, "search_mode", os.getenv("CHL_SEARCH_MODE", "auto"))
+    search_mode = getattr(config_obj, "backend", os.getenv("CHL_BACKEND", "cpu"))
     snapshot = settings_service.snapshot(session)
     diagnostics_payload = settings_service.diagnostics(session)
     diagnostics = _normalize_diagnostics(diagnostics_payload)

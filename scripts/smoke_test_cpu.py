@@ -10,7 +10,7 @@ This test validates:
 4. No GPU/embedding models are loaded
 
 Prerequisites:
-- API server must be running with CHL_SEARCH_MODE=cpu
+- API server must be running with backend=cpu (from runtime_config.json)
 - Run from the project root with the MCP venv or API venv activated
 
 Usage:

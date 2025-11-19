@@ -20,17 +20,17 @@ def client(request: pytest.FixtureRequest) -> Iterator[TestClient]:
                 request.node.get_closest_marker("sqlite_only") is not None)
 
     # Preserve and set environment for this test only
-    prev = os.environ.get("CHL_SEARCH_MODE")
+    prev = os.environ.get("CHL_BACKEND")
     try:
         if cpu_only:
-            os.environ["CHL_SEARCH_MODE"] = "cpu"
+            os.environ["CHL_BACKEND"] = "cpu"
         else:
-            if "CHL_SEARCH_MODE" in os.environ:
-                os.environ.pop("CHL_SEARCH_MODE", None)
+            if "CHL_BACKEND" in os.environ:
+                os.environ.pop("CHL_BACKEND", None)
         with TestClient(app) as test_client:
             yield test_client
     finally:
         if prev is not None:
-            os.environ["CHL_SEARCH_MODE"] = prev
+            os.environ["CHL_BACKEND"] = prev
         else:
-            os.environ.pop("CHL_SEARCH_MODE", None)
+            os.environ.pop("CHL_BACKEND", None)

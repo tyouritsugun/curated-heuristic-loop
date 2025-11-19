@@ -15,7 +15,8 @@
 #     python -m pip install -r requirements_apple.txt
 #
 # Starting the API server:
-#   CHL_SEARCH_MODE=gpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+#   python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+#   (Backend is automatically configured from data/runtime_config.json)
 #
 # Note: The MCP server is installed separately via `uv sync` from pyproject.toml
 # and communicates with this API server via HTTP.

@@ -24,9 +24,10 @@ Core environment variables:
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
 
 Search & retrieval:
-- CHL_SEARCH_MODE: Search mode (default: auto; options: auto, cpu)
-  - auto: Try vector search; fall back to SQLite if initialization fails
-  - cpu: Force text search; skip embedding/reranker/FAISS initialization
+- Backend is automatically determined from data/runtime_config.json (created by scripts/check_api_env.py)
+  - cpu: Text search only via SQLite LIKE queries (no ML dependencies)
+  - metal/cuda/rocm: Vector search with FAISS + embeddings (graceful fallback to text search)
+- CHL_BACKEND: Optional override for runtime backend (not recommended - use check_api_env.py instead)
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
@@ -36,12 +37,12 @@ Model selection (GGUF quantized):
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)
 
-GPU Acceleration (Optional - Smart defaults based on CHL_SEARCH_MODE):
-- CHL_EMBEDDING_N_GPU_LAYERS: Number of model layers to offload to GPU (default: -1 for auto/GPU mode, 0 for CPU mode)
+GPU Acceleration (Optional - Smart defaults based on backend):
+- CHL_EMBEDDING_N_GPU_LAYERS: Number of model layers to offload to GPU (default: -1 for GPU backends, 0 for CPU)
   - -1 = all layers on GPU (best performance, recommended for GPU users)
-  - 0 = CPU-only inference (very slow, for troubleshooting only)
+  - 0 = CPU-only inference (automatic for cpu backend)
   - N = specific number of layers (for limited VRAM)
-- CHL_RERANKER_N_GPU_LAYERS: Same as above for reranker model (default: -1 for auto/GPU mode, 0 for CPU mode)
+- CHL_RERANKER_N_GPU_LAYERS: Same as above for reranker model (default: -1 for GPU backends, 0 for CPU)
 
 Thresholds:
 - CHL_DUPLICATE_THRESHOLD_UPDATE: Similarity threshold for updates (default: 0.85, range: 0.0-1.0)
@@ -79,7 +80,21 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
+RUNTIME_CONFIG_PATH = PROJECT_ROOT / "data" / "runtime_config.json"
 logger = logging.getLogger(__name__)
+
+
+def _load_runtime_config() -> dict:
+    """Load runtime configuration from runtime_config.json."""
+    try:
+        if RUNTIME_CONFIG_PATH.exists():
+            with RUNTIME_CONFIG_PATH.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
 
 
 def _load_model_selection() -> dict:
@@ -101,29 +116,8 @@ def _load_model_selection() -> dict:
     return {}
 
 
-class SearchMode(str, Enum):
-    """Execution/search mode for CHL.
-
-    Backed by string values for compatibility with existing comparisons.
-    """
-
-    AUTO = "auto"
-    CPU = "cpu"
-
-    @classmethod
-    def from_env(cls, value: str | None) -> "SearchMode":
-        """Parse CHL_SEARCH_MODE from an environment value.
-
-        Normalizes case and raises a clear ValueError on invalid values.
-        """
-        raw = (value or cls.AUTO.value).strip().lower()
-        try:
-            return cls(raw)
-        except ValueError:
-            valid = ", ".join(m.value for m in cls)
-            raise ValueError(
-                f"Invalid CHL_SEARCH_MODE='{raw}'. Must be one of: {valid}"
-            )
+# Supported backend types
+SUPPORTED_BACKENDS = ("cpu", "metal", "cuda", "rocm")
 
 
 class Config:
@@ -153,9 +147,19 @@ class Config:
         # Optional settings with defaults
         self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
 
-        # Search & provider settings
-        # Store enum internally but expose string value via property for compatibility.
-        self._search_mode = SearchMode.from_env(os.getenv("CHL_SEARCH_MODE"))
+        # Runtime configuration - determine backend from runtime_config.json
+        # Fallback to environment variable if needed, then default to "cpu"
+        runtime_config = _load_runtime_config()
+        backend_from_config = runtime_config.get("backend")
+        backend_from_env = os.getenv("CHL_BACKEND")
+
+        # Priority: runtime_config.json > environment variable > default "cpu"
+        self.backend = backend_from_config or backend_from_env or "cpu"
+        logger.info("Runtime backend: %s (from %s)",
+                   self.backend,
+                   "runtime_config.json" if backend_from_config else
+                   "environment" if backend_from_env else "default")
+
         self.search_timeout_ms = int(os.getenv("CHL_SEARCH_TIMEOUT_MS", "5000"))
         self.search_fallback_retries = int(os.getenv("CHL_SEARCH_FALLBACK_RETRIES", "1"))
 
@@ -175,11 +179,11 @@ class Config:
         self.reranker_quant = os.getenv("CHL_RERANKER_QUANT", default_reranker_quant)
 
         # GPU offload settings for llama.cpp (number of layers to place on GPU).
-        # -1 -> all layers (best performance, default for GPU/auto mode)
-        # 0  -> CPU-only (very slow, use only for troubleshooting)
-        # N  -> first N layers on GPU
-        # Smart default: use GPU (-1) in auto/GPU modes, CPU (0) only when explicitly in CPU mode
-        default_gpu_layers = "-1" if self._search_mode != SearchMode.CPU else "0"
+        # -1 -> all layers (best performance, default for GPU backends)
+        # 0  -> CPU-only (used for cpu backend, models not loaded anyway)
+        # N  -> first N layers on GPU (for limited VRAM)
+        # Smart default: use GPU (-1) for gpu backends, CPU (0) for cpu backend
+        default_gpu_layers = "-1" if self.backend != "cpu" else "0"
         self.embedding_n_gpu_layers = int(os.getenv("CHL_EMBEDDING_N_GPU_LAYERS", default_gpu_layers))
         self.reranker_n_gpu_layers = int(os.getenv("CHL_RERANKER_N_GPU_LAYERS", default_gpu_layers))
 
@@ -225,25 +229,19 @@ class Config:
     # ------------------------------------------------------------------
     @property
     def search_mode(self) -> str:
-        """Return current search mode as a lowercase string.
+        """Return current backend as string for backward compatibility.
 
-        Kept for backward compatibility with existing code that compares against
-        literal strings like "auto" or "cpu".
+        This property is deprecated. Use config.backend directly.
         """
-        return self._search_mode.value
-
-    @property
-    def search_mode_enum(self) -> SearchMode:
-        """Return current search mode as a SearchMode enum."""
-        return self._search_mode
+        return self.backend
 
     def is_cpu_only(self) -> bool:
-        """True when running in SQLite-only (CPU) mode."""
-        return self._search_mode is SearchMode.SQLITE_ONLY
+        """True when running in CPU-only mode (no GPU/vector search)."""
+        return self.backend == "cpu"
 
     def is_semantic_enabled(self) -> bool:
-        """True when semantic/vector components are enabled or may be enabled."""
-        return self._search_mode is not SearchMode.SQLITE_ONLY
+        """True when semantic/vector components are enabled (GPU backends)."""
+        return self.backend != "cpu"
 
     def _validate_paths(self):
         """Validate that configured paths exist"""
@@ -341,7 +339,7 @@ class Config:
             )
 
         # Create FAISS index directory if it doesn't exist (skip in CPU mode)
-        if self._search_mode is not SearchMode.CPU:
+        if self.backend != "cpu":
             faiss_path = Path(self.faiss_index_path)
             if not faiss_path.exists():
                 try:

@@ -55,6 +55,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
-    "cpu_only: run test with CHL_SEARCH_MODE=cpu",
-    "sqlite_only: (deprecated, use cpu_only) run test with CHL_SEARCH_MODE=cpu",
+    "cpu_only: run test with CHL_BACKEND=cpu",
+    "sqlite_only: (deprecated, use cpu_only) run test with CHL_BACKEND=cpu",
 ]

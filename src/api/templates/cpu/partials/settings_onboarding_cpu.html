@@ -14,7 +14,7 @@
       <li>Break complex queries into multiple searches with different keywords</li>
       <li>Use category filtering to narrow results</li>
     </ul>
-    <p><small class="muted">To switch to GPU mode with semantic search, set <code>CHL_SEARCH_MODE=auto</code> in <code>.env</code>, install ML extras (<code>uv sync --python 3.11 --extra ml</code>), run <code>scripts/setup-gpu.py --download-models</code>, restart the server, and rebuild the FAISS index. See <a href="/docs/manual#9-cpu-only-mode" target="_blank">CPU-Only Mode docs</a> for details.</small></p>
+    <p><small class="muted">To switch to GPU mode with semantic search, run <code>python scripts/check_api_env.py</code> and select GPU option (updates runtime_config.json), install ML extras (<code>uv sync --python 3.11 --extra ml</code>), run <code>scripts/setup-gpu.py --download-models</code>, restart the server, and rebuild the FAISS index. See <a href="/docs/manual#9-cpu-only-mode" target="_blank">CPU-Only Mode docs</a> for details.</small></p>
   </div>
   <div class="info-box">
     <h3>New User Setup (CPU-Only)</h3>
@@ -28,9 +28,10 @@
         </ul>
         <small class="muted">See <code>.env.sample</code> for complete list of available configuration options. Changes take effect on next import/export operation (no restart needed).</small>
       </li>
-      <li>Run the CPU-only setup script:
+      <li>Run diagnostics and setup:
         <ul>
-          <li><code>CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py</code></li>
+          <li><code>python scripts/check_api_env.py</code> (select CPU-only mode)</li>
+          <li><code>python scripts/setup-cpu.py</code></li>
         </ul>
       </li>
       <li>Start the server and begin using the Settings dashboard</li>

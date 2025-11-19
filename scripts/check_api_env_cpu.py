@@ -15,13 +15,12 @@ import textwrap
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-MODEL_SELECTION_PATH = DATA_DIR / "model_selection.json"
-SUPPORT_PROMPT_PATH = DATA_DIR / "support_prompt.txt"
+RUNTIME_CONFIG_PATH = DATA_DIR / "runtime_config.json"
 
 
 def _extend_sys_path() -> None:
@@ -31,8 +30,6 @@ def _extend_sys_path() -> None:
 
 
 _extend_sys_path()
-
-from src.api.services import gpu_installer  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
@@ -102,48 +99,57 @@ def _ensure_api_stopped(api_url: str, force: bool) -> None:
         sys.exit(1)
 
 
-def _detect_gpu_state() -> Dict[str, Any]:
-    # Force CPU backend for CPU-only script
-    priority = ["cpu"]
-    backend_override = "cpu"
-    state, cached = gpu_installer.ensure_gpu_state(priority, backend_override, force_detect=True)
-    logger.debug("GPU state (cached=%s): %s", cached, state)
-    return state
-
-
-def _recommend_models(backend: str, vram_gb: Optional[float]) -> Dict[str, str]:
-    """Recommend embedding/reranker models for CPU-only mode."""
-    # CPU-only mode uses small models for efficiency
-    EMB_SMALL = ("Qwen/Qwen3-Embedding-0.6B-GGUF", "Q8_0")
-    RER_SMALL_Q8 = ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q8_0")
-
-    emb_repo, emb_quant = EMB_SMALL
-    rer_repo, rer_quant = RER_SMALL_Q8
-
-    return {
-        "embedding_repo": emb_repo,
-        "embedding_quant": emb_quant,
-        "reranker_repo": rer_repo,
-        "reranker_quant": rer_quant,
-    }
-
-
-def _save_model_selection(selection: Dict[str, str]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+def _get_system_memory_gb() -> Optional[float]:
+    """Best-effort detection of total system memory in GB."""
     try:
-        existing: Optional[Dict[str, Any]] = None
-        if MODEL_SELECTION_PATH.exists():
-            with MODEL_SELECTION_PATH.open("r", encoding="utf-8") as fh:
-                existing = json.load(fh)
-        if isinstance(existing, dict) and all(existing.get(k) == v for k, v in selection.items()):
-            logger.info("Model selection unchanged; keeping existing %s", MODEL_SELECTION_PATH)
-            return
-    except (json.JSONDecodeError, OSError):
-        existing = None
+        if hasattr(os, "sysconf"):
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            phys_pages = os.sysconf("SC_PHYS_PAGES")
+            if isinstance(page_size, int) and isinstance(phys_pages, int):
+                return (page_size * phys_pages) / (1024 ** 3)
+    except (OSError, ValueError, AttributeError):
+        pass
 
-    with MODEL_SELECTION_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(selection, fh, indent=2)
-    logger.info("Saved model selection to %s", MODEL_SELECTION_PATH)
+    if sys.platform == "win32":
+        try:
+            import ctypes as _ctypes
+
+            class MEMORYSTATUSEX(_ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", _ctypes.c_ulong),
+                    ("dwMemoryLoad", _ctypes.c_ulong),
+                    ("ullTotalPhys", _ctypes.c_ulonglong),
+                    ("ullAvailPhys", _ctypes.c_ulonglong),
+                    ("ullTotalPageFile", _ctypes.c_ulonglong),
+                    ("ullAvailPageFile", _ctypes.c_ulonglong),
+                    ("ullTotalVirtual", _ctypes.c_ulonglong),
+                    ("ullAvailVirtual", _ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", _ctypes.c_ulonglong),
+                ]
+
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = _ctypes.sizeof(MEMORYSTATUSEX)
+            if _ctypes.windll.kernel32.GlobalMemoryStatusEx(_ctypes.byref(stat)):  # type: ignore[attr-defined]
+                return stat.ullTotalPhys / (1024 ** 3)
+        except Exception:  # noqa: BLE001
+            return None
+
+    return None
+
+
+
+
+def _save_runtime_config(backend: str) -> None:
+    """Save runtime configuration to runtime_config.json."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config = {
+        "backend": backend,
+        "detected_at": None,  # CPU mode doesn't need detection timestamp
+        "status": "configured",
+    }
+    with RUNTIME_CONFIG_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(config, fh, indent=2)
+    logger.info("Saved runtime configuration to %s", RUNTIME_CONFIG_PATH)
 
 
 def main() -> None:
@@ -153,47 +159,28 @@ def main() -> None:
     _ensure_api_stopped(args.api_url, args.force)
 
     print("Running CHL environment diagnostics (CPU-only mode)...")
-    gpu_state = _detect_gpu_state()
-    backend = gpu_state.get("backend", "cpu")
 
-    vram_info = gpu_installer.get_vram_info(gpu_state)
-    prereq = gpu_installer.prerequisite_check(gpu_state)
+    # CPU-only mode: no GPU detection or prerequisite checks needed
+    backend = "cpu"
+    memory_gb = _get_system_memory_gb()
 
-    # CPU mode doesn't need wheel metadata checks
-    prereq_status = prereq.get("status") if isinstance(prereq, dict) else "unknown"
-    prereq_ok = prereq_status in {"ok", "warn"}
+    # Save runtime configuration
+    _save_runtime_config(backend)
 
-    if prereq_ok:
-        vram_gb = vram_info.get("vram_gb") if vram_info else None
-        selection = _recommend_models(backend, vram_gb)
-        _save_model_selection(selection)
+    print("\n✓ Environment diagnostics completed successfully.\n")
+    print(f"  - Detected backend: {backend}")
+    if memory_gb:
+        print(f"  - System memory: {memory_gb:.2f} GB")
+    print("  - CPU-only mode: No GPU dependencies required")
+    print("  - No embedding or reranker models needed (uses SQLite keyword search)")
+    print(f"  - Runtime config saved to: {RUNTIME_CONFIG_PATH}")
 
-        print("\n✓ Environment diagnostics completed successfully.\n")
-        print(f"  - Detected backend: {backend}")
-        if vram_info:
-            print(f"  - System memory: {vram_info['vram_gb']} GB (via {vram_info['method']})")
-        print("  - CPU-only mode: No GPU dependencies required")
-        print("  - Recommended models:")
-        print(f"      Embedding: {selection['embedding_repo']} [{selection['embedding_quant']}]")
-        print(f"      Reranker:  {selection['reranker_repo']} [{selection['reranker_quant']}]")
+    print("\nYou can now start the API server with:")
+    print("  python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000")
+    print("\nNote: CPU mode uses SQLite text search (LIKE queries) instead of semantic similarity.")
+    print("Note: No vector search, embedding models, or FAISS index in CPU mode.")
 
-        print("\nSuggested CHL_SEARCH_MODE: cpu (CPU-only)")
-        print("\nNote: CPU mode uses SQLite text search (LIKE queries) instead of semantic similarity.")
-
-        sys.exit(0)
-
-    # Failure path (unlikely for CPU mode, but included for completeness)
-    print("\n✗ Environment diagnostics found issues.\n")
-    print(f"  - Prerequisite status: {prereq_status}")
-    issues = prereq.get("issues") or []
-    if issues:
-        print("  - Issues:")
-        for issue in issues:
-            print(f"      - {issue}")
-
-    print("\nPlease resolve the issues above before proceeding with installation.")
-
-    sys.exit(1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

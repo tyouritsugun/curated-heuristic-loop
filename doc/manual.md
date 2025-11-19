@@ -39,12 +39,11 @@ uv run python scripts/setup-gpu.py
 
 **Command (CPU-only mode):**
 ```bash
-CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
+python scripts/setup-cpu.py
 ```
 
 **What CPU-only setup does:**
-1. Verifies `CHL_SEARCH_MODE=cpu` is set
-2. Creates the `data/` directory (no FAISS directory)
+1. Creates the `data/` directory (no FAISS directory)
 3. Initializes the SQLite database (`chl.db`)
 4. Seeds default categories and sample entries
 5. Validates credential paths (non-fatal if missing)
@@ -169,14 +168,15 @@ The system is pre-configured with the following categories. You can add more as 
   - `pull_request` (`PRQ`)
 
 ### 6.2. Environment Variables
-While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. See the old `manual.md` for a complete list if needed. Key variables include:
+While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. Key variables include:
 - `CHL_EXPERIENCE_ROOT` - Path to data directory
 - `CHL_DATABASE_PATH` - Path to SQLite database file
-- `CHL_SEARCH_MODE` - Search mode (`auto` or `cpu`); see section 9 for details
 - `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
 - `CHL_EMBEDDING_N_GPU_LAYERS` / `CHL_RERANKER_N_GPU_LAYERS` - Optional GPU offload depth for GGUF models (`0` = CPU-only, `-1` = all layers, `N` = first N layers). Works with Metal, CUDA, and ROCm wheels.
 - `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
 - `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
+
+**Note:** The backend (cpu/metal/cuda/rocm) is automatically determined from `data/runtime_config.json` (created by `scripts/check_api_env.py`). No manual configuration needed.
 
 For a complete list of configuration options, see [src/common/config/config.py](../src/common/config/config.py).
 
@@ -209,19 +209,22 @@ Install CHL without ML extras:
 uv sync --python 3.11
 ```
 
-Set the search mode in `.env`:
+Run diagnostics to configure CPU mode:
 ```bash
-CHL_SEARCH_MODE=cpu
+python scripts/check_api_env.py
+# Select option 1 for CPU-only mode
+# This creates data/runtime_config.json with backend="cpu"
 ```
 
 Run setup (no ML model downloads):
 ```bash
-CHL_SEARCH_MODE=cpu python scripts/setup-cpu.py
+python scripts/setup-cpu.py
 ```
 
 Start the server:
 ```bash
-CHL_SEARCH_MODE=cpu python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+# Backend is automatically detected from data/runtime_config.json
 ```
 
 ### 9.3. Behavior Differences
@@ -245,15 +248,17 @@ Since SQLite text search uses literal keyword matching:
 ### 9.5. Switching Modes
 
 **From CPU-only to GPU mode:**
-1. Set `CHL_SEARCH_MODE=auto` in `.env`
+1. Run diagnostics: `python scripts/check_api_env.py` and select GPU option
+   - This updates `data/runtime_config.json` with the detected GPU backend (metal/cuda/rocm)
 2. Install ML extras: `uv sync --python 3.11 --extra ml`
 3. Download models: `uv run python scripts/setup-gpu.py --download-models`
-4. Restart the API/MCP server
+4. Restart the API/MCP server (backend auto-detected from runtime_config.json)
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
 
 **From GPU to CPU-only mode:**
-1. Set `CHL_SEARCH_MODE=cpu` in `.env`
-2. Restart the API/MCP server
+1. Run diagnostics: `python scripts/check_api_env.py` and select option 1 (CPU-only)
+   - This updates `data/runtime_config.json` with backend="cpu"
+2. Restart the API/MCP server (backend auto-detected from runtime_config.json)
 3. FAISS artifacts remain on disk but are ignored
 4. Any pending embedding tasks are dropped on restart
 

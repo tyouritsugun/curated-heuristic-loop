@@ -27,30 +27,31 @@ def _with_env(env: dict):
 
 
 def test_config_initializes_in_cpu_mode(tmp_path: Path):
-    from src.common.config.config import Config, SearchMode
+    from src.common.config.config import Config
     data_dir = tmp_path / "data"
     with _with_env({
         "CHL_EXPERIENCE_ROOT": str(data_dir),
-        "CHL_SEARCH_MODE": "cpu",
+        "CHL_BACKEND": "cpu",
     }):
         cfg = Config()
-        # search_mode remains a lowercase string for compatibility
-        assert cfg.search_mode == "cpu"
-        # Enum and helpers expose the structured mode
-        assert cfg.search_mode_enum is SearchMode.CPU
+        # backend is cpu
+        assert cfg.backend == "cpu"
+        # Helper methods work
         assert cfg.is_cpu_only() is True
         assert cfg.is_semantic_enabled() is False
+        # search_mode property provides backward compat
+        assert cfg.search_mode == "cpu"
         # Experience root created
         assert Path(cfg.experience_root).exists()
         # FAISS index dir is not auto-created in CPU mode
         assert not Path(cfg.faiss_index_path).exists()
 
 
-def test_config_invalid_search_mode_raises(tmp_path: Path):
+def test_config_invalid_backend_raises(tmp_path: Path):
     from src.common.config.config import Config
     with _with_env({
         "CHL_EXPERIENCE_ROOT": str(tmp_path),
-        "CHL_SEARCH_MODE": "bogus_mode",
+        "CHL_BACKEND": "bogus_mode",
     }):
         with pytest.raises(ValueError):
             Config()

@@ -13,14 +13,14 @@ from src.api.services.worker_control import WorkerControlService
 
 
 def build_mode_runtime(config: Config, db: Database, worker_control: WorkerControlService) -> ModeRuntime:
-    """Build ModeRuntime based on CHL_SEARCH_MODE.
+    """Build ModeRuntime based on backend configuration.
 
-    This function delegates to CPU or GPU runtime builders depending on
-    configuration. GPU mode builder is expected to handle missing GPU
-    prerequisites gracefully and fall back if needed.
+    The backend is automatically determined from runtime_config.json (created by
+    scripts/check_api_env.py). CPU backend uses text search only, GPU backends
+    (metal/cuda/rocm) use vector search with graceful fallback to text search.
     """
-    mode = getattr(config, "search_mode", "auto")
-    if mode == "cpu":
+    backend = getattr(config, "backend", "cpu")
+    if backend == "cpu":
         return build_cpu_runtime(config, db, worker_control)
-    # Default to GPU-capable runtime for "auto"
+    # GPU backends (metal, cuda, rocm) all use the GPU runtime
     return build_gpu_runtime(config, db, worker_control)

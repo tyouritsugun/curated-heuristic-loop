@@ -190,8 +190,8 @@ def check_env_var_documentation(doc_path: Path) -> Tuple[List[str], List[str]]:
     content = doc_path.read_text()
 
     # Common environment variables that should be documented
+    # Note: CHL_BACKEND is optional (runtime_config.json used instead)
     expected_vars = {
-        "CHL_SEARCH_MODE",
         "CHL_API_BASE_URL",
         "CHL_DATABASE_PATH",
         "CHL_EXPERIENCE_ROOT",
