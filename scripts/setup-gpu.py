@@ -929,32 +929,6 @@ def validate_setup(config) -> bool:
     return True
 
 
-def print_next_steps():
-    """Print next steps for user"""
-    print("\n" + "="*60)
-    print("  Setup Complete!")
-    print("="*60)
-
-    print("\nNext steps:\n")
-
-    print("  1. Start the FastAPI server:")
-    print("     uv run uvicorn src.api.server:app --host 127.0.0.1 --port 8000\n")
-    print("  2. Visit http://127.0.0.1:8000/settings to finish onboarding, then open /operations to rebuild or upload a FAISS snapshot.")
-    print("  3. (Optional) Rebuild index from scratch:")
-    print("     python scripts/rebuild_index.py\n")
-
-    selection = load_selected_models()
-    print("\nActive models:")
-    print(f"  Embedding: {format_model_display(selection['embedding_repo'], selection['embedding_quant'])}")
-    print(f"  Reranker: {format_model_display(selection['reranker_repo'], selection['reranker_quant'])}")
-    print("\nTo change models later, run:")
-    print("  python scripts/setup-gpu.py --download-models\n")
-
-    print("For more information, see:")
-    print("  - doc/script_commands.md")
-    print("  - doc/concept.md\n")
-
-
 def check_platform():
     """Check if platform is supported"""
     system = platform.system()
@@ -1116,9 +1090,6 @@ def main():
             # Not fatal for overall setup, but we log and continue so that
             # operators can still start the API server and inspect logs.
             logger.warning("Initial embedding/FAISS index build encountered issues; see logs for details.")
-
-        # 9. Print next steps
-        print_next_steps()
 
     except KeyboardInterrupt:
         print("\n\nSetup interrupted by user")
