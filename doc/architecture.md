@@ -136,12 +136,12 @@ Shared utilities used by both API and MCP servers.
 
 CLI tools for setup, maintenance, and data synchronization. Scripts run from the **API server's venv**, not via `uv run`.
 
-**HTTP-First Scripts:**
-- `import.py` - Pull data from Google Sheets (uses API endpoints + direct DB)
-- `export.py` - Push data to Google Sheets (uses API endpoints + direct DB)
+**HTTP-First Scripts (API endpoints):**
+- `import.py` - Pull data from Google Sheets via API
+- `export.py` - Push data to Google Sheets via API
 - `rebuild_index.py` - Rebuild FAISS/FTS index (HTTP orchestration)
 - `sync_embeddings.py` - Sync embeddings for all entries (GPU mode, HTTP)
-- `search_health.py` - Check search system health (HTTP)
+- `search_health.py` - Check search system health (HTTP; falls back to direct DB/FAISS inspection only if the API is unreachable)
 - `seed_default_content.py` - Load starter content (HTTP)
 
 **Setup Scripts (Exception to HTTP-First Rule):**

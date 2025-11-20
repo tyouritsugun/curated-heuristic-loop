@@ -7,11 +7,11 @@ This manual covers the setup, daily workflows, and operational tasks for the Cur
 This section guides you through the first-time setup of the CHL environment.
 
 ### 1.1. Quick Start
-For the fastest setup, please follow the **Quick Start** guide in the main [README.md](../README.md). It will guide you through installing dependencies and starting the web server. The rest of this manual assumes you have completed those steps.
+For step-by-step installation, follow the **Quick Start** in [README.md](../README.md). This manual focuses on day-to-day operations; only a condensed install summary is included here.
 
 **Choose your installation mode:**
-- **GPU mode** (recommended for semantic search): Install with `--extra ml` for semantic search using FAISS and embeddings. Requires ≥8 GB VRAM. Enables conceptual query matching (e.g., "best practices" matches "recommended approaches").
-- **CPU-only mode** (keyword search): Install without ML extras for keyword search using SQLite text matching. Use when GPU resources are unavailable or when literal keyword matching is sufficient for your use case.
+- **GPU mode** (recommended for semantic search): Use the API server venv with the platform requirements file (`requirements_apple.txt` or `requirements_cuda.txt`) for FAISS + embeddings. Requires ≥8 GB VRAM.
+- **CPU-only mode** (keyword search): Use the API server venv with `requirements_cpu.txt` for SQLite text search (no ML dependencies).
 
 **Decision guidance:**
 - Have ≥8 GB VRAM and need semantic search? → GPU mode
@@ -27,7 +27,8 @@ The setup scripts initialize your local environment. Choose the appropriate scri
 
 **Command (GPU mode):**
 ```bash
-uv run python scripts/setup-gpu.py
+# In the API server venv you created with requirements_apple.txt or requirements_cuda.txt
+python scripts/setup-gpu.py
 ```
 
 **What GPU setup does:**
@@ -39,6 +40,7 @@ uv run python scripts/setup-gpu.py
 
 **Command (CPU-only mode):**
 ```bash
+# In the API server venv you created with requirements_cpu.txt
 python scripts/setup-cpu.py
 ```
 
@@ -58,7 +60,7 @@ After setup, you can seed the database with default categories and example entri
 
 **Command:**
 ```bash
-uv run python scripts/seed_default_content.py
+python scripts/seed_default_content.py
 ```
 This command is idempotent and also syncs the `generator.md` and `evaluator.md` guidelines into the `GLN` category.
 
@@ -104,16 +106,16 @@ This page is for day-to-day operational tasks.
 
 ## 4. Command-Line Operations
 
-For automation and scripting, use these command-line tools.
+For automation and scripting, activate the API server venv first, then use these tools.
 
 ### 4.1. Search and Indexing
 -   **Rebuild Search Index:** Regenerates embeddings and the FAISS index from scratch.
     ```bash
-    uv run python scripts/rebuild_index.py
+    python scripts/rebuild_index.py
     ```
 -   **Check Search Health:** Inspects the status of the search index and embeddings.
     ```bash
-    uv run python scripts/search_health.py
+    python scripts/search_health.py
     ```
 
 ### 4.2. Data Synchronization
@@ -121,11 +123,11 @@ Before running, ensure your `scripts/scripts_config.yaml` is configured with the
 
 -   **Export to Google Sheets:** Writes local `pending` entries to the review sheet.
     ```bash
-    uv run python scripts/export.py
+    python scripts/export.py
     ```
 -   **Import from Google Sheets:** Overwrites the local database with content from the published sheet. **This is a destructive operation.**
     ```bash
-    uv run python scripts/import.py --yes
+    python scripts/import.py --yes
     ```
 
 ## 5. API Server Operations
@@ -173,8 +175,9 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 - `CHL_DATABASE_PATH` - Path to SQLite database file
 - `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
 - `CHL_EMBEDDING_N_GPU_LAYERS` / `CHL_RERANKER_N_GPU_LAYERS` - Optional GPU offload depth for GGUF models (`0` = CPU-only, `-1` = all layers, `N` = first N layers). Works with Metal, CUDA, and ROCm wheels.
-- `CHL_REVIEW_SHEET_ID` - Google Sheets ID for review
-- `CHL_PUBLISHED_SHEET_ID` - Google Sheets ID for published entries
+- `GOOGLE_CREDENTIAL_PATH` - Service account JSON for Sheets access
+- `EXPORT_SPREADSHEET_ID` - Google Sheets ID for review/export
+- `IMPORT_SPREADSHEET_ID` - Google Sheets ID for published/import
 
 **Note:** The backend (cpu/metal/cuda/rocm) is automatically determined from `data/runtime_config.json` (created by `scripts/check_api_env.py`). No manual configuration needed.
 
@@ -182,8 +185,8 @@ For a complete list of configuration options, see [src/common/config/config.py](
 
 ## 7. Troubleshooting
 
--   **Script won't run:** Ensure you are in the project root and using the `uv` environment (`uv run ...`).
--   **Import errors:** Your dependencies may be out of sync. Run `uv sync --python 3.11 --extra ml`.
+-   **Script won't run:** Activate the API server venv (the one using `requirements_*.txt`) and run commands from the project root.
+-   **Import errors:** Your dependencies may be out of sync. Reinstall the platform requirements in the API server venv (e.g., `pip install -r requirements_cpu.txt` or `requirements_apple.txt`/`requirements_cuda.txt`).
 -   **Permission denied:** Make scripts executable with `chmod +x scripts/<script_name>.py`.
 
 ## 8. Script Development Guidelines
@@ -204,9 +207,15 @@ Use CPU-only mode when:
 
 ### 9.2. Installation
 
-Install CHL without ML extras:
+Install CHL without ML extras (API server venv):
 ```bash
-uv sync --python 3.11
+# Create and activate the API server venv
+python3 -m venv .venv-cpu
+source .venv-cpu/bin/activate  # Windows: .venv-cpu\Scripts\activate
+
+# Install API dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements_cpu.txt
 ```
 
 Run diagnostics to configure CPU mode:
@@ -250,17 +259,20 @@ Since SQLite text search uses literal keyword matching:
 **From CPU-only to GPU mode:**
 1. Run diagnostics: `python scripts/check_api_env.py` and select GPU option
    - This updates `data/runtime_config.json` with the detected GPU backend (metal/cuda/rocm)
-2. Install ML extras: `uv sync --python 3.11 --extra ml`
-3. Download models: `uv run python scripts/setup-gpu.py --download-models`
+2. Create/activate a GPU API server venv and install the matching requirements file:
+   - Apple Silicon: `python3.12 -m venv .venv-apple && source .venv-apple/bin/activate && pip install -r requirements_apple.txt`
+   - NVIDIA CUDA: `python3.11 -m venv .venv-cuda && source .venv-cuda/bin/activate && pip install -r requirements_cuda.txt`
+3. Download models and initialize: `python scripts/setup-gpu.py --download-models`
 4. Restart the API/MCP server (backend auto-detected from runtime_config.json)
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
 
 **From GPU to CPU-only mode:**
 1. Run diagnostics: `python scripts/check_api_env.py` and select option 1 (CPU-only)
    - This updates `data/runtime_config.json` with backend="cpu"
-2. Restart the API/MCP server (backend auto-detected from runtime_config.json)
-3. FAISS artifacts remain on disk but are ignored
-4. Any pending embedding tasks are dropped on restart
+2. Activate the CPU API server venv (`.venv-cpu`) with `requirements_cpu.txt` installed
+3. Restart the API/MCP server (backend auto-detected from runtime_config.json)
+4. FAISS artifacts remain on disk but are ignored
+5. Any pending embedding tasks are dropped on restart
 
 **Important**: FAISS snapshots built in GPU mode are NOT compatible with CPU-only mode. When switching between modes, you must rebuild from scratch in the target mode.
 

@@ -30,22 +30,24 @@ This loop ensures that individual learnings are systematically shared and improv
 - **Developer partners with the code assistant**
   1. The developer briefs the assistant using `@generator.md`: “Please help me write the page specification…”.
   2. The assistant loads `generator.md`, lists available categories, formulates the best query for `PGS`, and pulls matching experiences.
-  3. MCP queries SQLite + FAISS, returns scored candidates, and the assistant applies the most relevant guidance in its response.
+  3. MCP calls the API over HTTP; the API queries SQLite and FAISS, returns scored candidates, and the assistant applies the most relevant guidance in its response.
 ```mermaid
 flowchart LR
     Dev[Developer] -->|brief with generator prompt| LLM[Code Assistant]
     LLM -->|list_categories + read| MCP
-    MCP -->|SQLite query| DB[(Local SQLite)]
-    MCP -->|FAISS search| FAISS[(FAISS Index)]
-    FAISS --> MCP
-    DB --> MCP
-    MCP -->|ranked experiences| LLM
+    MCP -->|HTTP tools| API[API Server]
+    API -->|SQLite query| DB[(Local SQLite)]
+    API -->|FAISS search| FAISS[(FAISS Index)]
+    DB --> API
+    FAISS --> API
+    API -->|ranked experiences| MCP
+    MCP -->|results| LLM
     LLM -->|guided response| Dev
 ```
 
 - **Assistant captures a new insight**
   - After the work session the developer prompts, "Please summarize our conversation and decide whether to add an atomic experience or update the manual. Reference `@evaluator.md`."
-  - The assistant reads `evaluator.md`, gathers similar entries via SQLite + FAISS, and decides:
+  - The assistant reads `evaluator.md`, gathers similar entries through the API (SQLite + FAISS), and decides:
     - **New atomic experience**: when guidance is focused and actionable; record `source='local'` and `sync_status='pending'.`
     - **Refactor atomic experiences**: when high similarity suggests overlap; propose orthogonal splits rather than merging.
     - **Update manual**: when the change is integrative background or cross-cutting context; keep the manual concise. Do not add global atomic heuristics to manuals.
@@ -55,14 +57,15 @@ flowchart LR
 flowchart TD
     Dev -->|evaluator prompt| LLM
     LLM -->|similarity query| MCP
-    MCP --> DB[(SQLite)]
-    MCP --> FAISS[(FAISS Index)]
-    DB --> MCP
-    FAISS --> MCP
-    MCP -->|decision| LLM
-    LLM -->|insert/update| MCP
-    MCP -->|write| DB
-    MCP -->|incremental update| FAISS
+    MCP -->|HTTP tools| API[API Server]
+    API --> DB[(SQLite)]
+    API --> FAISS[(FAISS Index)]
+    DB --> API
+    FAISS --> API
+    API -->|decision + scores| MCP
+    MCP -->|insert/update| API
+    API -->|write| DB
+    API -->|incremental update| FAISS
     LLM -->|summary returned| Dev
 ```
 
@@ -74,20 +77,22 @@ flowchart TD
 flowchart LR
     Dev -->|audit request| LLM
     LLM -->|retrieve history + results| MCP
-    MCP --> DB[(SQLite)]
-    MCP --> FAISS[(FAISS Index)]
-    DB --> MCP
-    FAISS --> MCP
+    MCP -->|HTTP tools| API[API Server]
+    API --> DB[(SQLite)]
+    API --> FAISS[(FAISS Index)]
+    DB --> API
+    FAISS --> API
+    API -->|prior results + local flags| MCP
     MCP -->|prior results + local flags| LLM
     LLM -->|report + next steps| Dev
 ```
 
 - **Curator runs retrospective**
-  1. Before retro, `uv run python scripts/export.py` writes the current SQLite dataset to the shared review sheet (worksheets configured in `scripts/scripts_config.yaml`).
+  1. Before retro, `python scripts/export.py` writes the current SQLite dataset to the shared review sheet (worksheets configured in `scripts/scripts_config.yaml`).
   2. Curators merge the submissions, apply duplicate guidance, and stage recommendations directly in Google Sheets.
   3. During the session, reviewers walk each tab, accept or merge clusters, edit titles/playbooks, and annotate merge targets.
   4. Approved entries populate the Published Sheet; rejected rows receive curator notes and stay local.
-  5. After publishing, teammates run `uv run python scripts/import.py --yes` to overwrite local entries and then rebuild/upload a FAISS snapshot (via `/operations` or `uv run python scripts/rebuild_index.py`) so vector search reflects the curated data.
+  5. After publishing, teammates run `python scripts/import.py --yes` to overwrite local entries and then rebuild/upload a FAISS snapshot (via `/operations` or `python scripts/rebuild_index.py`) so vector search reflects the curated data.
 ```mermaid
 flowchart TD
     Exporter[export.py] --> ReviewSheet[Google Review Sheet]

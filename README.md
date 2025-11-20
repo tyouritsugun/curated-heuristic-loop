@@ -49,6 +49,8 @@ The API server automatically uses the backend from `runtime_config.json` - no ma
 
 If you have Python 3.13 and want GPU acceleration, install a compatible version (e.g., `brew install python@3.12` or `python3.12`) alongside it.
 
+**Need a guide?** If you are not confident with Python/FAISS/GPU setup, open this repo in your preferred code assistant (Claude Code, Codex, Cursor, Gemini CLI, etc.) and ask it to walk you through the install. Some steps may still need manual permission/security approvals, but an assistant can simplify the process. This project assumes an engineering audience, so leaning on a code assistant is expected.
+
 ### Step 1: Install API Server
 
 Choose your hardware platform and install the API server runtime:
@@ -356,6 +358,8 @@ claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/pa
 command = "uv"
 args = ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
 ```
+
+**MCP agent behavior:** To keep assistants from forgetting to call MCP tools or to prompt for reflections, copy the checklist in `AGENTS.md` into your assistant’s common instructions.
 
 **Note:** All environment variables have defaults and are optional:
 - `CHL_API_BASE_URL` defaults to `http://localhost:8000`

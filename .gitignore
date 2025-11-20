@@ -26,6 +26,7 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+tests/
 
 # Credentials and sensitive files
 credentials/
