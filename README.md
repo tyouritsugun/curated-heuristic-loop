@@ -157,9 +157,9 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 </details>
 
 <details>
-<summary><b>Option C: NVIDIA CUDA GPU Acceleration</b></summary>
+<summary><b>Option C: NVIDIA GPU Acceleration</b></summary>
 
-**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with CUDA acceleration.
+**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration.
 
 **Prerequisites:**
 - NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer: GTX 1060+, RTX series, etc.)
@@ -174,13 +174,13 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 ```bash
 # Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
 # Use full path if you have conda/uv Python that conflicts:
-/usr/bin/python3.11 -m venv .venv-cuda  # Or python3.11 if no PATH conflicts
-source .venv-cuda/bin/activate  # On Windows: .venv-cuda\Scripts\activate
+/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.11 if no PATH conflicts
+source .venv-nvidia/bin/activate  # On Windows: .venv-nvidia\Scripts\activate
 
 # Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
 python -m pip install --upgrade pip
 PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
-  python -m pip install -r requirements_cuda.txt
+  python -m pip install -r requirements_nvidia.txt
 ```
 
 **Troubleshooting:** If `python3.11 -m venv` fails with ensurepip errors and you have conda/uv installed, use the full system path `/usr/bin/python3.11` instead of just `python3.11` to avoid PATH conflicts.
@@ -188,9 +188,9 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
 </details>
 
 <details>
-<summary><b>Option D: AMD ROCm GPU Acceleration</b> (TBD)</summary>
+<summary><b>Option D: AMD GPU Acceleration</b> (TBD)</summary>
 
-**Best for:** Linux with AMD GPU (RDNA2 or newer), want semantic search with ROCm acceleration.
+**Best for:** Linux with AMD GPU (RDNA2 or newer), want semantic search with GPU acceleration.
 
 **Status:** Requirements file and installation instructions to be added in future release.
 
@@ -202,10 +202,10 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
 
 **Planned installation:**
 ```bash
-# TBD: requirements_rocm.txt to be created
-python -m venv .venv-rocm
-source .venv-rocm/bin/activate
-pip install -r requirements_rocm.txt  # Not yet available
+# TBD: requirements_amd.txt to be created
+python -m venv .venv-amd
+source .venv-amd/bin/activate
+pip install -r requirements_amd.txt  # Not yet available
 ```
 
 </details>
@@ -257,10 +257,10 @@ source .venv-cpu/bin/activate
 python scripts/setup-cpu.py
 ```
 
-**For GPU modes (Apple Metal or NVIDIA CUDA):**
+**For GPU modes (Apple Metal or NVIDIA):**
 ```bash
 # Activate API server venv
-source .venv-apple/bin/activate  # Or .venv-cuda, .venv-rocm,.venv-intel
+source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
 
 # Download models and initialize database using recommended/active models
 python scripts/setup-gpu.py
@@ -271,14 +271,25 @@ python scripts/setup-gpu.py --select-models
 
 ### Step 4: Start API Server
 
-**All modes (CPU and GPU):**
+**Quick start (recommended):**
+```bash
+# macOS/Linux: Run the startup script
+./start-chl.sh
+
+# Windows: Run the startup script
+start-chl.bat
+```
+
+The startup script automatically detects your installed venv (CPU, Apple Metal, CUDA, etc.) and starts the API server on http://127.0.0.1:8000.
+
+**Manual start (alternative):**
 ```bash
 # Activate the appropriate venv
 source .venv-cpu/bin/activate      # For CPU mode
 # OR
 source .venv-apple/bin/activate    # For Apple Metal
 # OR
-source .venv-cuda/bin/activate     # For NVIDIA CUDA
+source .venv-nvidia/bin/activate   # For NVIDIA GPU
 
 # Start the API server (automatically uses backend from runtime_config.json)
 python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
@@ -378,7 +389,7 @@ Only add `env` section if you need non-default values.
 **Switching from CPU-only to GPU mode:**
 1. Stop the API server
 2. Run `python scripts/check_api_env.py` and select GPU option (this updates `runtime_config.json`)
-3. Create new GPU venv (`.venv-apple` or `.venv-cuda`) and install corresponding requirements file
+3. Create new GPU venv (`.venv-apple` or `.venv-nvidia`) and install corresponding requirements file
 4. Run `python scripts/setup-gpu.py --download-models`
 5. Start API server (automatically uses GPU backend from `runtime_config.json`)
 6. Rebuild embeddings/FAISS via `/operations` or `scripts/rebuild_index.py`
@@ -398,7 +409,7 @@ All scripts run from the API server's venv (NOT via `uv run`):
 
 **Activate API server venv first:**
 ```bash
-source .venv-cpu/bin/activate  # Or .venv-apple / .venv-cuda
+source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
 ```
 
 **Then run scripts:**

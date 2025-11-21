@@ -157,7 +157,7 @@ def check_requirements_references(doc_path: Path, project_root: Path) -> List[st
 
     # Requirements files that are planned but not yet implemented (TBD)
     tbd_requirements = {
-        'requirements_rocm.txt',  # AMD ROCm support (TBD per README)
+        'requirements_amd.txt',  # AMD GPU support (TBD per README)
         'requirements_intel.txt',  # Intel GPU support (TBD per README)
     }
 

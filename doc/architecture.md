@@ -424,7 +424,7 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 **Platform-Specific Installation:**
 - CPU-only: `requirements_cpu.txt` (no ML dependencies)
 - Apple Metal: `requirements_apple.txt` (Metal-accelerated ML)
-- NVIDIA CUDA: `requirements_cuda.txt` (CUDA-accelerated ML)
+- NVIDIA GPU: `requirements_nvidia.txt` (CUDA-accelerated ML)
 
 **Core Dependencies:**
 - Storage: SQLite with SQLAlchemy ORM

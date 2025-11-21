@@ -151,7 +151,7 @@ def validate_core_dependencies(
         if not apple_pkg:
             missing.append("requirements_apple.txt")
         if not cuda_pkg:
-            missing.append("requirements_cuda.txt")
+            missing.append("requirements_nvidia.txt")
 
         if missing:
             print(f"❌ {pkg_name}: Missing from {', '.join(missing)}")
@@ -214,19 +214,19 @@ def validate_ml_dependencies(
         all_valid = False
 
     if missing_cuda:
-        print(f"❌ requirements_cuda.txt missing ML packages: {', '.join(missing_cuda)}")
+        print(f"❌ requirements_nvidia.txt missing ML packages: {', '.join(missing_cuda)}")
         all_valid = False
 
-    # Check ML package versions match between Apple and CUDA
+    # Check ML package versions match between Apple and NVIDIA
     for pkg_name in ml_package_names:
         apple_pkg = apple_pkgs.get(pkg_name)
         cuda_pkg = cuda_pkgs.get(pkg_name)
 
         if apple_pkg and cuda_pkg:
             if apple_pkg.version_spec != cuda_pkg.version_spec:
-                print(f"⚠️  {pkg_name}: Version mismatch between Apple and CUDA")
+                print(f"⚠️  {pkg_name}: Version mismatch between Apple and NVIDIA")
                 print(f"   Apple: {apple_pkg.version_spec}")
-                print(f"   CUDA:  {cuda_pkg.version_spec}")
+                print(f"   NVIDIA:  {cuda_pkg.version_spec}")
                 # This is a warning, not a hard failure
                 # (some platform-specific versions may be intentional)
 
@@ -317,7 +317,7 @@ def main() -> int:
 
     cpu_file = project_root / "requirements_cpu.txt"
     apple_file = project_root / "requirements_apple.txt"
-    cuda_file = project_root / "requirements_cuda.txt"
+    cuda_file = project_root / "requirements_nvidia.txt"
 
     # Parse requirements files
     print("📂 Loading requirements files...")
@@ -325,9 +325,9 @@ def main() -> int:
     apple_pkgs = parse_requirements_file(apple_file)
     cuda_pkgs = parse_requirements_file(cuda_file)
 
-    print(f"   CPU:   {len(cpu_pkgs)} packages")
-    print(f"   Apple: {len(apple_pkgs)} packages")
-    print(f"   CUDA:  {len(cuda_pkgs)} packages")
+    print(f"   CPU:    {len(cpu_pkgs)} packages")
+    print(f"   Apple:  {len(apple_pkgs)} packages")
+    print(f"   NVIDIA: {len(cuda_pkgs)} packages")
     print()
 
     # Run validation checks

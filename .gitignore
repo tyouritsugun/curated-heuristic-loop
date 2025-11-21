@@ -7,14 +7,16 @@ __pycache__/
 .venv/
 .venv-cpu/
 .venv-apple/
-.venv-cuda/
-.venv-rocm/
+.venv-nvidia/
+.venv-amd/
 .venv-intel/
-venv/
+.venv-mcp/
+.venv-cuda/
 ENV/
 env/
 .mypy_cache/
 .claude/
+.uv-cache
 
 # IDE
 .vscode/

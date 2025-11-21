@@ -39,10 +39,10 @@ try:
     from llama_cpp import Llama, llama_supports_gpu_offload
 except ImportError as e:
     print(f"❌ Missing dependency: {e}")
-    print("\nPlease install CUDA dependencies:")
+    print("\nPlease install NVIDIA GPU dependencies:")
     print("  python -m pip install --upgrade pip")
     print("  CMAKE_ARGS='-DGGML_CUDA=on' \\")
-    print("    python -m pip install -r requirements_cuda.txt")
+    print("    python -m pip install -r requirements_nvidia.txt")
     sys.exit(1)
 
 

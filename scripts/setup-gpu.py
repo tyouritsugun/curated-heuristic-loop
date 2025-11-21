@@ -80,7 +80,7 @@ try:
 except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirements install
     sys.stderr.write(
         "Missing dependencies for setup. Install platform requirements first, e.g.:\n"
-        "  pip install -r requirements_apple.txt  # or requirements_cuda.txt\n"
+        "  pip install -r requirements_apple.txt  # or requirements_nvidia.txt\n"
         f"Import error: {exc}\n"
     )
     raise SystemExit(1) from exc

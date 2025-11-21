@@ -8,8 +8,8 @@
 #   - NVIDIA drivers with compatible CUDA runtime installed
 #
 # Installation:
-#   python -m venv .venv-cuda
-#   source .venv-cuda/bin/activate
+#   python -m venv .venv-nvidia
+#   source .venv-nvidia/bin/activate
 #   python -m pip install --upgrade pip
 #
 #   # Use abetlen's CUDA wheel index for llama-cpp-python (cu124 for CUDA 12.x)

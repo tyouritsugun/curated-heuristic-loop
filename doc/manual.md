@@ -10,7 +10,7 @@ This section guides you through the first-time setup of the CHL environment.
 For step-by-step installation, follow the **Quick Start** in [README.md](../README.md). This manual focuses on day-to-day operations; only a condensed install summary is included here.
 
 **Choose your installation mode:**
-- **GPU mode** (recommended for semantic search): Use the API server venv with the platform requirements file (`requirements_apple.txt` or `requirements_cuda.txt`) for FAISS + embeddings. Requires ≥8 GB VRAM.
+- **GPU mode** (recommended for semantic search): Use the API server venv with the platform requirements file (`requirements_apple.txt` or `requirements_nvidia.txt`) for FAISS + embeddings. Requires ≥8 GB VRAM.
 - **CPU-only mode** (keyword search): Use the API server venv with `requirements_cpu.txt` for SQLite text search (no ML dependencies).
 
 **Decision guidance:**
@@ -29,7 +29,7 @@ The setup scripts initialize your local environment. Choose the appropriate scri
 
 **Command (GPU mode):**
 ```bash
-# In the API server venv you created with requirements_apple.txt or requirements_cuda.txt
+# In the API server venv you created with requirements_apple.txt or requirements_nvidia.txt
 python scripts/setup-gpu.py
 ```
 
@@ -191,14 +191,14 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 - `EXPORT_SPREADSHEET_ID` - Google Sheets ID for review/export
 - `IMPORT_SPREADSHEET_ID` - Google Sheets ID for published/import
 
-**Note:** The backend (cpu/metal/cuda/rocm) is automatically determined from `data/runtime_config.json` (created by `scripts/check_api_env.py`). No manual configuration needed.
+**Note:** The backend (cpu/metal/nvidia/amd) is automatically determined from `data/runtime_config.json` (created by `scripts/check_api_env.py`). No manual configuration needed.
 
 For a complete list of configuration options, see [src/common/config/config.py](../src/common/config/config.py).
 
 ## 7. Troubleshooting
 
 -   **Script won't run:** Activate the API server venv (the one using `requirements_*.txt`) and run commands from the project root.
--   **Import errors:** Your dependencies may be out of sync. Reinstall the platform requirements in the API server venv (e.g., `pip install -r requirements_cpu.txt` or `requirements_apple.txt`/`requirements_cuda.txt`).
+-   **Import errors:** Your dependencies may be out of sync. Reinstall the platform requirements in the API server venv (e.g., `pip install -r requirements_cpu.txt` or `requirements_apple.txt`/`requirements_nvidia.txt`).
 -   **Permission denied:** Make scripts executable with `chmod +x scripts/<script_name>.py`.
 
 ## 8. Script Development Guidelines
@@ -274,10 +274,10 @@ Since SQLite text search uses literal keyword matching:
 **From CPU-only to GPU mode:**
 
 1. Run diagnostics: `python scripts/check_api_env.py` and select GPU option
-   - This updates `data/runtime_config.json` with the detected GPU backend (metal/cuda/rocm)
+   - This updates `data/runtime_config.json` with the detected GPU backend (metal/nvidia/amd)
 2. Create/activate a GPU API server venv and install the matching requirements file:
    - Apple Silicon: `python3.12 -m venv .venv-apple && source .venv-apple/bin/activate && pip install -r requirements_apple.txt`
-   - NVIDIA CUDA: `python3.11 -m venv .venv-cuda && source .venv-cuda/bin/activate && pip install -r requirements_cuda.txt`
+   - NVIDIA GPU: `python3.11 -m venv .venv-nvidia && source .venv-nvidia/bin/activate && pip install -r requirements_nvidia.txt`
 3. Download models and initialize: `python scripts/setup-gpu.py --download-models`
 4. Restart the API/MCP server (backend auto-detected from runtime_config.json)
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
