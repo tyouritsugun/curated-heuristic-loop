@@ -34,6 +34,12 @@ import json
 import logging
 from pathlib import Path
 
+# Ensure repo root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+root_str = str(PROJECT_ROOT)
+if root_str not in sys.path:
+    sys.path.insert(0, root_str)
+
 # Ensure project root is importable and config is available
 from src.common.config.config import ensure_project_root_on_sys_path, get_config  # noqa: E402
 

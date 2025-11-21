@@ -32,9 +32,6 @@
   {% endif %}
 
   <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
-    <div id="queue" class="full-span settings-section">
-      {% include "common/partials/ops_queue_card.html" %}
-    </div>
     <div id="jobs" class="full-span settings-section">
       {% include "common/partials/ops_jobs_card.html" %}
     </div>
