@@ -369,8 +369,8 @@ class OperationsService:
         """Import data from Google Sheets into the database.
 
         Supports two modes:
-        1. With payload: Import data from provided rows (called by scripts/import.py)
-        2. Without payload: Fetch data from Google Sheets and import (called from UI)
+        1. With payload: Import data from provided rows (API clients/automation)
+        2. Without payload: Fetch data from Google Sheets and import (used by the web UI)
         """
         from src.api.services.import_service import ImportService
         import os

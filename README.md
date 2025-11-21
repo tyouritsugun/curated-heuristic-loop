@@ -403,11 +403,13 @@ source .venv-cpu/bin/activate  # Or .venv-apple / .venv-cuda
 
 **Then run scripts:**
 - `python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences
-- `python scripts/export.py` – pushes local SQLite data to Google Sheets (uses `scripts/scripts_config.yaml`)
-- `python scripts/import.py --yes` – pulls from Sheets (coordinates with worker pool in GPU mode)
 - `python scripts/rebuild_index.py` – rebuilds FAISS index (GPU mode) or SQLite FTS (CPU mode)
 - `python scripts/sync_embeddings.py` – syncs embeddings for all entries (GPU mode only)
 - `python scripts/search_health.py` – checks search system health
+
+**Import/Export (API server):**
+- Use the `/operations` dashboard to run import/export without any CLI wrappers. Import pulls directly from the configured Google Sheet and overwrites the local database; export returns a JSON snapshot for review.
+- Programmatic calls: `curl -X POST http://localhost:8000/api/v1/operations/import-sheets -H 'Content-Type: application/json' -d '{}'` and `curl http://localhost:8000/api/v1/entries/export > /tmp/chl-export.json`
 
 > **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions that access internal components directly and must run with the API server stopped.
 

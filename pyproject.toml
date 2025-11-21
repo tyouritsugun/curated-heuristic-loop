@@ -38,10 +38,6 @@ test = [
     "pytest-mock>=3.14.0",
 ]
 
-# Note: The [ml] extra has been removed. ML dependencies are now part of the
-# API server's platform-specific requirements files. The MCP server does not
-# need direct access to ML libraries since all operations go through the API.
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

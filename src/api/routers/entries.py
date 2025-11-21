@@ -472,7 +472,7 @@ def update_entry(
 def export_entries(
     session: Session = Depends(get_db_session),
 ) -> Dict[str, Any]:
-    """Export all entries for scripts/export.py.
+    """Export all entries for Sheets/backup clients.
 
     Returns all experiences, manuals, and categories in a format suitable
     for exporting to Google Sheets or other external systems.

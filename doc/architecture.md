@@ -37,9 +37,11 @@ graph TB
         SEARCH[Search Providers<br/>CPU: SQLite Text<br/>GPU: FAISS + Embeddings]
     end
 
+    subgraph "Operations (API/UI)"
+        OPS[Import/Export/Index Jobs<br/>/operations + /api/v1/operations]
+    end
+
     subgraph "Scripts (scripts/) - API Server Venv"
-        EXPORT[export.py]
-        IMPORT[import.py]
         REBUILD[rebuild_index.py]
         SETUP[setup-gpu.py<br/>setup-cpu.py]
     end
@@ -53,8 +55,7 @@ graph TB
     RUNTIME --> SEARCH
     RUNTIME --> DB
     SRVCS --> SHEETS
-    EXPORT -.->|HTTP + Direct DB| ROUTERS
-    IMPORT -.->|HTTP + Direct DB| ROUTERS
+    OPS -->|HTTP| ROUTERS
     REBUILD -.->|HTTP + Direct DB| ROUTERS
     SETUP -->|Direct Access| RUNTIME
 ```
@@ -132,19 +133,22 @@ Shared utilities used by both API and MCP servers.
 - API server: May import all `src/common.*` modules
 - Scripts: May import `config`, `api_client`, `storage` (but run in API venv)
 
-### 2.4. Operational Scripts (`scripts/`)
+### 2.4. Operational Interfaces
 
-CLI tools for setup, maintenance, and data synchronization. Scripts run from the **API server's venv**, not via `uv run`.
+Prefer the API server for import/export/index operations; remaining scripts focus on setup and maintenance, and they all run from the **API server's venv** (not via `uv run`).
 
-**HTTP-First Scripts (API endpoints):**
-- `import.py` - Pull data from Google Sheets via API
-- `export.py` - Push data to Google Sheets via API
-- `rebuild_index.py` - Rebuild FAISS/FTS index (HTTP orchestration)
-- `sync_embeddings.py` - Sync embeddings for all entries (GPU mode, HTTP)
-- `search_health.py` - Check search system health (HTTP; falls back to direct DB/FAISS inspection only if the API is unreachable)
-- `seed_default_content.py` - Load starter content (HTTP)
+**API/UI jobs:**
+- Import from Google Sheets via `/operations` or `POST /api/v1/operations/import-sheets` (destructive; uses configured credentials/IDs)
+- Export the database snapshot via `/operations` or `GET /api/v1/entries/export` for JSON review/backup
+- Rebuild index, refresh embeddings, and sync guidelines via `/operations` (jobs: `rebuild-index`, `sync-embeddings`, `guidelines`)
 
-**Setup Scripts (Exception to HTTP-First Rule):**
+**Maintenance scripts (HTTP orchestration):**
+- `rebuild_index.py` - Rebuild FAISS/FTS index
+- `sync_embeddings.py` - Sync embeddings for all entries (GPU mode)
+- `search_health.py` - Check search system health (falls back to direct DB/FAISS inspection only if the API is unreachable)
+- `seed_default_content.py` - Load starter content
+
+**Setup Scripts (exception to HTTP-first rule):**
 - `setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
 - `setup-cpu.py` - Initialize database schema (direct DB access)
 - `smoke_test_cuda.py` - Test NVIDIA CUDA GPU components (direct API imports)
@@ -222,7 +226,7 @@ flowchart TD
     end
 
     subgraph "Export Stage"
-        EXPORT[scripts/export.py<br/>API Server Venv]
+        EXPORT[Operations Export<br/>/operations or API]
         REVIEW[Google Sheet<br/>Review Tab]
     end
 
@@ -232,11 +236,11 @@ flowchart TD
     end
 
     subgraph "Import Stage"
-        IMPORT[scripts/import.py<br/>API Server Venv]
+        IMPORT[Operations Import<br/>/api/v1/operations/import-sheets]
     end
 
-    DEV1 -->|export script| EXPORT
-    DEV2 -->|export script| EXPORT
+    DEV1 -->|export job| EXPORT
+    DEV2 -->|export job| EXPORT
     EXPORT --> REVIEW
     REVIEW --> CURATOR
     CURATOR -->|approve/merge| PUBLISHED
@@ -280,7 +284,7 @@ Performance layer for efficient vector search. Index is keyed by `experience_id`
 
 ### 4.3. Google Sheets
 
-Human-readable surface for team-based curation. Scripts generate a **Review Sheet** from local databases, and curators merge approved content into a **Published Sheet**, which is then consumed by `import.py` to update local databases across the team.
+Human-readable surface for team-based curation. The Operations export job generates a **Review Sheet** from local databases, and curators merge approved content into a **Published Sheet**, which is then consumed by the Import operation to update local databases across the team.
 
 ## 5. Key Architectural Decisions
 
@@ -465,7 +469,7 @@ uv run python -m src.mcp.server
 **Scripts** run from API server venv:
 ```bash
 source .venv-cpu/bin/activate
-python scripts/import.py --yes
+python scripts/rebuild_index.py  # example maintenance job (import/export run via /operations)
 ```
 
 ### 9.2. Concurrency Model
