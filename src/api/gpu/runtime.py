@@ -134,7 +134,7 @@ class GpuDiagnosticsAdapter(DiagnosticsModeAdapter):
             return {
                 "state": "ok",
                 "headline": "FAISS index ready",
-                "detail": f"{index_size_mb:.1f} MB · {vector_count} vectors · Built {built_date}",
+                "detail": f"{vector_count} vectors",
                 "validated_at": validated_at,
             }
 
