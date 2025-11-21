@@ -253,6 +253,24 @@
     .diag-row.warn .status-dot { background-color: #f59e0b; }
     .diag-row.error .status-dot { background-color: #ef4444; }
 
+    /* Info Box (for nested content) */
+    .info-box {
+      background-color: var(--background-color); /* Or slightly different? */
+      border: 1px solid var(--muted-border-color);
+      border-radius: 6px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .info-box h3 {
+      margin-top: 0;
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+    .info-box ul, .info-box ol {
+      margin-bottom: 0;
+      padding-left: 1.25rem;
+    }
+
     @media (max-width: 900px) {
       .diag-grid {
         grid-template-columns: 1fr 1fr;
