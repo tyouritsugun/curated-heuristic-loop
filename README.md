@@ -260,7 +260,7 @@ python scripts/setup-cpu.py
 **For GPU modes (Apple Metal or NVIDIA CUDA):**
 ```bash
 # Activate API server venv
-source .venv-apple/bin/activate  # Or .venv-cuda
+source .venv-apple/bin/activate  # Or .venv-cuda, .venv-rocm,.venv-intel
 
 # Download models and initialize database using recommended/active models
 python scripts/setup-gpu.py
