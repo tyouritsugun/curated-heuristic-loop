@@ -177,11 +177,6 @@ def main() -> None:
     print("  - No embedding or reranker models needed (uses SQLite keyword search)")
     print(f"  - Runtime config saved to: {RUNTIME_CONFIG_PATH}")
 
-    print("\nYou can now start the API server with:")
-    print("  python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000")
-    print("\nNote: CPU mode uses SQLite text search (LIKE queries) instead of semantic similarity.")
-    print("Note: No vector search, embedding models, or FAISS index in CPU mode.")
-
     sys.exit(0)
 
 

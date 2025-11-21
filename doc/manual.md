@@ -14,13 +14,15 @@ For step-by-step installation, follow the **Quick Start** in [README.md](../READ
 - **CPU-only mode** (keyword search): Use the API server venv with `requirements_cpu.txt` for SQLite text search (no ML dependencies).
 
 **Decision guidance:**
-- Have ≥8 GB VRAM and need semantic search? → GPU mode
+
+- Have ≥6 GB VRAM and need semantic search? → GPU mode
 - Limited VRAM or keyword search is sufficient? → CPU-only mode
 - Can switch modes later, but FAISS snapshots are NOT portable between modes
 
 See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running CHL without ML dependencies.
 
 ### 1.2. First-Time Setup Script
+
 The setup scripts initialize your local environment. Choose the appropriate script based on your setup:
 - `setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
 - `setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
@@ -32,6 +34,7 @@ python scripts/setup-gpu.py
 ```
 
 **What GPU setup does:**
+
 1. Creates the `data/` directory structure
 2. Initializes the SQLite database (`chl.db`)
 3. Downloads the required embedding and reranker models
@@ -45,12 +48,14 @@ python scripts/setup-cpu.py
 ```
 
 **What CPU-only setup does:**
+
 1. Creates the `data/` directory (no FAISS directory)
 3. Initializes the SQLite database (`chl.db`)
 4. Seeds default categories and sample entries
 5. Validates credential paths (non-fatal if missing)
 
 **When to use:**
+
 - After first cloning the repository
 - If your `data/` directory is deleted or corrupted
 - To re-download models after changing selection (GPU mode only)
@@ -69,6 +74,7 @@ This command is idempotent and also syncs the `generator.md` and `evaluator.md` 
 The CHL workflow is designed for developers, AI assistants, and curators to collaborate on building a shared knowledge base.
 
 ### 2.1. End-to-End Workflow
+
 1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`write_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
 2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/rebuild_index.py`. This process generates embeddings for all `pending` entries.
 3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using the API server's Operations dashboard (or `GET /api/v1/entries/export` for automation).
@@ -77,11 +83,13 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 6.  **Distribute (Developer):** Developers sync their local databases from the Published Sheet using the API server import job (`/operations` dashboard or `POST /api/v1/operations/import-sheets`). This updates their local knowledge base with the latest curated heuristics.
 
 ### 2.2. MCP Interaction Flow (for Assistant developers)
+
 1.  **Startup:** The MCP service loads its configuration and advertises available categories via `list_categories`.
 2.  **Generator Mode:** The assistant queries for relevant entries using `read_entries(query=...)`.
 3.  **Evaluator Mode:** The assistant writes new knowledge using `write_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
 
 ### 2.3. Review and Governance
+
 -   **Controlled Vocabulary:** Use a consistent set of categories, sections, and tags.
 -   **Curator Actions:** Curators should record actions (e.g., `accepted`, `superseded`) in the Published Sheet to provide feedback to the system.
 -   **Analytics:** Periodically run analytics on the knowledge base to identify unused entries or duplicate clusters.
@@ -92,6 +100,7 @@ The simplest way to manage CHL is through the built-in web interface, available 
 
 ### 3.1. Settings Dashboard (`/settings`)
 This page is for initial configuration and system management.
+
 -   **First-Time Checklist:** Guides you through setting up credentials and sheet IDs.
 -   **Configuration:** Load `scripts_config.yaml` to configure Google Sheets access.
 -   **Models:** Select the embedding and reranker models.
@@ -100,6 +109,7 @@ This page is for initial configuration and system management.
 
 ### 3.2. Operations Dashboard (`/operations`)
 This page is for day-to-day operational tasks.
+
 -   **Jobs:** Trigger `import`, `export`, and `rebuild_index` jobs with a single click.
 -   **Job History:** View the status and logs of recent jobs.
 -   **FAISS Snapshots:** Download the current FAISS index for backup or upload a new one to quickly update the search index.
@@ -156,6 +166,7 @@ The FastAPI server provides REST endpoints for advanced control.
 
 ### 6.1. Category Index
 The system is pre-configured with the following categories. You can add more as needed.
+
   - `figma_page_design` (`FPD`)
   - `database_schema_design` (`DSD`)
   - `page_specification` (`PGS`)
@@ -171,6 +182,7 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Environment Variables
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. Key variables include:
+
 - `CHL_EXPERIENCE_ROOT` - Path to data directory
 - `CHL_DATABASE_PATH` - Path to SQLite database file
 - `CHL_EMBEDDING_REPO` - Embedding model repository (GPU mode only)
@@ -200,6 +212,7 @@ CHL can run in CPU-only mode without ML dependencies (FAISS, embeddings, reranke
 ### 9.1. When to Use CPU-Only Mode
 
 Use CPU-only mode when:
+
 - You don't have sufficient GPU VRAM (≥8 GB recommended for GPU mode)
 - You don't need semantic search and keyword matching is sufficient
 - You want to minimize dependencies and resource usage
@@ -239,6 +252,7 @@ python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 ### 9.3. Behavior Differences
 
 In CPU-only mode:
+
 - **Search**: Uses SQLite `LIKE` queries for keyword matching instead of semantic similarity
 - **Duplicate detection**: Uses simple text matching instead of embedding-based similarity
 - **Background worker**: No embedding worker runs; entries are immediately available for search
@@ -248,6 +262,7 @@ In CPU-only mode:
 ### 9.4. Search Tips for CPU-Only Mode
 
 Since SQLite text search uses literal keyword matching:
+
 - Use specific keywords from entry titles and content
 - Search for exact phrases when possible
 - Break complex queries into multiple searches
@@ -257,6 +272,7 @@ Since SQLite text search uses literal keyword matching:
 ### 9.5. Switching Modes
 
 **From CPU-only to GPU mode:**
+
 1. Run diagnostics: `python scripts/check_api_env.py` and select GPU option
    - This updates `data/runtime_config.json` with the detected GPU backend (metal/cuda/rocm)
 2. Create/activate a GPU API server venv and install the matching requirements file:
@@ -267,6 +283,7 @@ Since SQLite text search uses literal keyword matching:
 5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
 
 **From GPU to CPU-only mode:**
+
 1. Run diagnostics: `python scripts/check_api_env.py` and select option 1 (CPU-only)
    - This updates `data/runtime_config.json` with backend="cpu"
 2. Activate the CPU API server venv (`.venv-cpu`) with `requirements_cpu.txt` installed
@@ -279,10 +296,11 @@ Since SQLite text search uses literal keyword matching:
 ### 9.6. Limitations
 
 CPU-only mode has the following limitations:
-- No semantic search or conceptual matching
-- No embedding-based duplicate detection
-- No reranking of search results
-- Search quality depends on exact keyword matches
-- Cannot import FAISS snapshots from GPU instances
+
+  - No semantic search or conceptual matching
+  - No embedding-based duplicate detection
+  - No reranking of search results
+  - Search quality depends on exact keyword matches
+  - Cannot import FAISS snapshots from GPU instances
 
 For teams that need semantic search, consider running one GPU instance to build FAISS snapshots, but note that CPU-only instances cannot load these snapshots.
