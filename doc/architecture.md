@@ -484,19 +484,3 @@ python scripts/rebuild_index.py  # example maintenance job (import/export run vi
 - Background worker coordination: Pause/drain/resume controls
 - SQLite transactions: WAL mode with retry logic for transient locks
 
-## 10. Future Considerations
-
-**Phase B (Next):** Diagnostics & Environment Guardrails
-- Implement `scripts/check_api_env.py` for OS/GPU/toolchain readiness detection
-- Emit structured reports for LLM-assisted troubleshooting
-
-**Phase C:** Runtime Isolation
-- Enforce MCP ↔ API separation via service boundaries
-- Refine shared modules to expose only necessary DTOs
-
-**Phase D:** Validation & Hardening
-- Platform-specific smoke tests
-- CI checks for requirements file sync
-- Documentation accuracy validation
-
-For detailed phase planning, see [doc/plan/architecture_refine.md](plan/architecture_refine.md).
