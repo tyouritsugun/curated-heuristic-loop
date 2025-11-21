@@ -310,7 +310,7 @@
     (function () {
       let mermaidInitialized = false;
 
-      window.renderDocsMermaid = function renderDocsMermaid() {
+      window.renderDocsMermaid = async function renderDocsMermaid() {
         if (!window.mermaid || typeof window.mermaid.initialize !== "function") {
           return;
         }
@@ -331,7 +331,11 @@
           pre.replaceWith(wrapper);
         });
 
-        window.mermaid.run({ querySelector: ".mermaid" });
+        try {
+          await window.mermaid.run();
+        } catch (err) {
+          console.error('Mermaid rendering error:', err);
+        }
       };
 
       const triggerRender = () => {

@@ -61,7 +61,32 @@ async def read_doc(request: Request, doc_name: str):
     with open(file_path, "r", encoding="utf-8") as f:
         md_content = f.read()
 
-    html_content = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
+    # Convert markdown to HTML with proper extensions
+    # Use 'extra' which includes fenced_code_blocks, or use fenced_code_blocks directly
+    # The extensions should preserve code blocks with language classes
+    try:
+        md = markdown.Markdown(
+            extensions=["extra", "tables"],
+            output_format='html'
+        )
+        html_content = md.convert(md_content)
+    except Exception as e:
+        logger.error(f"Error converting markdown with 'extra': {e}")
+        # Fallback to basic fenced_code
+        md = markdown.Markdown(
+            extensions=["fenced_code", "tables"],
+            output_format='html'
+        )
+        html_content = md.convert(md_content)
+
+    # Debug: Log a snippet of the HTML to check code block structure
+    import re
+    mermaid_blocks = re.findall(r'<pre>.*?</pre>', html_content, re.DOTALL)
+    if mermaid_blocks:
+        logger.info(f"Found {len(mermaid_blocks)} <pre> blocks")
+        if mermaid_blocks:
+            snippet = mermaid_blocks[0][:200] if len(mermaid_blocks[0]) > 200 else mermaid_blocks[0]
+            logger.info(f"First <pre> block: {snippet}")
 
     return templates.TemplateResponse(
         "common/doc_viewer.html",
