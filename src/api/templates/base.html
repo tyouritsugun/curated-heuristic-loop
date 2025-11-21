@@ -1,21 +1,293 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title or "Curated Heuristic Loop" }}</title>
-  <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+  <title>{% block title %}{{ title or "Curated Heuristic Loop" }}{% endblock %}</title>
+  
+  <!-- Pico.css: Minimal, semantic CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.10/css/pico.min.css" />
-  <link rel="stylesheet" href="{{ request.url_for('static', path='css/settings.css') }}" />
+  
+  <!-- Custom Dashboard Styles -->
+  <style>
+    :root {
+      --sidebar-width: 260px;
+      --sidebar-bg: #f8f9fa;
+      --sidebar-border: #e5e7eb;
+    }
+
+    /* Dark mode overrides */
+    [data-theme="dark"] {
+      --sidebar-bg: #11191f;
+      --sidebar-border: #2d3748;
+    }
+
+    /* CSS Grid Layout: Sidebar | Content */
+    body {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      grid-template-rows: 100vh;
+      margin: 0;
+      overflow: hidden; /* Prevent body scroll */
+    }
+
+    /* Sidebar Styling */
+    aside {
+      background-color: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      padding: 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    aside nav {
+      display: flex;
+      flex-direction: column;
+    }
+
+    aside nav a {
+      display: block;
+      padding: 0.5rem 0.75rem;
+      text-decoration: none;
+      color: var(--color);
+      border-radius: 6px;
+      margin-bottom: 0.25rem;
+      font-size: 0.9rem;
+      transition: background-color 0.2s;
+    }
+
+    aside nav a:hover {
+      background-color: var(--secondary-focus);
+      color: var(--secondary-inverse);
+      text-decoration: none;
+    }
+
+    aside .brand {
+      font-weight: 800;
+      font-size: 1.25rem;
+      margin-bottom: 2rem;
+      display: block;
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    aside .menu-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      color: var(--muted-color);
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+      padding-left: 0.75rem;
+    }
+
+    /* Main Content Area */
+    main.main-content {
+      padding: 2rem;
+      overflow-y: auto; /* Scroll content independently */
+      position: relative;
+    }
+
+    /* Centering Container */
+    .content-container {
+      max-width: 1000px; /* Restrict width for readability */
+      margin: 0 auto;    /* Center horizontally */
+      width: 100%;
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+      aside {
+        border-right: none;
+        border-bottom: 1px solid var(--sidebar-border);
+        max-height: 200px;
+        padding: 1rem;
+      }
+      aside .brand {
+        margin-bottom: 0.5rem;
+      }
+      aside nav {
+        display: none; /* Hide menu on mobile by default (simplified for now) */
+      }
+    }
+
+    /* --- Utility Classes (Migrated from settings.css) --- */
+    
+    /* Status Pills */
+    .status-pill {
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-pill.ok { background-color: #d1fae5; color: #065f46; }
+    .status-pill.warn { background-color: #ffedd5; color: #9a3412; }
+    .status-pill.error { background-color: #fee2e2; color: #991b1b; }
+    .status-pill.info { background-color: #e0f2fe; color: #075985; }
+
+    /* Flash Messages */
+    .flash {
+      padding: 1rem;
+      border-radius: var(--border-radius);
+      margin-bottom: 1.5rem;
+      border: 1px solid transparent;
+    }
+    .flash.success { background-color: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .flash.error { background-color: #fee2e2; color: #991b1b; border-color: #fecaca; }
+    .flash.info { background-color: #e0f2fe; color: #075985; border-color: #bae6fd; }
+
+    /* Cards (Simple wrapper for sections) */
+    .card {
+      background: var(--card-background-color);
+      border: 1px solid var(--muted-border-color);
+      border-radius: var(--border-radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    /* Operations Grid */
+    .ops-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .full-span { grid-column: 1 / -1; }
+
+    /* Page Header */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--muted-border-color);
+      padding-bottom: 1rem;
+    }
+    .page-header h1 { margin-bottom: 0; font-size: 1.75rem; }
+
+    /* Stat Grid (4x1 layout) */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr); /* 4 columns */
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+    
+    @media (max-width: 768px) {
+      .stat-grid {
+        grid-template-columns: 1fr 1fr; /* 2x2 on tablet */
+      }
+    }
+    @media (max-width: 480px) {
+      .stat-grid {
+        grid-template-columns: 1fr; /* Stack on mobile */
+      }
+    }
+    
+    .stat-pair {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .stat-label {
+      font-size: 0.85rem;
+      color: var(--muted-color);
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    /* Diagnostics Grid (4 columns) */
+    .diag-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .diag-row {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid var(--muted-border-color);
+      border-radius: 6px;
+      padding: 1rem;
+      background-color: var(--background-color);
+    }
+
+    .diag-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .diag-timestamp {
+      align-self: flex-end;
+      font-size: 0.75rem;
+      color: var(--muted-color);
+    }
+    
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-top: 0.35rem;
+      flex-shrink: 0;
+    }
+    .diag-row.ok .status-dot { background-color: #10b981; }
+    .diag-row.warn .status-dot { background-color: #f59e0b; }
+    .diag-row.error .status-dot { background-color: #ef4444; }
+
+    @media (max-width: 900px) {
+      .diag-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 600px) {
+      .diag-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <!-- HTMX & Tools -->
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
 </head>
 <body hx-boost="true">
-  {% include "common/partials/sidebar.html" %}
+  
+  <!-- Sidebar -->
+  <aside>
+    <a href="/" class="brand">CHL Dashboard</a>
+    {% block sidebar %}
+      {% include "common/partials/sidebar.html" %}
+    {% endblock %}
+  </aside>
+
+  <!-- Main Content -->
   <main class="main-content">
-    {% block content %}{% endblock %}
+    <div class="content-container">
+      {% block content %}{% endblock %}
+    </div>
   </main>
+
+  <!-- Mermaid Initialization -->
   <script>
     (function () {
       let mermaidInitialized = false;
@@ -33,9 +305,7 @@
         const codeBlocks = document.querySelectorAll("pre code.language-mermaid");
         codeBlocks.forEach((codeBlock) => {
           const pre = codeBlock.closest("pre");
-          if (!pre) {
-            return;
-          }
+          if (!pre) return;
 
           const wrapper = document.createElement("div");
           wrapper.className = "mermaid";
@@ -43,7 +313,7 @@
           pre.replaceWith(wrapper);
         });
 
-        window.mermaid.run({ querySelector: ".doc-content .mermaid" });
+        window.mermaid.run({ querySelector: ".mermaid" });
       };
 
       const triggerRender = () => {
@@ -54,6 +324,34 @@
 
       document.addEventListener("DOMContentLoaded", triggerRender);
       document.body.addEventListener("htmx:afterSwap", triggerRender);
+    })();
+
+    (function() {
+      function localizeTimes() {
+        document.querySelectorAll('.diag-timestamp[data-utc]').forEach(el => {
+          const utcStr = el.getAttribute('data-utc');
+          if (!utcStr || utcStr === 'n/a') return;
+          
+          // Ensure UTC interpretation
+          const dateStr = utcStr.endsWith('Z') ? utcStr : utcStr + 'Z';
+          const date = new Date(dateStr);
+          
+          if (isNaN(date.getTime())) return;
+
+          // Format: YYYY/MM/DD HH:mm:ss
+          const localStr = date.toLocaleString(undefined, {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+          });
+          
+          el.textContent = localStr;
+          el.removeAttribute('data-utc');
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', localizeTimes);
+      document.body.addEventListener('htmx:afterSwap', localizeTimes);
     })();
   </script>
 </body>

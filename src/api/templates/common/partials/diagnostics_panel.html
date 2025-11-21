@@ -22,7 +22,7 @@
       <button type="submit" class="secondary">Test Connectivity</button>
     </form>
   </header>
-  <ul class="diagnostics-list">
+  <ul class="diag-grid">
     {% for name, status in diagnostics.items() %}
       <li class="diag-row {{ status.state }}">
         <div class="diag-main">
@@ -32,7 +32,7 @@
             <p class="diag-detail">{{ status.detail or "" }}</p>
           </div>
         </div>
-        <small class="diag-timestamp">{{ status.validated_at or "n/a" }}</small>
+        <small class="diag-timestamp" data-utc="{{ status.validated_at }}">{{ status.validated_at or "n/a" }}</small>
       </li>
     {% endfor %}
   </ul>

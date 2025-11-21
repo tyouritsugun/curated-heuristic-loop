@@ -1,20 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title or "Curated Heuristic Loop · GPU Mode" }}</title>
-  <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1.5.10/css/pico.min.css" />
-  <link rel="stylesheet" href="{{ request.url_for('static', path='css/settings.css') }}" />
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
-</head>
-<body hx-boost="true">
+{% extends "base.html" %}
+
+{% block title %}{{ title or "Curated Heuristic Loop · GPU Mode" }}{% endblock %}
+
+{% block sidebar %}
   {% include "gpu/partials/sidebar_gpu.html" %}
-  <main class="main-content">
-    {% block content %}{% endblock %}
-  </main>
-</body>
-</html>
+{% endblock %}
