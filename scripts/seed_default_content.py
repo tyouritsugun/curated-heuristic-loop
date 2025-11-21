@@ -16,8 +16,9 @@ import sys
 from pathlib import Path
 
 # Ensure project root (for src/ and scripts/) is importable
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
+
+ensure_project_root_on_sys_path()
 
 from src.common.config.config import get_config  # type: ignore
 
@@ -30,7 +31,7 @@ def _get_seed_helper():
     if _SEED_HELPER is not None:
         return _SEED_HELPER
 
-    setup_path = PROJECT_ROOT / "scripts" / "setup-gpu.py"
+    setup_path = Path(__file__).parent / "setup-gpu.py"
     if not setup_path.exists():
         raise RuntimeError(f"Missing setup-gpu.py at {setup_path}")
 

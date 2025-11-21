@@ -34,10 +34,11 @@ import json
 import logging
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure project root is importable and config is available
+from src.common.config.config import ensure_project_root_on_sys_path, get_config  # noqa: E402
 
-from src.common.config.config import get_config
+ensure_project_root_on_sys_path()
+
 from src.common.storage.database import Database
 from src.common.storage.repository import (
     CategoryRepository,

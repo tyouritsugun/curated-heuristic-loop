@@ -26,15 +26,13 @@ Preconditions:
 """
 import json
 import os
-import sys
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.common.config.config import ensure_project_root_on_sys_path, get_config
 
-from src.common.config.config import get_config
+ensure_project_root_on_sys_path()
 from src.common.api_client.client import CHLAPIClient
 from src.common.storage.database import Database
 from src.common.storage.schema import Experience, CategoryManual, FAISSMetadata

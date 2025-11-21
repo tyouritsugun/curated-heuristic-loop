@@ -16,9 +16,9 @@ import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
+
+ensure_project_root_on_sys_path()
 
 from src.common.api_client.client import CHLAPIClient, APIOperationError, APIConnectionError  # noqa: E402
 

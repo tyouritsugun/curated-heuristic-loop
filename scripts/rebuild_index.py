@@ -7,14 +7,14 @@ Usage:
 This script now delegates rebuild work to `/api/v1/operations/rebuild-index`.
 The API server must be running and configured with GPU/FAISS support.
 """
-import sys
 import logging
+import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.common.config.config import ensure_project_root_on_sys_path, get_config
 
-from src.common.config.config import get_config
+ensure_project_root_on_sys_path()
+
 from src.common.api_client.client import CHLAPIClient, APIOperationError, APIConnectionError
 
 # Configure logging

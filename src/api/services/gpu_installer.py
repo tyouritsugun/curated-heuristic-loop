@@ -18,11 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from src.common.config.config import (
+    RUNTIME_CONFIG_PATH,
+    load_runtime_config as config_load_runtime_config,
+    save_runtime_config as config_save_runtime_config,
+)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
-RUNTIME_CONFIG_PATH = DATA_DIR / "runtime_config.json"
+logger = logging.getLogger(__name__)
 
 SUPPORTED_GPU_BACKENDS = ("metal", "cuda", "rocm", "cpu")
 DEFAULT_GPU_PRIORITY = ("metal", "cuda", "rocm", "cpu")
@@ -50,6 +52,7 @@ NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
 CUDA_TOOLKIT_URL = "https://developer.nvidia.com/cuda-downloads"
 APPLE_CLT_URL = "https://developer.apple.com/xcode/resources/"
 ROCM_URL = "https://rocm.docs.amd.com/en/latest/how_to/install_guide/index.html"
+GPU_STATE_PATH = RUNTIME_CONFIG_PATH.parent / "gpu_state.json"
 
 
 class GPUInstallerError(RuntimeError):
@@ -81,27 +84,26 @@ def parse_gpu_priority(value: Optional[str]) -> List[str]:
 
 def load_runtime_config(path: Optional[Path] = None) -> Optional[Dict]:
     """Load runtime configuration from runtime_config.json."""
-    config_path = path or RUNTIME_CONFIG_PATH
-    if not config_path.exists():
-        return None
-    try:
-        with config_path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else None
-    except json.JSONDecodeError as exc:
-        logger.warning("Invalid runtime config file %s: %s", config_path, exc)
-        return None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to read runtime config file %s: %s", config_path, exc)
-        return None
+    if path and path != RUNTIME_CONFIG_PATH:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read runtime config file %s: %s", path, exc)
+            return None
+    data = config_load_runtime_config()
+    return data if data else None
 
 
 def save_runtime_config(config: Dict, path: Optional[Path] = None) -> None:
     """Save runtime configuration to runtime_config.json."""
-    config_path = path or RUNTIME_CONFIG_PATH
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    with config_path.open("w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2)
+    if path and path != RUNTIME_CONFIG_PATH:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(config, fh, indent=2)
+        return
+    config_save_runtime_config(config)
 
 
 def _parse_version_tuple(raw: Optional[str]) -> Optional[Tuple[int, int]]:
@@ -618,6 +620,80 @@ def ensure_runtime_config(
     return record, False
 
 
+def load_gpu_state(path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load cached GPU detection result from gpu_state.json."""
+    state_path = path or GPU_STATE_PATH
+    if not state_path.exists():
+        return None
+    try:
+        with state_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to read gpu_state file %s: %s", state_path, exc)
+        return None
+
+
+def save_gpu_state(state: Dict[str, Any], path: Optional[Path] = None) -> None:
+    """Persist GPU detection result to gpu_state.json."""
+    state_path = path or GPU_STATE_PATH
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    with state_path.open("w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+
+
+def ensure_gpu_state(
+    priority: List[str],
+    backend_override: Optional[str],
+    force_detect: bool,
+    *,
+    state_path: Optional[Path] = None,
+) -> Tuple[Dict[str, Any], bool]:
+    """Detect and persist GPU state (backends, selection, diagnostics)."""
+    state_path = state_path or GPU_STATE_PATH
+
+    if not force_detect:
+        existing = load_gpu_state(state_path)
+        if isinstance(existing, dict) and existing.get("backend"):
+            return existing, True
+
+    backends = detect_gpu_backends()
+    record = {
+        "detected_at": _utcnow_iso(),
+        "backends": backends,
+        "priority": priority or list(DEFAULT_GPU_PRIORITY),
+        "backend_override": backend_override,
+        "status": "detected",
+    }
+
+    # Honour override if valid, otherwise use recommended backend
+    if backend_override and backend_override in backends:
+        selected_backend = backend_override
+        selected_info = backends[backend_override]
+        diag_prefix = f"Using backend override {backend_override}"
+    else:
+        recommended = recommend_backend(",".join(priority) if priority else None)
+        selected_backend = recommended["backend"]
+        selected_info = recommended["info"]
+        diag_prefix = f"Selected backend {selected_backend} via priority"
+
+    diagnostics: List[str] = [diag_prefix]
+    diagnostics.extend(selected_info.get("diagnostics") or [])
+
+    record.update(
+        {
+            "backend": selected_backend,
+            "version": selected_info.get("version") or "unknown",
+            "driver_version": selected_info.get("driver_version"),
+            "wheel": selected_info.get("wheel"),
+            "diagnostics": diagnostics,
+        }
+    )
+
+    save_gpu_state(record, path=state_path)
+    return record, False
+
+
 def prerequisite_check(gpu_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Validate GPU prerequisites and toolchains."""
     if not gpu_state:
@@ -1100,9 +1176,13 @@ def build_support_prompt(
 
 __all__ = [
     "GPUInstallerError",
+    "GPU_STATE_PATH",
     "parse_gpu_priority",
     "load_runtime_config",
     "save_runtime_config",
+    "load_gpu_state",
+    "save_gpu_state",
+    "ensure_gpu_state",
     "determine_cuda_wheel",
     "determine_rocm_wheel",
     "detect_metal_backend",

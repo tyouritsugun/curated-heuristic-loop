@@ -49,18 +49,41 @@ import platform
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import sys
 
-from src.common.config.config import get_config
-from src.common.storage.database import Database
-from src.common.storage.repository import (
-    CategoryRepository,
-    ExperienceRepository,
-    CategoryManualRepository,
-)
-from src.common.storage.schema import Experience, CategoryManual
-from src.api.services import gpu_installer
+# Ensure repo root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+root_str = str(PROJECT_ROOT)
+if root_str not in sys.path:
+    sys.path.insert(0, root_str)
+
+from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
+
+ensure_project_root_on_sys_path()
+
+from src.common.config.config import (
+    DATA_DIR,
+    MODEL_SELECTION_PATH,
+    RUNTIME_CONFIG_PATH,
+    get_config,
+)  # noqa: E402
+
+try:
+    from src.common.storage.database import Database
+    from src.common.storage.repository import (
+        CategoryRepository,
+        ExperienceRepository,
+        CategoryManualRepository,
+    )
+    from src.common.storage.schema import Experience, CategoryManual
+    from src.api.services import gpu_installer
+except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirements install
+    sys.stderr.write(
+        "Missing dependencies for setup. Install platform requirements first, e.g.:\n"
+        "  pip install -r requirements_apple.txt  # or requirements_cuda.txt\n"
+        f"Import error: {exc}\n"
+    )
+    raise SystemExit(1) from exc
 
 # Configure logging
 logging.basicConfig(
@@ -69,8 +92,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
 GPU_STATE_PATH = gpu_installer.GPU_STATE_PATH
 
 SUPPORTED_GPU_BACKENDS = gpu_installer.SUPPORTED_GPU_BACKENDS

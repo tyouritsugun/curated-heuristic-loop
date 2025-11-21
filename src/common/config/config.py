@@ -7,7 +7,7 @@ Example MCP configuration in ~/.cursor/mcp.json (using project venv):
 
 {
   "chl": {
-    "command": "/absolute/path/to/curated-heuristic-loop/.venv/bin/python",
+    "command": "/absolute/path/to/curated-heuristic-loop/.venv-mcp/bin/python",
     "args": ["-m", "src.mcp.server"],
     "env": {
       "CHL_EXPERIENCE_ROOT": "/absolute/path/to/curated-heuristic-loop/data",
@@ -67,44 +67,64 @@ FAISS Persistence (Phase 3):
 
 Note: Author is automatically populated from the OS username during core setup.
 """
+from __future__ import annotations
 import os
 import json
 import logging
-from pathlib import Path
-from enum import Enum
 import re
-from dotenv import load_dotenv
+from enum import Enum
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # python-dotenv may not be installed when running env probes
+    def load_dotenv(*args, **kwargs):  # type: ignore
+        return False
 
 # Auto-load .env from project root (before Config class initialization)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 load_dotenv(PROJECT_ROOT / ".env")
 
-MODEL_SELECTION_PATH = PROJECT_ROOT / "data" / "model_selection.json"
-RUNTIME_CONFIG_PATH = PROJECT_ROOT / "data" / "runtime_config.json"
+MODEL_SELECTION_PATH = DATA_DIR / "model_selection.json"
+RUNTIME_CONFIG_PATH = DATA_DIR / "runtime_config.json"
+
+
+def ensure_project_root_on_sys_path() -> None:
+    """Ensure PROJECT_ROOT is on sys.path for script entrypoints."""
+    import sys
+    root_str = str(PROJECT_ROOT)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
 logger = logging.getLogger(__name__)
 
 
-def _load_runtime_config() -> dict:
-    """Load runtime configuration from runtime_config.json."""
+def load_runtime_config() -> dict:
+    """Load runtime configuration."""
     try:
         if RUNTIME_CONFIG_PATH.exists():
             with RUNTIME_CONFIG_PATH.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict):
-                return data
+            return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
-        pass
+        logger.warning("Failed to read runtime_config.json at %s", RUNTIME_CONFIG_PATH)
     return {}
 
 
-def _load_model_selection() -> dict:
-    """Load persisted model selection from setup (if present)."""
+def save_runtime_config(data: dict) -> None:
+    """Persist runtime configuration to the canonical path."""
+    RUNTIME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with RUNTIME_CONFIG_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+
+
+def load_model_selection() -> dict:
+    """Load persisted model selection (if present)."""
     try:
         if MODEL_SELECTION_PATH.exists():
             with MODEL_SELECTION_PATH.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                # Only keep string values for expected keys
                 return {
                     key: value
                     for key, value in data.items()
@@ -112,8 +132,15 @@ def _load_model_selection() -> dict:
                     and isinstance(value, str)
                 }
     except (json.JSONDecodeError, OSError):
-        pass
+        logger.warning("Failed to read model_selection.json at %s", MODEL_SELECTION_PATH)
     return {}
+
+
+def save_model_selection(data: dict) -> None:
+    """Persist model selection to the canonical path."""
+    MODEL_SELECTION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with MODEL_SELECTION_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
 
 
 # Supported backend types
@@ -149,22 +176,27 @@ class Config:
 
         # Runtime configuration - determine backend from runtime_config.json
         # Fallback to environment variable if needed, then default to "cpu"
-        runtime_config = _load_runtime_config()
+        runtime_config = load_runtime_config()
         backend_from_config = runtime_config.get("backend")
         backend_from_env = os.getenv("CHL_BACKEND")
 
         # Priority: runtime_config.json > environment variable > default "cpu"
         self.backend = backend_from_config or backend_from_env or "cpu"
+        self.runtime_config_path = str(RUNTIME_CONFIG_PATH)
+        self.backend_source = (
+            "runtime_config.json" if backend_from_config else
+            "environment" if backend_from_env else
+            "default"
+        )
         logger.info("Runtime backend: %s (from %s)",
                    self.backend,
-                   "runtime_config.json" if backend_from_config else
-                   "environment" if backend_from_env else "default")
+                   self.backend_source)
 
         self.search_timeout_ms = int(os.getenv("CHL_SEARCH_TIMEOUT_MS", "5000"))
         self.search_fallback_retries = int(os.getenv("CHL_SEARCH_FALLBACK_RETRIES", "1"))
 
         # Model settings (GGUF models)
-        model_selection = _load_model_selection()
+        model_selection = load_model_selection()
         default_embedding_repo = model_selection.get("embedding_repo", "Qwen/Qwen3-Embedding-0.6B-GGUF")
         default_embedding_quant = model_selection.get("embedding_quant", "Q8_0")
         default_reranker_repo = model_selection.get("reranker_repo", "Mungert/Qwen3-Reranker-0.6B-GGUF")

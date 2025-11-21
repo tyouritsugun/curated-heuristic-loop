@@ -297,7 +297,7 @@ Open http://127.0.0.1:8000/operations to run import:
 - **GPU modes**: Background worker automatically processes pending embeddings and updates FAISS index
 - **CPU mode**: Import completes immediately (no embeddings generated)
 
-### Step 6: Install MCP Server (Optional)
+### Step 6: Install MCP Server
 
 The MCP server allows AI assistants to interact with CHL. It communicates with the API server via HTTP.
 
@@ -307,13 +307,6 @@ The MCP server allows AI assistants to interact with CHL. It communicates with t
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
-
-**Install MCP server:**
-```bash
-# In a new terminal (keep API server running)
-cd /path/to/curated-heuristic-loop
-uv sync --python 3.11
-```
 
 **Configure MCP client** (e.g., Claude Code, Claude Desktop, Cursor, ChatGPT Codex):
 
@@ -332,7 +325,10 @@ claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/pa
   "mcpServers": {
     "chl": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
+      }
     }
   }
 }
@@ -346,7 +342,10 @@ claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/pa
   "mcpServers": {
     "chl": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
+      }
     }
   }
 }
@@ -357,6 +356,7 @@ claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/pa
 [mcp_servers.chl]
 command = "uv"
 args = ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+env = { UV_PROJECT_ENVIRONMENT = ".venv-mcp" }
 ```
 
 **MCP agent behavior:** To keep assistants from forgetting to call MCP tools or to prompt for reflections, copy the checklist in `AGENTS.md` into your assistant’s common instructions.

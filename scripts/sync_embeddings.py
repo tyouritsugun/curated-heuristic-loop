@@ -7,15 +7,15 @@ Usage:
 This script now triggers `/api/v1/operations/sync-embeddings`. The actual
 sync (including FAISS updates) runs inside the API server.
 """
-import sys
 import argparse
 import logging
-from pathlib import Path
+import sys
+import time
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.common.config.config import ensure_project_root_on_sys_path, get_config
 
-from src.common.config.config import get_config
+ensure_project_root_on_sys_path()
+
 from src.common.api_client.client import CHLAPIClient, APIOperationError, APIConnectionError
 
 # Configure logging

@@ -14,22 +14,25 @@ import sys
 import textwrap
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Optional
-
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-RUNTIME_CONFIG_PATH = DATA_DIR / "runtime_config.json"
 
 
 def _extend_sys_path() -> None:
     """Ensure src/ is importable."""
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parent.parent
+    root_str = str(project_root)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+    from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
+    ensure_project_root_on_sys_path()
 
 
 _extend_sys_path()
+
+from src.common.config.config import DATA_DIR, RUNTIME_CONFIG_PATH, save_runtime_config  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
@@ -147,8 +150,7 @@ def _save_runtime_config(backend: str) -> None:
         "detected_at": None,  # CPU mode doesn't need detection timestamp
         "status": "configured",
     }
-    with RUNTIME_CONFIG_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2)
+    save_runtime_config(config)
     logger.info("Saved runtime configuration to %s", RUNTIME_CONFIG_PATH)
 
 
