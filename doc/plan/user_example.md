@@ -4,6 +4,20 @@
 
 Create a sample dataset that demonstrates CHL's value by showing how it teaches LLMs **project-specific conventions** that aren't in their training data.
 
+### Executive Summary (2-minute pitch)
+Run a quick A/B: without CHL the assistant rushes to code and writes an incomplete ticket; with CHL it asks intent first, fetches run artifacts (Run ID, stage, logs), and produces a complete, team-specific ticket. The demo takes ~10 minutes end-to-end.
+
+### Quick Start (fresh clone, CPU path)
+1) `python -m venv .venv-cpu && source .venv-cpu/bin/activate`  
+2) `pip install -r requirements_cpu.txt`  
+3) `python scripts/setup-cpu.py` (seeds default categories/entries)  
+4) `./start-chl.sh` (starts API/MCP server on 127.0.0.1:8000)  
+5) Run the demo script: `python scripts/demo_datapipe_bug.py` — it prints the error plus artifact paths:  
+   - `data/output/run_meta.json`  
+   - `data/output/app.log`  
+6) Open your code assistant, start a new chat, and follow the A/B flow below.
+7) Optional: paste the "Copy-Paste Sample TMG Content" below into a sheet/CSV and import it so CHL can enforce the DataPipe ticket format.
+
 ### Why This Matters: The Behavioral Delta
 
 **Without CHL:**
@@ -252,114 +266,53 @@ return {
 }
 ```
 
-## Implementation Steps
+## Implementation Status (Nov 22, 2025)
+- ✅ This plan documented
+- ✅ Bug demo script added: `scripts/demo_datapipe_bug.py`
+- ✅ Copy-paste sample TMG content provided below
+- ⏳ Instruction layers (FastMCP name + mcp.instructions + generator.md + AGENTS.md.sample) still to ship
+- ⏳ Handshake payload update in `src/mcp/core.py` still to ship
 
-### Phase 1: LLM Instruction Layers
-1. ✅ Document the plan (this file)
-2. [ ] Update FastMCP constructor name to include "clarify task intent" (Layer 1)
-3. [ ] Update AGENTS.md.sample with task clarification (Layer 2)
-4. [ ] Update generator.md with Step 0: Clarify Intent (Layer 3)
-5. [ ] Update build_handshake_payload with instructions field (Layer 4)
+### Phase 1: LLM Instruction Layers (to finish)
+1. Update FastMCP constructor name to include "clarify task intent" (Layer 1)
+2. Update AGENTS.md.sample with task clarification (Layer 2)
+3. Update generator.md with Step 0: Clarify Intent (Layer 3)
+4. Update build_handshake_payload with instructions field (Layer 4)
 
 ### Phase 2: Demo Content Creation
-6. [ ] Create sample DataPipe bug report manual (TMG category)
-7. [ ] Create 8-10 DataPipe-specific experiences (TMG category) - simplified from 15
-8. [ ] Create buggy demo script: `scripts/demo_datapipe_bug.py`
-
-**Script Design (Keep it Simple):**
-
-```python
-#!/usr/bin/env python3
-"""DataPipe Demo - Simulates a data pipeline bug for CHL demonstration."""
-
-import json
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-def main():
-    # Generate run ID
-    run_id = f"DP-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-
-    # Pipeline stages: extract -> transform -> load -> validate
-    pipeline_stage = "transform"
-
-    # Create output directory
-    output_dir = Path("data/output")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Simulate missing input file error
-    input_file = "data/sample_input.csv"
-
-    print(f"[{run_id}] Starting DataPipe at stage: {pipeline_stage}")
-    print(f"[{run_id}] Reading input: {input_file}")
-
-    # Write metadata
-    metadata = {
-        "run_id": run_id,
-        "pipeline_stage": pipeline_stage,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-    metadata_path = output_dir / "run_meta.json"
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    # Simulate error and write log
-    error_msg = f"FileNotFoundError: {input_file} does not exist"
-    log_lines = [
-        f"[{datetime.now().isoformat()}] INFO: DataPipe started",
-        f"[{datetime.now().isoformat()}] INFO: Run ID: {run_id}",
-        f"[{datetime.now().isoformat()}] INFO: Stage: {pipeline_stage}",
-        f"[{datetime.now().isoformat()}] ERROR: {error_msg}",
-        "Traceback (most recent call last):",
-        '  File "scripts/demo_datapipe_bug.py", line 45, in main',
-        f'    with open("{input_file}", "r") as f:',
-        f"FileNotFoundError: [Errno 2] No such file or directory: '{input_file}'",
-    ]
-
-    log_path = output_dir / "app.log"
-    with open(log_path, "w") as f:
-        f.write("\n".join(log_lines))
-
-    # Print error to console
-    print(f"\n{'='*60}")
-    print(f"ERROR: {error_msg}")
-    print(f"{'='*60}")
-    print(f"\nArtifacts saved to {output_dir}/run_meta.json and {output_dir}/app.log")
-    print(f"\nRun ID: {run_id}")
-    print(f"Pipeline Stage: {pipeline_stage}")
-    print(f"\nSee {log_path} for full stack trace")
-
-    sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-```
-
-**What the script does:**
-- ✅ Generates unique Run ID (matches experience #1)
-- ✅ Sets pipeline stage to "transform" (matches experience #2)
-- ✅ Creates `data/output/run_meta.json` with run_id, pipeline_stage, timestamp (matches experiences #1, #2, #5)
-- ✅ Creates `data/output/app.log` with error message and stack trace (matches experiences #3, #4, #6)
-- ✅ Prints error to console for user to paste
-- ✅ Prints artifact locations
-- ✅ Fails with realistic FileNotFoundError (simple, reproducible)
-
-**What we removed:**
-- ❌ source_file field (not needed for simple demo)
-- ❌ input_file field in metadata (the input file path is in the error message, that's enough)
-- ❌ error_code field (simpler without it)
-- ❌ execution_time field (not in core experiences)
-
-9. [ ] Create Google Sheets template with sample TMG content
+5. Create sample DataPipe bug report manual (TMG category) — content below
+6. Create 8-10 DataPipe-specific experiences (TMG category) — content below
+7. ✅ Create buggy demo script: `scripts/demo_datapipe_bug.py`
+8. (Optional) Host/import the sample content into your sheet via the Operations dashboard or API
 
 ### Phase 3: Integration
-10. [ ] Add Step 7 to README: "Try the Demo"
-    - Import sample Google Sheet
-    - Run demo script
-    - Test with and without CHL
-11. [ ] Update Step 3 in README to mention optional sample sheet import
+9. Add Step 7 to README: "Try the Demo" (reference this doc)
+10. Update Step 3 in README to mention optional sample sheet import
+
+## Copy-Paste Sample TMG Content (manual + experiences)
+Use this in a Google Sheet or CSV with columns: `entity_type`, `category_code`, `title`, `body`. Import via the Operations dashboard or any import endpoint.
+
+```
+manual,TMG,DataPipe bug report template,"Required sections: Summary, Environment, Reproduction Steps, Expected vs Actual, Logs. Must include: Run ID (from run_meta.json), pipeline stage, last 50 lines of log, exact error message, timestamp. Artifact defaults: data/output/run_meta.json and data/output/app.log."
+experience,TMG,Always include Run ID,"Add Run ID from run_meta.json to the ticket header."
+experience,TMG,Specify pipeline stage,"Report the pipeline_stage value (extract/transform/load/validate) from run_meta.json."
+experience,TMG,Attach log excerpt,"Include the last 50 lines from app.log."
+experience,TMG,Quote the exact error,"Copy the exact error string from app.log without paraphrasing."
+experience,TMG,Note the timestamp,"Record the timestamp from run_meta.json for time-sensitive triage."
+experience,TMG,Include stack trace,"If a stack trace exists in app.log, include it verbatim."
+experience,TMG,Check intermittency,"Run twice; note if the failure is intermittent or deterministic."
+experience,TMG,Add operation context,"State what the pipeline was doing when it failed."
+experience,TMG,Search by Run ID,"Search existing tickets by Run ID to avoid duplicates."
+experience,TMG,Mark severity,"Severity: P0 data loss, P1 pipeline blocked, P2 degraded, P3 minor."
+```
+
+## Demo in <10 Minutes (checklist)
+- Create venv + install CPU requirements
+- Run `python scripts/setup-cpu.py` to seed DB
+- Start server: `./start-chl.sh`
+- Generate artifacts: `python scripts/demo_datapipe_bug.py`
+- Import the TMG sample content above (sheet or CSV)
+- Run Test A (no CHL), then Test B (with CHL + TMG content), save both transcripts
 
 ## Success Criteria
 
