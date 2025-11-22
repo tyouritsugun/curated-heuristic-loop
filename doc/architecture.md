@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document describes the technical architecture of the Curated Heuristic Loop (CHL) system after Phase 0 codebase isolation. The system is designed around a **two-tier HTTP-based architecture** with clear separation between the API server (data & compute) and the MCP server (protocol adapter).
+This document describes the technical architecture of the Curated Heuristic Loop (CHL) system. The system is designed around a **two-tier HTTP-based architecture** with clear separation between the API server (data & compute) and the MCP server (protocol adapter).
 
 For the architectural design decisions that led to this structure, see [doc/plan/architecture_refine.md](plan/architecture_refine.md).
 
@@ -62,11 +62,10 @@ graph TB
 
 **Key Architectural Principles:**
 
-1. **HTTP-Only Communication**: MCP server communicates with API server exclusively via HTTP (ADR-001)
+1. **HTTP-Only Communication**: MCP server communicates with API server exclusively via HTTP
 2. **Two-Tier Deployment**: API server (platform-specific venv) + MCP server (uv sync)
-3. **CPU/GPU Separation**: Strategy pattern for runtime modes, fixed at startup (ADR-002, ADR-005)
-4. **Local-Only Deployment**: No authentication, simple error handling (ADR-004)
-5. **Clear Import Boundaries**: MCP imports only from `src.common.{config,api_client,dto}` (ADR-003)
+3. **CPU/GPU Separation**: Strategy pattern for runtime modes, fixed at startup
+4. **Local-Only Deployment**: No authentication, simple error handling. NO CLOUD DEPLOYMENT. 
 
 ## 2. System Components
 
@@ -288,7 +287,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 
 ## 5. Key Architectural Decisions
 
-### 5.1. HTTP-Based API ↔ MCP Communication (ADR-001)
+### 5.1. HTTP-Based API ↔ MCP Communication
 
 **Decision**: Use HTTP/REST API as the sole communication method between MCP server and API server.
 
@@ -304,7 +303,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 - `CHLAPIClient` is the only shared client library
 - Lock mechanisms prevent concurrent modification issues
 
-### 5.2. CPU/GPU Runtime Separation (ADR-002)
+### 5.2. CPU/GPU Runtime Separation
 
 **Decision**: Separate CPU-only and GPU-accelerated implementations into distinct modules (`src/api/cpu/` and `src/api/gpu/`) using strategy pattern.
 
@@ -319,7 +318,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 - Switching modes requires data cleanup and re-setup
 - Runtime builder provides abstraction layer
 
-### 5.3. Directory Structure for Clarity (ADR-003)
+### 5.3. Directory Structure for Clarity
 
 **Decision**: Three-tier directory structure `src/api/`, `src/mcp/`, `src/common/` with explicit boundaries.
 
@@ -333,7 +332,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 **Enforcement:**
 - Boundary tests enforce these rules via AST parsing (`tests/architecture/test_boundaries.py`)
 
-### 5.4. Local-Only Deployment (ADR-004)
+### 5.4. Local-Only Deployment
 
 **Decision**: Design for local-only deployment where MCP and API server run on the same developer machine.
 
@@ -348,7 +347,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 - MCP receives API URL as start parameter (typically `localhost:8000`)
 - Lock mechanisms sufficient for concurrency (no distributed locks)
 
-### 5.5. Fixed Runtime Mode (ADR-005)
+### 5.5. Fixed Runtime Mode
 
 **Decision**: Runtime mode (CPU vs GPU) is fixed at API server startup and cannot be changed at runtime.
 

@@ -4,6 +4,7 @@
 Most code assistants forget. Useful context and hard‑won insights vanish between sessions or stay siloed with individuals. The **Curated Heuristic Loop (CHL)** adds a shared memory loop so assistants can reuse what worked—and teams can steadily refine it together. It’s inspired by work on agentic context engineering [1](https://arxiv.org/html/2510.04618v1), graph‑structured memory  [2](https://arxiv.org/html/2501.13956v1), and modern embedding/reranking [3](https://arxiv.org/html/2506.05176v3).
 
 CHL runs as a simple loop involving three key roles:
+
 - **Generator** – The assistant executing tasks using the shared experience library.
 - **Evaluator** – The assistant reflecting on outcomes, extracting insights, and proposing updates.
 - **Curator** – The human team member who reviews, merges, and prunes entries to maintain the quality of the shared knowledge base.
