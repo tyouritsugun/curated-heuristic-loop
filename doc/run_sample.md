@@ -7,7 +7,6 @@ This demo shows how CHL teaches LLMs project-specific conventions that aren't in
 **Without CHL:**
 - LLM rushes to fix code when user reports a bug
 - LLM writes incomplete tickets missing required artifacts (Run ID, pipeline stage, logs)
-- Generic approach lacks team-specific process awareness
 
 **With CHL:**
 - LLM clarifies user intent first (fix vs. document vs. investigate)
@@ -24,6 +23,10 @@ Before running the demo, complete the main installation steps in the README:
 3. Initialize database
 4. Start API server
 5. Install MCP server
+6. Configure agent instructions - add CHL instructions to your AGENTS.md:
+   - **No AGENTS.md yet?** Ask your code assistant to create one from AGENTS.md.sample, or copy from a coworker
+   - **Already have AGENTS.md?** Ask your code assistant to merge in the CHL instructions from AGENTS.md.sample
+   - Then add your AGENTS.md contents to your code assistant's common instructions
 
 The demo script `scripts/demo_datapipe_bug.py` is included in the repository and ready to run.
 

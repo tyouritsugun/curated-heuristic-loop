@@ -370,7 +370,23 @@ env = { UV_PROJECT_ENVIRONMENT = ".venv-mcp" }
 ```
 If `uv` complains about permissions in `~/.cache/uv`, set `UV_CACHE_DIR` in `env` to a writable path (for example the project root); otherwise keep it minimal as above.
 
-**MCP agent behavior:** To keep assistants from forgetting to call MCP tools or to prompt for reflections, copy the checklist in `AGENTS.md` into your assistant’s common instructions.
+**Configure agent instructions:**
+
+To keep assistants from forgetting to call MCP tools and to prompt for reflections, add the CHL agent instructions to your project's AGENTS.md:
+
+**If you don't have AGENTS.md yet:**
+- Ask your code assistant: "Please read AGENTS.md.sample and create an AGENTS.md for my project"
+- Or copy from a coworker who already has good agent instructions set up
+- Or as a last resort: `cp AGENTS.md.sample AGENTS.md`
+
+**If you already have AGENTS.md:**
+- Ask your code assistant: "Please read AGENTS.md.sample and merge the CHL instructions into my existing AGENTS.md"
+- Or manually append: `cat AGENTS.md.sample >> AGENTS.md`
+
+Then add the contents of your `AGENTS.md` to your code assistant's common instructions (Claude Code, Cursor, Codex, etc.). These CHL instructions ensure the assistant:
+- Calls `list_categories()` and `get_guidelines()` at startup
+- Uses CHL MCP tools for retrieval instead of guessing
+- Prompts for reflection and curation at conversation end
 
 **Note:** All environment variables have defaults and are optional:
 - `CHL_API_BASE_URL` defaults to `http://localhost:8000`
