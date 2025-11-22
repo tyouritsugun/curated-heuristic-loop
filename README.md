@@ -416,7 +416,7 @@ source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
 - `python scripts/search_health.py` – checks search system health
 
 **Import/Export (API server):**
-- Use the `/operations` dashboard to run import/export without any CLI wrappers. Import pulls directly from the configured Google Sheet and overwrites the local database; export returns a JSON snapshot for review.
+- Use the `/operations` dashboard to run import/export without any CLI wrappers. Import pulls directly from the configured import spreadsheet and overwrites the local database; export writes all database entries to the configured export spreadsheet.
 - Programmatic calls: `curl -X POST http://localhost:8000/api/v1/operations/import-sheets -H 'Content-Type: application/json' -d '{}'` and `curl http://localhost:8000/api/v1/entries/export > /tmp/chl-export.json`
 
 > **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions that access internal components directly and must run with the API server stopped.

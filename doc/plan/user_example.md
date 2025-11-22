@@ -40,7 +40,7 @@ Modern LLMs (Claude, GPT-4) already know generic "bug report best practices" fro
 **Common LLM Pitfall #1: Rushing to Code**
 When user says "I found a bug, here's the error...", LLM immediately rushes to fix code without clarifying intent.
 
-**What user might actually want:**
+**What user might actually want:**pleas
 - Write a bug ticket (not fix it)
 - Document the issue
 - Investigate/reproduce first

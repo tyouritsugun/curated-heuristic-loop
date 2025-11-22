@@ -98,3 +98,58 @@ class SheetsClient:
             logger.error("Google Sheets API error: %s", exc)
             raise
 
+    def write_worksheet(
+        self,
+        sheet_id: str,
+        worksheet_name: str,
+        headers: List[str],
+        rows: List[List[Any]],
+        readonly_cols: Optional[List[int]] = None,
+    ) -> int:
+        """Write data to a Google Sheets worksheet.
+
+        Args:
+            sheet_id: The spreadsheet ID
+            worksheet_name: Name of the worksheet to write to
+            headers: Column headers (first row)
+            rows: Data rows to write
+            readonly_cols: Optional list of column indices to mark as readonly (gray background)
+
+        Returns:
+            Number of rows written (excluding header)
+        """
+        try:
+            spreadsheet = self.client.open_by_key(sheet_id)
+
+            # Try to get existing worksheet, or create it if it doesn't exist
+            try:
+                worksheet = spreadsheet.worksheet(worksheet_name)
+                # Clear existing content
+                worksheet.clear()
+            except gspread.exceptions.WorksheetNotFound:
+                worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1000, cols=20)
+                logger.info("Created new worksheet '%s' in sheet %s", worksheet_name, sheet_id[:8])
+
+            # Prepare all data (header + rows)
+            all_data = [headers] + rows
+
+            # Write all data at once (more efficient than row-by-row)
+            if all_data:
+                worksheet.update(range_name='A1', values=all_data)
+
+            # Apply readonly formatting if specified
+            if readonly_cols:
+                self._apply_readonly_formatting(worksheet, readonly_cols, len(all_data))
+
+            logger.info(
+                "Wrote %d rows to worksheet '%s' (sheet ID: %s...)",
+                len(rows),
+                worksheet_name,
+                sheet_id[:8],
+            )
+            return len(rows)
+
+        except gspread.exceptions.APIError as exc:
+            logger.error("Google Sheets API error while writing: %s", exc)
+            raise
+

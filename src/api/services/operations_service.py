@@ -15,13 +15,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.common.storage.schema import AuditLog, JobHistory, OperationLock, utc_now
-from src.common.constants.guidelines import (
-    GUIDELINES_CATEGORY_CODE,
-    GENERATOR_GUIDE_TITLE,
-    EVALUATOR_GUIDE_TITLE,
-    EVALUATOR_CPU_GUIDE_TITLE,
-    EXPECTED_GUIDELINE_TITLES,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +99,6 @@ class OperationsService:
         self._handlers["import-sheets"] = self._import_sheets_handler
         self._handlers["sync-embeddings"] = self._sync_embeddings_handler
         self._handlers["rebuild-index"] = self._rebuild_index_handler
-        self._handlers["sync-guidelines"] = self._sync_guidelines_handler
         self._handlers["export"] = self._export_snapshot_handler
         self._handlers["export-snapshot"] = self._export_snapshot_handler
 
@@ -114,7 +106,6 @@ class OperationsService:
         self._handlers["import"] = self._import_sheets_handler
         self._handlers["sync"] = self._sync_embeddings_handler
         self._handlers["index"] = self._rebuild_index_handler
-        self._handlers["guidelines"] = self._sync_guidelines_handler
         self._handlers["export-job"] = self._export_snapshot_handler
 
     def shutdown(self):
@@ -530,89 +521,14 @@ class OperationsService:
             logger.exception("Index rebuild failed")
             raise ValueError(f"Index rebuild operation failed: {exc}") from exc
 
-    def _sync_guidelines_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Upsert generator/evaluator guidelines from payload contents."""
-        from src.common.storage.repository import (
-            CategoryRepository,
-            CategoryManualRepository,
-        )
-
-        generator_content = _normalize_text(payload.get("generator_content"))
-        evaluator_content = _normalize_text(payload.get("evaluator_content"))
-        evaluator_cpu_content = _normalize_text(payload.get("evaluator_cpu_content"))
-
-        if not any([generator_content, evaluator_content, evaluator_cpu_content]):
-            raise ValueError("No guideline content provided in payload")
-
-        cat_repo = CategoryRepository(session)
-        manual_repo = CategoryManualRepository(session)
-
-        category = cat_repo.get_by_code(GUIDELINES_CATEGORY_CODE)
-        if category is None:
-            category = cat_repo.create(
-                code=GUIDELINES_CATEGORY_CODE,
-                name="chl_guidelines",
-                description="Seeded generator/evaluator guidance manuals",
-            )
-
-        existing = manual_repo.get_by_category(GUIDELINES_CATEGORY_CODE)
-        existing_by_title = {manual.title: manual for manual in existing}
-        retained_ids: set[str] = set()
-        mutations: list[str] = []
-
-        def _upsert(title: str, content: Optional[str]) -> None:
-            nonlocal retained_ids
-            if content is None:
-                if title in existing_by_title:
-                    manual_repo.delete(existing_by_title[title].id)
-                    mutations.append(f"deleted:{title}")
-                return
-
-            summary = _summarize(content)
-            if title in existing_by_title:
-                manual = manual_repo.update(
-                    existing_by_title[title].id,
-                    {
-                        "content": content,
-                        "summary": summary,
-                        "sync_status": 1,
-                    },
-                )
-                session.flush()
-                retained_ids.add(manual.id)
-                mutations.append(f"updated:{title}")
-            else:
-                manual = manual_repo.create(
-                    {
-                        "category_code": GUIDELINES_CATEGORY_CODE,
-                        "title": title,
-                        "content": content,
-                        "summary": summary,
-                        "sync_status": 1,
-                    }
-                )
-                retained_ids.add(manual.id)
-                mutations.append(f"created:{title}")
-
-        _upsert(GENERATOR_GUIDE_TITLE, generator_content)
-        _upsert(EVALUATOR_GUIDE_TITLE, evaluator_content)
-        _upsert(EVALUATOR_CPU_GUIDE_TITLE, evaluator_cpu_content)
-
-        for manual in existing:
-            if manual.id not in retained_ids and manual.title not in EXPECTED_GUIDELINE_TITLES:
-                manual_repo.delete(manual.id)
-                mutations.append(f"pruned:{manual.title}")
-
-        logger.info("Guidelines sync completed (mutations=%s)", mutations)
-
-        return {
-            "success": True,
-            "mutations": mutations,
-            "category_code": GUIDELINES_CATEGORY_CODE,
-        }
-
     def _export_snapshot_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
-        """Lightweight export job for Operations UI/tests."""
+        """Export database entries to Google Sheets."""
+        import os
+        from pathlib import Path
+        from src.common.storage.schema import Experience, CategoryManual, Category
+        from src.common.storage.sheets_client import SheetsClient
+        from src.common.config.config import PROJECT_ROOT
+
         try:
             delay = float(payload.get("_test_delay", 0) or 0)
         except (TypeError, ValueError):
@@ -620,19 +536,118 @@ class OperationsService:
         if delay > 0:
             time.sleep(min(delay, 30))
 
-        from src.common.storage.schema import Experience, CategoryManual, Category
+        # Get credentials and spreadsheet ID from environment
+        credentials_env = os.getenv("GOOGLE_CREDENTIAL_PATH")
+        spreadsheet_id = os.getenv("EXPORT_SPREADSHEET_ID")
 
-        exp_total = session.query(Experience).count()
-        man_total = session.query(CategoryManual).count()
-        cat_total = session.query(Category).count()
+        if not credentials_env:
+            raise ValueError("GOOGLE_CREDENTIAL_PATH not set in .env file")
+        if not spreadsheet_id:
+            raise ValueError("EXPORT_SPREADSHEET_ID not set in .env file")
+
+        # Resolve credentials path relative to project root
+        credentials_path = Path(credentials_env)
+        if not credentials_path.is_absolute():
+            credentials_path = (PROJECT_ROOT / credentials_path).resolve()
+
+        if not credentials_path.exists():
+            raise ValueError(f"Credential file not found: {credentials_path}")
+
+        # Query all data from database
+        categories = session.query(Category).order_by(Category.code).all()
+        experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
+        manuals = session.query(CategoryManual).order_by(CategoryManual.updated_at.desc()).all()
+
+        # Initialize sheets client
+        sheets_client = SheetsClient(str(credentials_path))
+
+        # Get worksheet names from environment (with defaults)
+        categories_worksheet = os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories")
+        experiences_worksheet = os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")
+        manuals_worksheet = os.getenv("EXPORT_WORKSHEET_MANUALS", "Manuals")
+
+        # Export Categories
+        categories_headers = ["code", "name", "description", "created_at"]
+        categories_rows = [
+            [
+                cat.code,
+                cat.name,
+                cat.description or "",
+                cat.created_at.isoformat() if cat.created_at else "",
+            ]
+            for cat in categories
+        ]
+        sheets_client.write_worksheet(
+            spreadsheet_id,
+            categories_worksheet,
+            categories_headers,
+            categories_rows,
+            readonly_cols=[3],  # created_at is readonly
+        )
+
+        # Export Experiences
+        experiences_headers = ["id", "category_code", "section", "title", "playbook", "context", "updated_at", "author", "source", "sync_status"]
+        experiences_rows = [
+            [
+                exp.id,
+                exp.category_code,
+                exp.section,
+                exp.title,
+                exp.playbook or "",
+                exp.context or "",
+                exp.updated_at.isoformat() if exp.updated_at else "",
+                exp.author or "",
+                exp.source or "",
+                str(exp.sync_status) if exp.sync_status is not None else "",
+            ]
+            for exp in experiences
+        ]
+        sheets_client.write_worksheet(
+            spreadsheet_id,
+            experiences_worksheet,
+            experiences_headers,
+            experiences_rows,
+            readonly_cols=[0, 6],  # id and updated_at are readonly
+        )
+
+        # Export Manuals
+        manuals_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
+        manuals_rows = [
+            [
+                manual.id,
+                manual.category_code,
+                manual.title,
+                manual.content or "",
+                manual.summary or "",
+                manual.updated_at.isoformat() if manual.updated_at else "",
+                manual.author or "",
+            ]
+            for manual in manuals
+        ]
+        sheets_client.write_worksheet(
+            spreadsheet_id,
+            manuals_worksheet,
+            manuals_headers,
+            manuals_rows,
+            readonly_cols=[0, 5],  # id and updated_at are readonly
+        )
+
+        logger.info(
+            "Export completed: %d categories, %d experiences, %d manuals to spreadsheet %s",
+            len(categories),
+            len(experiences),
+            len(manuals),
+            spreadsheet_id[:8],
+        )
 
         return {
             "success": True,
             "counts": {
-                "experiences": exp_total,
-                "manuals": man_total,
-                "categories": cat_total,
+                "experiences": len(experiences),
+                "manuals": len(manuals),
+                "categories": len(categories),
             },
+            "message": f"Exported to Google Sheets: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals",
         }
 
 

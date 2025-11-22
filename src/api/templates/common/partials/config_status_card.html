@@ -95,42 +95,6 @@
         </div>
       {% endif %}
     </div>
-    <div class="config-section">
-      {% set guidelines_summary = ((job_summaries or {}).get('guidelines') or {}) %}
-      {% set guidelines_active = guidelines_summary.get('is_active', False) %}
-      <div class="section-header">
-        <form hx-post="/ui/operations/run/guidelines" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-          <button type="submit" class="section-title-button secondary" {% if guidelines_active %}disabled{% endif %}>
-            {% if guidelines_active %}
-              Refresh MCP Guidelines (Running…)
-            {% else %}
-              Refresh MCP Guidelines
-            {% endif %}
-          </button>
-        </form>
-      </div>
-      <div class="status-row">
-        <p class="muted">
-          Spreadsheet imports overwrite the Generator/Evaluator manuals stored in the database (category <code>GLN</code>). MCP always reads <code>generator.md</code>, <code>evaluator.md</code>, and <code>evaluator_cpu.md</code> from disk; use this to resync those files into the API/Operations UI via <code>scripts/seed_default_content.py --skip-seed</code>.
-        </p>
-      </div>
-      {% if guidelines_summary %}
-        <div class="status-row">
-          <div>
-            <p class="run-label">Last Run</p>
-            <p class="muted">{{ guidelines_summary.description or 'Activity recorded.' }}</p>
-          </div>
-          <span class="status-pill {{ guidelines_summary.pill_class }}" data-job-status="{{ guidelines_summary.status }}">
-            {{ guidelines_summary.status_label }}
-          </span>
-        </div>
-      {% else %}
-        <div class="status-row">
-          <span class="status-chip warn">Recommended</span>
-          <small class="muted">Run after each import/export</small>
-        </div>
-      {% endif %}
-    </div>
   </div>
 
   {% if is_partial and (message or error) %}
