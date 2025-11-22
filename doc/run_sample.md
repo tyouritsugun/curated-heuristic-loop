@@ -158,14 +158,12 @@ After running the demo:
 
 1. **Add your own categories**: Create categories for your team's workflows (architecture decisions, code review checklists, deployment procedures, etc.). See [Managing Categories](manual.md#62-managing-categories) for step-by-step instructions.
 
-2. **Write experiences**: As you work, capture what works as atomic experiences:
-   - "Always check X before doing Y"
-   - "When Z happens, look at W first"
-   - "Never do A without B"
+2. **Work with the LLM normally**: With categories in place, keep using CHL in everyday tasks; the assistant will pull existing guidance as you go.
 
-3. **Create manuals**: Write process overviews and templates for complex workflows
+3. **Close the loop at conversation end**: Ask the LLM to summarize the session and propose domain-agnostic manuals or atomic experiences. After a quick human review, have the LLM call `write_entries` to save them to SQLite.
+   - **Experiences** stay short and action-oriented (e.g., "Always check X before doing Y", "When Z happens, look at W first").
+   - **Manuals** stitch related experiences into a concise process overview.
 
-4. **Share with team**: Export your database to Google Sheets and share the import sheet with teammates
+4. **Share when it’s ripe**: Once the library has real depth, export to Google Sheets to share and trade the strongest manuals/experiences with the team.
 
-5. **Iterate**: As you use CHL, refine your guidance based on what actually helps
-
+5. **Keep refining**: Repeat the loop—apply guidance, capture learnings, curate, and redistribute—so the knowledge base stays sharp and relevant.
