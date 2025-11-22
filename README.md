@@ -116,10 +116,12 @@ sudo apt install python3.11 python3.11-venv  # Or python3.12, python3.13
 ```bash
 # macOS/Linux: Create dedicated venv for API server
 python3 -m venv .venv-cpu
+# Activate venv (only needed once per terminal session)
 source .venv-cpu/bin/activate
 
 # Windows: Create dedicated venv for API server
 python -m venv .venv-cpu
+# Activate venv (only needed once per terminal session)
 .venv-cpu\Scripts\activate
 
 # All platforms: Install dependencies
@@ -146,6 +148,7 @@ python -m pip install -r requirements_cpu.txt
 ```bash
 # Create dedicated venv for API server (Python 3.12)
 python3.12 -m venv .venv-apple
+# Activate venv (only needed once per terminal session)
 source .venv-apple/bin/activate
 
 # Install API server dependencies with Metal-accelerated ML
@@ -175,6 +178,7 @@ PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
 # Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
 # Use full path if you have conda/uv Python that conflicts:
 /usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.11 if no PATH conflicts
+# Activate venv (only needed once per terminal session)
 source .venv-nvidia/bin/activate  # On Windows: .venv-nvidia\Scripts\activate
 
 # Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
@@ -250,7 +254,7 @@ cp .env.sample .env
 
 **For CPU-only mode:**
 ```bash
-# Activate API server venv
+# Activate API server venv (if not already activated from Step 1)
 source .venv-cpu/bin/activate
 
 # Initialize database (no models needed)
@@ -259,7 +263,7 @@ python scripts/setup-cpu.py
 
 **For GPU modes (Apple Metal or NVIDIA):**
 ```bash
-# Activate API server venv
+# Activate API server venv (if not already activated from Step 1)
 source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
 
 # Download models and initialize database using recommended/active models
@@ -271,29 +275,22 @@ python scripts/setup-gpu.py --select-models
 
 ### Step 4: Start API Server
 
-**Quick start (recommended):**
+**If continuing from Step 3 in the same terminal session:**
 ```bash
-# macOS/Linux: Run the startup script
+# Your venv is already activated, just start the server:
+python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+```
+
+**If starting fresh (after reboot, new terminal, or subsequent runs):**
+```bash
+# macOS/Linux: Run the startup script (handles activation automatically)
 ./start-chl.sh
 
-# Windows: Run the startup script
+# Windows: Run the startup script (handles activation automatically)
 start-chl.bat
 ```
 
-The startup script automatically detects your installed venv (CPU, Apple Metal, CUDA, etc.) and starts the API server on http://127.0.0.1:8000.
-
-**Manual start (alternative):**
-```bash
-# Activate the appropriate venv
-source .venv-cpu/bin/activate      # For CPU mode
-# OR
-source .venv-apple/bin/activate    # For Apple Metal
-# OR
-source .venv-nvidia/bin/activate   # For NVIDIA GPU
-
-# Start the API server (automatically uses backend from runtime_config.json)
-python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
-```
+The startup script automatically detects your installed venv (CPU, Apple Metal, NVIDIA, etc.) and starts the API server on http://127.0.0.1:8000.
 
 **Verify installation:**
 - Open http://127.0.0.1:8000/settings to verify configuration
@@ -407,7 +404,7 @@ Only add `env` section if you need non-default values.
 
 All scripts run from the API server's venv (NOT via `uv run`):
 
-**Activate API server venv first:**
+**Activate API server venv (once per terminal session):**
 ```bash
 source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
 ```
