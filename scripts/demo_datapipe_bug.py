@@ -35,10 +35,13 @@ def main() -> None:
         f"[{now}] INFO  Stage: {pipeline_stage}",
         f"[{now}] ERROR {error_msg}",
         "Traceback (most recent call last):",
-        '  File "scripts/demo_datapipe_bug.py", line 45, in main',
+        '  File "scripts/demo_datapipe_bug.py", line 53, in main',
         f'    with open("{input_file}", "r") as f:',
         f"FileNotFoundError: [Errno 2] No such file or directory: '{input_file}'",
     ]
+    # Pad log to ~50 lines for ticket excerpt demos
+    for i in range(6, 50):
+        log_lines.append(f"[{now}] DEBUG placeholder log line {i}")
     log_path = output_dir / "app.log"
     log_path.write_text("\n".join(log_lines))
 

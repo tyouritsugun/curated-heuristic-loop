@@ -16,7 +16,8 @@ Run a quick A/B: without CHL the assistant rushes to code and writes an incomple
    - `data/output/run_meta.json`  
    - `data/output/app.log`  
 6) Open your code assistant, start a new chat, and follow the A/B flow below.
-7) Optional: paste the "Copy-Paste Sample TMG Content" below into a sheet/CSV and import it so CHL can enforce the DataPipe ticket format.
+7) Optional: insert the sample TMG rows via `write_entries` then export to your sheet, or paste the CSV block below into a sheet and import it so CHL can enforce the DataPipe ticket format.
+8) Run the demo script once; import order doesn’t matter (artifacts and TMG content are independent).
 
 ### Why This Matters: The Behavioral Delta
 
@@ -272,6 +273,7 @@ return {
 - ✅ Copy-paste sample TMG content provided below
 - ⏳ Instruction layers (FastMCP name + mcp.instructions + generator.md + AGENTS.md.sample) still to ship
 - ⏳ Handshake payload update in `src/mcp/core.py` still to ship
+- Note: The A/B demo works now with the sample content; instruction layers further improve reliability but aren’t required to run it.
 
 ### Phase 1: LLM Instruction Layers (to finish)
 1. Update FastMCP constructor name to include "clarify task intent" (Layer 1)
@@ -280,17 +282,17 @@ return {
 4. Update build_handshake_payload with instructions field (Layer 4)
 
 ### Phase 2: Demo Content Creation
-5. Create sample DataPipe bug report manual (TMG category) — content below
-6. Create 8-10 DataPipe-specific experiences (TMG category) — content below
+5. ✅ Sample DataPipe bug report manual provided below
+6. ✅ 8-10 DataPipe-specific experiences provided below
 7. ✅ Create buggy demo script: `scripts/demo_datapipe_bug.py`
-8. (Optional) Host/import the sample content into your sheet via the Operations dashboard or API
+8. Import the sample content into your DB via `write_entries` + export-to-sheet, or paste the CSV block into your sheet and import via Operations/API
 
 ### Phase 3: Integration
 9. Add Step 7 to README: "Try the Demo" (reference this doc)
 10. Update Step 3 in README to mention optional sample sheet import
 
 ## Copy-Paste Sample TMG Content (manual + experiences)
-Use this in a Google Sheet or CSV with columns: `entity_type`, `category_code`, `title`, `body`. Import via the Operations dashboard or any import endpoint.
+Fast path: call `write_entry`/`write_entries` via MCP to insert these rows into your local DB, then export and paste into your import sheet; or paste this CSV directly into a sheet and import via the Operations dashboard/API. Use columns: `entity_type`, `category_code`, `title`, `body`.
 
 ```
 manual,TMG,DataPipe bug report template,"Required sections: Summary, Environment, Reproduction Steps, Expected vs Actual, Logs. Must include: Run ID (from run_meta.json), pipeline stage, last 50 lines of log, exact error message, timestamp. Artifact defaults: data/output/run_meta.json and data/output/app.log."
@@ -334,7 +336,7 @@ User can complete the A/B test demonstrating both pitfalls and fixes:
 9. **📝 Save this incomplete ticket**
 
 ### Test B (With CHL): Observe Both Fixes
-10. Import sample TMG data (if not done in Step 3)
+10. Import sample TMG data (if not already imported)
 11. Ensure CHL MCP server is running (`./start-chl.sh`)
 12. Start fresh chat session (with CHL MCP enabled)
 13. Paste same error: "I found a bug in DataPipe, here's the error: [paste]"
