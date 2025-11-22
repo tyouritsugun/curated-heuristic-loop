@@ -36,6 +36,7 @@ credentials/
 *.key
 data/
 src/storage/migrations/
+AGENTS.md
 
 # Environment files
 .env

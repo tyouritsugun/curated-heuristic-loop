@@ -9,6 +9,7 @@ Copy/paste the parts below into your code assistant’s common instructions (Cla
 - When you search, always call `read_entries(...)` through MCP (never read the DB directly).
 
 ## During Tasks
+- **Clarify task intent first**: When user mentions bugs/errors/problems, don't immediately rush to fix code. Ask yourself: Are they asking to fix, document, file a ticket, or investigate? If unclear, ask: "Would you like me to [fix this / write a bug ticket / investigate further]?"
 - Use categories: call `list_categories()` first; if the request includes one, honor it.
 - For retrieval, prefer a single good `read_entries(query=..., category_code=...)` call instead of guessing from memory.
 - When editing/adding guidance, run `check_duplicates(...)` before `write_entry(...)` to avoid collisions.

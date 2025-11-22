@@ -268,28 +268,34 @@ return {
 ```
 
 ## Implementation Status (Nov 22, 2025)
-- ✅ This plan documented
-- ✅ Bug demo script added: `scripts/demo_datapipe_bug.py`
-- ✅ Copy-paste sample TMG content provided below
-- ⏳ Instruction layers (FastMCP name + mcp.instructions + generator.md + AGENTS.md.sample) still to ship
-- ⏳ Handshake payload update in `src/mcp/core.py` still to ship
-- Note: The A/B demo works now with the sample content; instruction layers further improve reliability but aren’t required to run it.
 
-### Phase 1: LLM Instruction Layers (to finish)
-1. Update FastMCP constructor name to include "clarify task intent" (Layer 1)
-2. Update AGENTS.md.sample with task clarification (Layer 2)
-3. Update generator.md with Step 0: Clarify Intent (Layer 3)
-4. Update build_handshake_payload with instructions field (Layer 4)
+### ✅ Phase 2: Demo Content Creation (COMPLETE)
+1. ✅ Bug demo script created: `scripts/demo_datapipe_bug.py`
+2. ✅ Sample TMG manual and 10 experiences written to database
+3. ✅ Export functionality implemented - data successfully exported to Google Sheets
+4. ✅ Import round-trip verified - data imported back without loss
+5. ✅ Vector search confirmed working - all entries embedded and searchable
 
-### Phase 2: Demo Content Creation
-5. ✅ Sample DataPipe bug report manual provided below
-6. ✅ 8-10 DataPipe-specific experiences provided below
-7. ✅ Create buggy demo script: `scripts/demo_datapipe_bug.py`
-8. Import the sample content into your DB via `write_entries` + export-to-sheet, or paste the CSV block into your sheet and import via Operations/API
+**Demo is ready to run!** Users can now:
+- Export the TMG sample data from their local database to share with others
+- Import the TMG data from a shared spreadsheet to try the demo
+- Run `python scripts/demo_datapipe_bug.py` to generate artifacts
+- Follow the A/B testing flow to see CHL's value
 
-### Phase 3: Integration
-9. Add Step 7 to README: "Try the Demo" (reference this doc)
-10. Update Step 3 in README to mention optional sample sheet import
+### ✅ Phase 1: LLM Instruction Layers (COMPLETE)
+All four instruction layers implemented to improve LLM behavior reliability:
+1. ✅ FastMCP constructor name updated to include "clarify task intent" (Layer 1)
+2. ✅ AGENTS.md.sample updated with task clarification guidance (Layer 2)
+3. ✅ generator.md updated with Step 0: Clarify Intent (Layer 3)
+4. ✅ build_handshake_payload updated with instructions field (Layer 4)
+
+**Result:** LLMs now receive consistent guidance across multiple channels to clarify user intent before rushing to code.
+
+### ✅ Phase 3: Integration (COMPLETE)
+1. ✅ Added Step 7 to README: "Try the Demo" with quick start instructions
+2. ✅ Updated Step 3 in README to mention TMG sample data for demo
+
+**Result:** Users can now discover and run the demo directly from the README.
 
 ## Copy-Paste Sample TMG Content (manual + experiences)
 Fast path: call `write_entry`/`write_entries` via MCP to insert these rows into your local DB, then export and paste into your import sheet; or paste this CSV directly into a sheet and import via the Operations dashboard/API. Use columns: `entity_type`, `category_code`, `title`, `body`.

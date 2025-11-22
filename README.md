@@ -257,9 +257,11 @@ cp .env.sample .env
 # Activate API server venv (if not already activated from Step 1)
 source .venv-cpu/bin/activate
 
-# Initialize database (no models needed)
+# Initialize database with default categories
 python scripts/setup-cpu.py
 ```
+
+This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sample DataPipe bug reporting guidance for the optional demo (see Step 7).
 
 **For GPU modes (Apple Metal or NVIDIA):**
 ```bash
@@ -380,6 +382,27 @@ Only add `env` section if you need non-default values.
 - Restart your MCP client (Cursor, Claude Code, etc.)
 - Try: "List available categories"
 - Try: "Search for entries about error handling"
+
+### Step 7: Try the Demo (Optional)
+
+CHL includes a demo that shows how it teaches LLMs project-specific conventions. The demo uses a fictional "DataPipe" project to demonstrate the difference between generic bug reporting vs. team-specific ticket requirements.
+
+**What the demo shows:**
+- **Without CHL**: LLM rushes to fix code and writes incomplete tickets missing required artifacts
+- **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
+
+**Quick start:**
+1. Import the sample TMG (Ticket Management) data:
+   - Export your current database via Settings → "Export Spreadsheet"
+   - Check the Experiences worksheet - you should see 10 TMG entries about DataPipe bug reporting
+   - If not, use the import sheet to add the sample data (see `doc/plan/user_example.md` for CSV format)
+2. Run the demo script to generate artifacts:
+   ```bash
+   python scripts/demo_datapipe_bug.py
+   ```
+3. Follow the A/B testing flow in `doc/plan/user_example.md` to see the behavioral difference
+
+**Full details:** See `doc/plan/user_example.md` for complete instructions, A/B testing steps, and expected results.
 
 ## Mode Switching
 

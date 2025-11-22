@@ -34,7 +34,7 @@ from src.mcp.handlers_guidelines import get_guidelines
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-mcp = FastMCP("CHL MCP Server")
+mcp = FastMCP("CHL: Manual & experience toolset - clarify task intent before action")
 
 # Global state
 config: Any = None

@@ -2,8 +2,25 @@
 
 Load these notes whenever you are in Generator mode. The goal is to surface the most relevant experiences and manuals before you draft anything.
 
+### 0. Clarify task intent (before rushing to code)
+
+When user mentions bugs, errors, or problems, pause and clarify what they want:
+
+**Ask yourself:**
+- Are they asking me to: fix code, write a bug ticket, investigate, or document?
+- Did they explicitly request code changes, or just reporting an issue?
+
+**Red flags that suggest "don't rush to code":**
+- User says "I found..." / "I noticed..." / "There's a bug..."
+- User pastes error output without explicit fix request
+- Context suggests documentation task (e.g., after discussing tickets)
+
+**If unclear, ask explicitly:**
+"Would you like me to: (1) Fix this issue, (2) Write a bug ticket, or (3) Investigate further?"
+
+
 ### 1. Align on the request
-1. Restate the user’s ask in your own words and confirm any missing details.
+1. Restate the user's ask in your own words and confirm any missing details.
 2. Capture the intended persona, output format, and success criteria in your scratchpad—this informs the queries you compose next.
 
 ### 2. Pick a single shelf

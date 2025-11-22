@@ -213,6 +213,13 @@ def build_handshake_payload() -> Dict[str, Any]:
                 "transport": HTTP_MODE,
                 "base_url": getattr(config, "api_base_url", "unknown") if config else "unknown",
             },
+            "instructions": {
+                "task_clarification": (
+                    "Clarify user's intent before taking action when they report bugs/errors. "
+                    "They may want to: fix code, write a ticket (check TMG category), "
+                    "investigate, or document. Don't assume they want an immediate code fix."
+                )
+            },
         }
     except MCPTransportError as exc:
         logger.error("Failed to build handshake payload: %s", exc)
