@@ -180,7 +180,74 @@ The system is pre-configured with the following categories. You can add more as 
   - `e2e_test` (`EET`)
   - `pull_request` (`PRQ`)
 
-### 6.2. Environment Variables
+### 6.2. Managing Categories
+
+Categories define the organizational "shelves" where experiences and manuals are stored. The 12 default categories above are seeded during setup, but you can add custom categories for your team's specific workflows.
+
+#### Adding New Categories
+
+Categories are managed via Google Sheets import. Follow these steps:
+
+**1. Export your current database (creates a backup):**
+   - Open http://127.0.0.1:8000/settings
+   - Click **Export Spreadsheet**
+   - This writes all data to your export spreadsheet (configured as `EXPORT_SPREADSHEET_ID` in `.env`)
+
+**2. Save the export as a timestamped backup (recommended):**
+   - Open the export spreadsheet in Google Sheets
+   - Click **File → Make a copy**
+   - Rename to include timestamp (e.g., "CHL Export 2025-01-22")
+   - Move to a backup folder in your Google Drive
+   - This preserves a snapshot of your data before making changes
+
+**3. Copy category data to your import spreadsheet:**
+   - In the export spreadsheet, go to the **Categories** worksheet
+   - Select all rows (including header)
+   - Copy to clipboard
+   - Open your import spreadsheet (configured as `IMPORT_SPREADSHEET_ID` in `.env`)
+   - Create or navigate to the **Categories** worksheet
+   - Paste the data
+
+**4. Add your new category:**
+   - Add a new row to the Categories worksheet with these columns:
+     - `code`: Short uppercase identifier (3-4 letters, e.g., "DEP")
+     - `name`: Descriptive snake_case name (e.g., "deployment_procedures")
+     - `description`: Brief explanation of what this category contains
+     - `created_at`: Leave empty (auto-generated on import)
+
+**Example new categories:**
+
+| code | name | description | created_at |
+|------|------|-------------|------------|
+| DEP | deployment_procedures | Deployment checklists and rollback procedures | |
+| SEC | security_review | Security review patterns and vulnerability checks | |
+| ONC | oncall_runbook | Incident response and on-call procedures | |
+| DES | design_system | Design system patterns and component guidelines | |
+
+**5. Import the updated data:**
+   - Open http://127.0.0.1:8000/operations
+   - Click **Run Import**
+   - This replaces your local database with the import spreadsheet data
+
+**6. Verify the new category:**
+   - Check the MCP client (e.g., ask your assistant to "List available categories")
+   - Or visit http://127.0.0.1:8000/api/v1/categories/ to see all categories
+
+#### Important Notes
+
+- **Import is destructive**: The import operation replaces ALL local data with spreadsheet data. Always export and back up your current data first.
+- **Team coordination**: If multiple team members are adding categories, coordinate via the shared import spreadsheet to avoid conflicts.
+- **Category naming**: Choose short, memorable codes (3-4 uppercase letters) and descriptive snake_case names.
+- **Backup habit**: Make it a habit to rename exported spreadsheets with timestamps and save them to Google Drive for version history.
+
+#### Category Best Practices
+
+- **Be specific**: Create categories for distinct workflow types (e.g., "deployment_procedures" vs. "infrastructure_management")
+- **Avoid overlap**: Don't create multiple categories that could store the same type of knowledge
+- **Start small**: Begin with 2-3 custom categories and add more as your team's needs become clear
+- **Document purpose**: Use clear descriptions so team members know what each category is for
+
+### 6.3. Environment Variables
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. Key variables include:
 
 - `CHL_EXPERIENCE_ROOT` - Path to data directory

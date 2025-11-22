@@ -368,6 +368,7 @@ command = "uv"
 args = ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
 env = { UV_PROJECT_ENVIRONMENT = ".venv-mcp" }
 ```
+If `uv` complains about permissions in `~/.cache/uv`, set `UV_CACHE_DIR` in `env` to a writable path (for example the project root); otherwise keep it minimal as above.
 
 **MCP agent behavior:** To keep assistants from forgetting to call MCP tools or to prompt for reflections, copy the checklist in `AGENTS.md` into your assistant’s common instructions.
 
@@ -392,17 +393,14 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 - **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
 
 **Quick start:**
-1. Import the sample TMG (Ticket Management) data:
-   - Export your current database via Settings → "Export Spreadsheet"
-   - Check the Experiences worksheet - you should see 10 TMG entries about DataPipe bug reporting
-   - If not, use the import sheet to add the sample data (see `doc/plan/user_example.md` for CSV format)
+1. Verify TMG sample data is present (automatically seeded during Step 3)
 2. Run the demo script to generate artifacts:
    ```bash
    python scripts/demo_datapipe_bug.py
    ```
-3. Follow the A/B testing flow in `doc/plan/user_example.md` to see the behavioral difference
+3. Follow the A/B testing flow to see the behavioral difference
 
-**Full details:** See `doc/plan/user_example.md` for complete instructions, A/B testing steps, and expected results.
+**Full instructions:** See [doc/run_sample.md](doc/run_sample.md) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
 
 ## Mode Switching
 
@@ -443,6 +441,24 @@ source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
 - Programmatic calls: `curl -X POST http://localhost:8000/api/v1/operations/import-sheets -H 'Content-Type: application/json' -d '{}'` and `curl http://localhost:8000/api/v1/entries/export > /tmp/chl-export.json`
 
 > **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions that access internal components directly and must run with the API server stopped.
+
+## Managing Categories
+
+CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. To add custom categories for your team's workflows:
+
+**Quick steps:**
+1. Export current database via Settings → "Export Spreadsheet"
+2. Save export as timestamped backup in Google Drive (recommended)
+3. Copy Categories worksheet to your import spreadsheet
+4. Add new row with `code`, `name`, and `description`
+5. Import via Operations → "Run Import"
+
+**Example categories:**
+- `DEP` / `deployment_procedures` - Deployment checklists and rollback procedures
+- `SEC` / `security_review` - Security review patterns and vulnerability checks
+- `ONC` / `oncall_runbook` - Incident response and on-call procedures
+
+**Full instructions:** See [doc/manual.md - Managing Categories](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
 
 ### Validation & Testing Scripts
 

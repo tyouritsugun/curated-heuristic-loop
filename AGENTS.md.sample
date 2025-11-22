@@ -3,7 +3,6 @@
 Copy/paste the parts below into your code assistant’s common instructions (Claude Code, Cursor, Codex, etc.) so it stays consistent across sessions.
 
 ## Startup Checklist (every session)
-- Confirm the API server is running at `CHL_API_BASE_URL` (default `http://localhost:8000`); if unsure, ask the user to start it.
 - Call `list_categories()` once to warm the cache; if it fails, report the HTTP error and stop.
 - Load generator/evaluator guidance with `get_guidelines()` before doing work; stay in generator by default.
 - When you search, always call `read_entries(...)` through MCP (never read the DB directly).
