@@ -270,7 +270,7 @@ For a complete list of configuration options, see [src/common/config/config.py](
 
 ## 8. Script Development Guidelines
 
-When adding new scripts, follow the structure used in existing scripts like `scripts/search_health.py` or `scripts/validate_requirements.py`. Ensure they use `CHLAPIClient` for API communication and have clear documentation.
+When adding new scripts, follow the structure used in existing scripts like `scripts/search_health.py`. Ensure they use `CHLAPIClient` for API communication and have clear documentation.
 
 ## 9. CPU-Only Mode
 

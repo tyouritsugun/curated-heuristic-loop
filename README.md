@@ -246,7 +246,7 @@ Prepare the google spreadsheets for import and export, and share them with the a
 cp .env.sample .env
 # Edit .env and fill in:
 # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
-# - IMPORT_SPREADSHEET_ID (published spreadsheet ID for imports)
+# - IMPORT_SPREADSHEET_ID (if you want to try the sample of DataPipe, keep the ID in .env.sample, overwrite it when necessary)
 # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
 ```
 
@@ -263,7 +263,7 @@ python scripts/setup-cpu.py
 
 This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sample DataPipe bug reporting guidance for the optional demo (see Step 7).
 
-**For GPU modes (Apple Metal or NVIDIA):**
+**For GPU modes (Apple Metal, NVIDIA CUDA, AMD Rocm, or Intel oneAPI):**
 ```bash
 # Activate API server venv (if not already activated from Step 1)
 source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
@@ -326,7 +326,13 @@ Add to your MCP configuration file:
 
 *Option 1: User-level (recommended)* - Available across all projects on your machine:
 ```bash
-claude mcp add --scope user --transport stdio chl -- uv --directory /absolute/path/to/curated-heuristic-loop run python -m src.mcp.server
+claude mcp add \
+  --scope user \
+  --transport stdio \
+  --env UV_PROJECT_ENVIRONMENT=.venv-mcp \
+  chl \
+  -- \
+  uv --directory /absolute/path/to/curated-heuristic-loop run python -m src.mcp.server
 ```
 
 *Option 2: Project-level* - Create `.mcp.json` in the project root (good for team sharing):
@@ -380,10 +386,9 @@ To keep assistants from forgetting to call MCP tools and to prompt for reflectio
 - Or as a last resort: `cp AGENTS.md.sample AGENTS.md`
 
 **If you already have AGENTS.md:**
-- Ask your code assistant: "Please read AGENTS.md.sample and merge the CHL instructions into my existing AGENTS.md"
-- Or manually append: `cat AGENTS.md.sample >> AGENTS.md`
+- Ask your code assistant: "Please merge the CHL instructions into my existing AGENTS.md, the instructions are `{copy of AGENTS.md.sample}`"
 
-Then add the contents of your `AGENTS.md` to your code assistant's common instructions (Claude Code, Cursor, Codex, etc.). These CHL instructions ensure the assistant:
+These CHL instructions in the standard `AGENTS.md` ensure the assistant:
 - Calls `list_categories()` and `get_guidelines()` at startup
 - Uses CHL MCP tools for retrieval instead of guessing
 - Prompts for reflection and curation at conversation end
@@ -398,7 +403,7 @@ Only add `env` section if you need non-default values.
 **Test MCP integration:**
 - Restart your MCP client (Cursor, Claude Code, etc.)
 - Try: "List available categories"
-- Try: "Search for entries about error handling"
+- Try: "Search for entries about bug reporting"
 
 ### Step 7: Try the Demo (Optional)
 
@@ -408,55 +413,29 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 - **Without CHL**: LLM rushes to fix code and writes incomplete tickets missing required artifacts
 - **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
 
-**Quick start:**
-1. Verify TMG sample data is present (automatically seeded during Step 3)
-2. Run the demo script to generate artifacts:
-   ```bash
-   python scripts/demo_datapipe_bug.py
-   ```
-3. Follow the A/B testing flow to see the behavioral difference
-
 **Full instructions:** See [doc/run_sample.md](doc/run_sample.md) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
 
 ## Mode Switching
 
-**Switching from CPU-only to GPU mode:**
+To switch between CPU and GPU modes:
 1. Stop the API server
-2. Run `python scripts/check_api_env.py` and select GPU option (this updates `runtime_config.json`)
-3. Create new GPU venv (`.venv-apple` or `.venv-nvidia`) and install corresponding requirements file
-4. Run `python scripts/setup-gpu.py --download-models`
-5. Start API server (automatically uses GPU backend from `runtime_config.json`)
-6. Rebuild embeddings/FAISS via `/operations` or `scripts/rebuild_index.py`
+2. Run `python scripts/check_api_env.py` and select target mode (updates `runtime_config.json`)
+3. Create new venv for target mode and install corresponding requirements file
+4. GPU mode only: Run `python scripts/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
+5. Start API server (automatically uses backend from `runtime_config.json`)
 
-**Switching from GPU to CPU-only mode:**
-1. Stop the API server
-2. Run `python scripts/check_api_env.py` and select CPU option (this updates `runtime_config.json`)
-3. Create new CPU venv (`.venv-cpu`) and install `requirements_cpu.txt`
-4. Start API server (automatically uses CPU backend from `runtime_config.json`)
-5. FAISS artifacts remain on disk but are ignored
+> **Note**: FAISS snapshots are not portable between modes. Switching requires rebuilding search index in the target mode.
 
-> **Important**: Backend configuration is stored in `data/runtime_config.json`. FAISS snapshots are NOT portable between modes. Switching modes requires rebuilding from scratch in the target mode.
+## Routine Operations
 
-## Operational Scripts
+After initial installation, use the web dashboards for most operations:
 
-All scripts run from the API server's venv (NOT via `uv run`):
+- **Import/Export**: Use `/operations` dashboard to sync with Google Sheets or rebuild search index
+- **Settings**: Use `/settings` dashboard for configuration, model selection, and JSON backup
 
-**Activate API server venv (once per terminal session):**
-```bash
-source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
-```
-
-**Then run scripts:**
-- `python scripts/seed_default_content.py` – idempotently loads starter categories and sample experiences
-- `python scripts/rebuild_index.py` – rebuilds FAISS index (GPU mode) or SQLite FTS (CPU mode)
-- `python scripts/sync_embeddings.py` – syncs embeddings for all entries (GPU mode only)
-- `python scripts/search_health.py` – checks search system health
-
-**Import/Export (API server):**
-- Use the `/operations` dashboard to run import/export without any CLI wrappers. Import pulls directly from the configured import spreadsheet and overwrites the local database; export writes all database entries to the configured export spreadsheet.
-- Programmatic calls: `curl -X POST http://localhost:8000/api/v1/operations/import-sheets -H 'Content-Type: application/json' -d '{}'` and `curl http://localhost:8000/api/v1/entries/export > /tmp/chl-export.json`
-
-> **Note**: Scripts use the API server's HTTP endpoints when possible. Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions that access internal components directly and must run with the API server stopped.
+**CLI scripts** (activate API server venv first: `source .venv-cpu/bin/activate`):
+- `python scripts/rebuild_index.py` – rebuild search index if needed
+- `python scripts/search_health.py` – check search system health
 
 ## Managing Categories
 
@@ -476,31 +455,6 @@ CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. 
 
 **Full instructions:** See [doc/manual.md - Managing Categories](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
 
-### Validation & Testing Scripts
-
-After installing the API server, verify your setup with platform-specific smoke tests:
-
-**CPU Mode:**
-```bash
-python scripts/smoke_test_cpu.py
-```
-Validates text search, database operations, and API health without ML dependencies.
-
-**Apple Metal:**
-```bash
-python scripts/smoke_test_apple.py
-```
-Validates Metal GPU acceleration, embedding generation, and reranker inference.
-
-**NVIDIA CUDA:**
-```bash
-python scripts/smoke_test_cuda.py
-```
-Validates CUDA GPU acceleration, embedding generation, and reranker inference.
-
-**Validation Scripts** (run anytime to check project health):
-- `python scripts/validate_requirements.py` – ensures requirements_*.txt files are synchronized
-- `python scripts/validate_docs.py` – validates documentation accuracy (file references, versions)
 
 ## Web Dashboards
 
