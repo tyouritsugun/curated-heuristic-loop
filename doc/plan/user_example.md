@@ -53,36 +53,35 @@ A fictional ETL/data processing tool with specific bug reporting conventions.
 **Manual entries:**
 1. "DataPipe bug report template"
    - Required sections: Summary, Environment, Reproduction Steps, Expected vs Actual, Logs
-   - Must include: Run ID, pipeline stage, log excerpt from `demo/output/app.log`
+   - Must include: Run ID, pipeline stage, and a 50-line log excerpt from the most recent run artifacts (the script prints where these files are saved)
 
 2. "DataPipe debugging checklist"
-   - Pre-filing checks: Check `demo/output/run_meta.json` for run context, review `demo/output/app.log` for errors
+   - Pre-filing checks: Check the run metadata JSON emitted by the demo script for context; review the corresponding log tail for stack traces
 
-**Experience entries (10-15 examples):**
-1. "Always include Run ID from demo/output/run_meta.json in ticket header"
-2. "Specify pipeline stage from run_meta.json (extract/transform/load/validate)"
-3. "Attach last 50 lines from demo/output/app.log"
-4. "Reference source_file field from run_meta.json to identify failing module"
-5. "Include exact error message from app.log (don't paraphrase)"
-6. "Note timestamp from run_meta.json for time-sensitive issues"
-7. "For data pipeline bugs: include input file path from run_meta.json"
-8. "Test if bug reproduces by re-running demo/datapipe-broken.py"
-9. "Check app.log for stack trace before filing - include full trace if present"
-10. "Specify if bug is intermittent or deterministic (check multiple runs)"
-11. "Add context: what data transformation was being attempted?"
-12. "Search existing tickets by Run ID to avoid duplicates"
-13. "For performance issues: note execution time from run_meta.json"
-14. "Mark severity: P0 (data loss), P1 (pipeline blocked), P2 (degraded), P3 (minor)"
-15. "Cross-reference error code in app.log with DataPipe error catalog"
+**Experience entries (8-10 examples):**
+1. "Always include Run ID from the run metadata JSON in ticket header"
+2. "Specify pipeline stage from metadata (extract/transform/load/validate)"
+3. "Attach last 50 lines from the run's log file"
+4. "Include exact error message from log (don't paraphrase)"
+5. "Note timestamp from metadata for time-sensitive issues"
+6. "Check log for stack trace before filing - include full trace if present"
+7. "Specify if bug is intermittent or deterministic (check multiple runs)"
+8. "Add context: what operation was being attempted?"
+9. "Search existing tickets by Run ID to avoid duplicates"
+10. "Mark severity: P0 (data loss), P1 (pipeline blocked), P2 (degraded), P3 (minor)"
+
+**Note:** Default artifact location is `data/output/` for the provided demo script, but the guidance applies to any script that emits run metadata and logs.
 
 ### Demo Flow
 
-1. **User runs buggy script**: `./demo/datapipe-broken.py`
-   - Script fails with realistic error (e.g., missing data file, validation failure)
-   - Generates two artifacts:
-     - `demo/output/run_meta.json` - Contains: run_id, pipeline_stage, source_file, timestamp, input_file
-     - `demo/output/app.log` - Contains last 50 log lines with stack trace and error details
-   - Script prints error to console for user to paste
+1. **User runs buggy script**: `python scripts/demo_datapipe_bug.py`
+   - Script fails with realistic error (e.g., missing data file)
+   - Script prints:
+     - Error message to console (for user to paste to LLM)
+     - Artifact locations: "Artifacts saved to data/output/run_meta.json and data/output/app.log"
+   - Generated artifacts contain:
+     - `data/output/run_meta.json`: run_id, pipeline_stage, timestamp
+     - `data/output/app.log`: last 50 log lines with stack trace and error details
 
 2. **Test A: Without CHL** (baseline behavior - demonstrates both pitfalls)
 
@@ -109,7 +108,7 @@ A fictional ETL/data processing tool with specific bug reporting conventions.
         Description: The script failed with a validation error...
         Steps to reproduce: Run datapipe-broken.py
         [Missing: Run ID, pipeline stage, log excerpt - even though the script
-         printed "Artifacts saved to demo/output/"]
+         printed where the artifacts were saved]
    ```
    - **📝 Action**: Save this ticket output to compare later
 
@@ -137,17 +136,13 @@ A fictional ETL/data processing tool with specific bug reporting conventions.
    ```
    User: "Write a bug ticket."
    LLM: [calls read_entries(entity_type='experience', category_code='TMG', query='datapipe ticket requirements')]
-        "I'll create a DataPipe ticket. First, I need the required artifacts:
+        "I'll create a DataPipe ticket. First, I need the required artifacts.
+         The script printed where it saved them - can you share those paths, or shall I
+         look for the metadata JSON and log file in the standard location?"
 
-         1. Run ID - Check demo/output/run_meta.json, field 'run_id'
-         2. Pipeline stage - Check demo/output/run_meta.json, field 'pipeline_stage'
-         3. Last 50 log lines - From demo/output/app.log
+   User: "They're in the printed location."
 
-         Can you provide these, or shall I read them from the files?"
-
-   User: "Read them from the files."
-
-   LLM: [reads demo/output/run_meta.json and demo/output/app.log]
+   LLM: [reads the run metadata JSON and log file from the artifact paths]
         [writes complete ticket with Run ID: DP-20250122-143052,
          Pipeline Stage: transform, log excerpt included]
    ```
@@ -268,22 +263,95 @@ return {
 
 ### Phase 2: Demo Content Creation
 6. [ ] Create sample DataPipe bug report manual (TMG category)
-7. [ ] Create 10-15 DataPipe-specific experiences (TMG category)
-8. [ ] Create buggy demo script: `demo/datapipe-broken.py`
-    - Simulates data pipeline failure (e.g., missing input file, validation error)
-    - Generates `demo/output/run_meta.json` with fields:
-      ```json
-      {
-        "run_id": "DP-20250122-143052",
-        "pipeline_stage": "transform",
-        "source_file": "demo/datapipe_broken.py",
-        "timestamp": "2025-01-22T14:30:52Z",
-        "input_file": "data/sample.csv",
-        "error_code": "E1234"
-      }
-      ```
-    - Generates `demo/output/app.log` with last 50 log lines including stack trace
-    - Prints error to console for user to copy
+7. [ ] Create 8-10 DataPipe-specific experiences (TMG category) - simplified from 15
+8. [ ] Create buggy demo script: `scripts/demo_datapipe_bug.py`
+
+**Script Design (Keep it Simple):**
+
+```python
+#!/usr/bin/env python3
+"""DataPipe Demo - Simulates a data pipeline bug for CHL demonstration."""
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+def main():
+    # Generate run ID
+    run_id = f"DP-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+
+    # Pipeline stages: extract -> transform -> load -> validate
+    pipeline_stage = "transform"
+
+    # Create output directory
+    output_dir = Path("data/output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Simulate missing input file error
+    input_file = "data/sample_input.csv"
+
+    print(f"[{run_id}] Starting DataPipe at stage: {pipeline_stage}")
+    print(f"[{run_id}] Reading input: {input_file}")
+
+    # Write metadata
+    metadata = {
+        "run_id": run_id,
+        "pipeline_stage": pipeline_stage,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    metadata_path = output_dir / "run_meta.json"
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    # Simulate error and write log
+    error_msg = f"FileNotFoundError: {input_file} does not exist"
+    log_lines = [
+        f"[{datetime.now().isoformat()}] INFO: DataPipe started",
+        f"[{datetime.now().isoformat()}] INFO: Run ID: {run_id}",
+        f"[{datetime.now().isoformat()}] INFO: Stage: {pipeline_stage}",
+        f"[{datetime.now().isoformat()}] ERROR: {error_msg}",
+        "Traceback (most recent call last):",
+        '  File "scripts/demo_datapipe_bug.py", line 45, in main',
+        f'    with open("{input_file}", "r") as f:',
+        f"FileNotFoundError: [Errno 2] No such file or directory: '{input_file}'",
+    ]
+
+    log_path = output_dir / "app.log"
+    with open(log_path, "w") as f:
+        f.write("\n".join(log_lines))
+
+    # Print error to console
+    print(f"\n{'='*60}")
+    print(f"ERROR: {error_msg}")
+    print(f"{'='*60}")
+    print(f"\nArtifacts saved to {output_dir}/run_meta.json and {output_dir}/app.log")
+    print(f"\nRun ID: {run_id}")
+    print(f"Pipeline Stage: {pipeline_stage}")
+    print(f"\nSee {log_path} for full stack trace")
+
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+```
+
+**What the script does:**
+- ✅ Generates unique Run ID (matches experience #1)
+- ✅ Sets pipeline stage to "transform" (matches experience #2)
+- ✅ Creates `data/output/run_meta.json` with run_id, pipeline_stage, timestamp (matches experiences #1, #2, #5)
+- ✅ Creates `data/output/app.log` with error message and stack trace (matches experiences #3, #4, #6)
+- ✅ Prints error to console for user to paste
+- ✅ Prints artifact locations
+- ✅ Fails with realistic FileNotFoundError (simple, reproducible)
+
+**What we removed:**
+- ❌ source_file field (not needed for simple demo)
+- ❌ input_file field in metadata (the input file path is in the error message, that's enough)
+- ❌ error_code field (simpler without it)
+- ❌ execution_time field (not in core experiences)
+
 9. [ ] Create Google Sheets template with sample TMG content
 
 ### Phase 3: Integration
@@ -298,9 +366,9 @@ return {
 User can complete the A/B test demonstrating both pitfalls and fixes:
 
 ### Setup
-1. Run `./demo/datapipe-broken.py` once to generate artifacts:
-   - `demo/output/run_meta.json` (with Run ID, pipeline stage, etc.)
-   - `demo/output/app.log` (with error details and stack trace)
+1. Run `python scripts/demo_datapipe_bug.py` once to generate artifacts:
+   - `data/output/run_meta.json` (with Run ID, pipeline stage, timestamp)
+   - `data/output/app.log` (with error details and stack trace)
 2. Note the console error output to paste into LLM
 
 ### Test A (Without CHL): Observe Both Pitfalls
@@ -309,7 +377,7 @@ User can complete the A/B test demonstrating both pitfalls and fixes:
 5. **Observe Pitfall #1**: LLM rushes to fix code without asking intent
 6. **📝 Save this response**
 7. Follow up: "Actually, don't fix it. Write a bug ticket instead."
-8. **Observe Pitfall #2**: LLM writes incomplete ticket missing Run ID, pipeline stage, log excerpt
+8. **Observe Pitfall #2**: LLM writes incomplete ticket missing Run ID, pipeline stage, log excerpt (even though script printed artifact locations)
 9. **📝 Save this incomplete ticket**
 
 ### Test B (With CHL): Observe Both Fixes
@@ -319,8 +387,8 @@ User can complete the A/B test demonstrating both pitfalls and fixes:
 13. Paste same error: "I found a bug in DataPipe, here's the error: [paste]"
 14. **Observe Fix #1**: LLM clarifies intent (fix/ticket/investigate) instead of rushing to code
 15. Choose: "Write a bug ticket"
-16. **Observe Fix #2**: LLM asks for Run ID, pipeline stage, and logs from `demo/output/` files
-17. Let LLM read the files and generate complete ticket
+16. **Observe Fix #2**: LLM asks for artifact locations (metadata JSON and log file) that script printed
+17. Let LLM read the files from those locations and generate complete ticket
 18. **Compare**: Ticket now includes Run ID, pipeline stage, and log excerpt
 
 ### Understanding
