@@ -74,6 +74,7 @@ graph TB
 The FastAPI server is the sole authority for all data persistence, search operations, and background workers.
 
 **Responsibilities:**
+
 - SQLite database operations (CRUD, transactions)
 - Vector search (FAISS) and text search (SQLite FTS)
 - Background embedding worker (GPU mode only)
@@ -82,12 +83,14 @@ The FastAPI server is the sole authority for all data persistence, search operat
 - REST API for MCP and scripts
 
 **Runtime Backends:**
+
 - **CPU Mode** (`backend="cpu"`): SQLite text search only, no ML dependencies
 - **GPU Modes** (`backend="metal"/"cuda"/"rocm"`): FAISS vector search with embeddings and reranking
 
 Backend is automatically detected from `data/runtime_config.json` (created by `scripts/check_api_env.py`). To switch backends, re-run diagnostics and restart the server.
 
 **Key Modules:**
+
 - `src/api/routers/` - FastAPI route handlers
 - `src/api/services/` - Business logic (operations, settings, telemetry, workers)
 - `src/api/cpu/` - CPU-specific runtime and search provider
@@ -99,11 +102,13 @@ Backend is automatically detected from `data/runtime_config.json` (created by `s
 The lightweight MCP server exposes CHL functionality to AI assistants via the Model Context Protocol. It is a **pure HTTP client** with no direct database or FAISS access.
 
 **Responsibilities:**
+
 - Handle MCP tool calls from AI assistants
 - Translate tool calls to API server HTTP requests
 - Return formatted responses to AI assistants
 
 **Architecture Constraint:**
+
 - MCP server may ONLY import from:
   - `src.common.config.*` (environment configuration)
   - `src.common.api_client.*` (CHLAPIClient HTTP wrapper)
@@ -111,6 +116,7 @@ The lightweight MCP server exposes CHL functionality to AI assistants via the Mo
 - All other operations must go through API server HTTP endpoints
 
 **Key Modules:**
+
 - `src/mcp/server.py` - MCP protocol server (FastMCP)
 - `src/mcp/handlers_entries.py` - Entry operations (read, write, update)
 - `src/mcp/handlers_guidelines.py` - Guidelines operations
@@ -121,6 +127,7 @@ The lightweight MCP server exposes CHL functionality to AI assistants via the Mo
 Shared utilities used by both API and MCP servers.
 
 **Modules:**
+
 - `src/common/config/` - Environment variable configuration
 - `src/common/api_client/` - CHLAPIClient HTTP wrapper
 - `src/common/dto/` - Shared data structures for validation
@@ -128,6 +135,7 @@ Shared utilities used by both API and MCP servers.
 - `src/common/web_utils/` - Static files, templates, markdown rendering (API server only)
 
 **Import Rules (enforced by boundary tests):**
+
 - MCP server: May import only `config`, `api_client`, `dto`
 - API server: May import all `src/common.*` modules
 - Scripts: May import `config`, `api_client`, `storage` (but run in API venv)
@@ -137,17 +145,20 @@ Shared utilities used by both API and MCP servers.
 Prefer the API server for import/export/index operations; remaining scripts focus on setup and maintenance, and they all run from the **API server's venv** (not via `uv run`).
 
 **API/UI jobs:**
+
 - Import from Google Sheets via `/operations` or `POST /api/v1/operations/import-sheets` (destructive; uses configured credentials/IDs)
 - Export the database snapshot via `/operations` or `GET /api/v1/entries/export` for JSON review/backup
 - Rebuild index, refresh embeddings, and sync guidelines via `/operations` (jobs: `rebuild-index`, `sync-embeddings`, `guidelines`)
 
 **Maintenance scripts (HTTP orchestration):**
+
 - `rebuild_index.py` - Rebuild FAISS/FTS index
 - `sync_embeddings.py` - Sync embeddings for all entries (GPU mode)
 - `search_health.py` - Check search system health (falls back to direct DB/FAISS inspection only if the API is unreachable)
 - `seed_default_content.py` - Load starter content
 
 **Setup Scripts (exception to HTTP-first rule):**
+
 - `setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
 - `setup-cpu.py` - Initialize database schema (direct DB access)
 - `smoke_test_cuda.py` - Test NVIDIA CUDA GPU components (direct API imports)
