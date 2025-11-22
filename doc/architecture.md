@@ -292,28 +292,35 @@ Human-readable surface for team-based curation. The Operations export job genera
 **Decision**: Use HTTP/REST API as the sole communication method between MCP server and API server.
 
 **Rationale:**
-- Multi-client concurrency (multiple MCP clients simultaneously)
-- Resource control via API server lock mechanisms
-- Process isolation prevents resource conflicts
-- Clear error boundaries and failure modes
+
+- **Multi-client concurrency**: Enables running multiple MCP instances (e.g., Claude Code, Cursor, multiple terminal sessions) on the same machine simultaneously
+- **Shared FAISS consistency**: Centralizing FAISS index in the API server ensures all MCP clients query the same index. Without this architecture, each MCP instance would maintain its own FAISS database, leading to data inconsistency and wasted resources
+- **Single source of truth**: API server is the sole authority for database and FAISS operations, preventing state divergence across clients
+- **Resource control**: API server lock mechanisms coordinate concurrent access (index rebuilds, embedding updates)
+- **Process isolation**: Prevents resource conflicts when multiple code assistants access CHL simultaneously
+- **Clear error boundaries**: HTTP layer provides well-defined failure modes
 
 **Implications:**
+
 - All MCP operations go through API endpoints
-- API server is sole authority for database and FAISS operations
+- API server maintains single FAISS index shared by all clients
 - `CHLAPIClient` is the only shared client library
 - Lock mechanisms prevent concurrent modification issues
+- Multiple developers or multiple IDE sessions can safely use CHL on the same machine
 
 ### 5.2. CPU/GPU Runtime Separation
 
 **Decision**: Separate CPU-only and GPU-accelerated implementations into distinct modules (`src/api/cpu/` and `src/api/gpu/`) using strategy pattern.
 
 **Rationale:**
+
 - Clear separation makes code easier to understand
 - CPU mode has no GPU dependencies (lighter installations)
 - Independent testing without mocking
 - Better developer onboarding
 
 **Implications:**
+
 - Mode is fixed at startup (no runtime switching)
 - Switching modes requires data cleanup and re-setup
 - Runtime builder provides abstraction layer
@@ -323,6 +330,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 **Decision**: Three-tier directory structure `src/api/`, `src/mcp/`, `src/common/` with explicit boundaries.
 
 **Import Rules:**
+
 - Common code has no dependencies on API or MCP
 - API server may import any `src/common.*` modules
 - MCP server may import only `src.common.{config,api_client,dto}`
@@ -337,11 +345,13 @@ Human-readable surface for team-based curation. The Operations export job genera
 **Decision**: Design for local-only deployment where MCP and API server run on the same developer machine.
 
 **Rationale:**
+
 - MVP stage, not building cloud service yet
 - Simplicity without authentication/authorization complexity
 - Fast iteration with minimal deployment overhead
 
 **Implications:**
+
 - No authentication layer required
 - Simple error handling (`CHLAPIClient` raises standard HTTP exceptions)
 - MCP receives API URL as start parameter (typically `localhost:8000`)
@@ -358,6 +368,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 - Data consistency (avoids partially-synced embeddings)
 
 **Implications:**
+
 - Backend determined from `data/runtime_config.json` at startup
 - Backend change requires: re-run `scripts/check_api_env.py` → restart server → rebuild index
 - Template selection happens once at startup
@@ -371,6 +382,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 The MCP server provides a simple, tool-based interface for AI assistants:
 
 **Available Tools:**
+
 - `list_categories()` - List all available category shelves
 - `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or manuals
 - `write_entry(entity_type, category_code, data)` - Create new entry
@@ -378,6 +390,7 @@ The MCP server provides a simple, tool-based interface for AI assistants:
 - `get_guidelines(guide_type)` - Return generator or evaluator workflow manual
 
 **Key Behaviors:**
+
 - Reads via vector search (FAISS) in GPU mode, text search in CPU mode
 - Writes persist to SQLite immediately with `embedding_status='pending'`
 - No direct Sheet access - all curation flows through explicit export/import scripts
