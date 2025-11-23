@@ -1,16 +1,30 @@
+# CHL MCP Server
+#
+# This pyproject.toml is for the MCP server ONLY, which communicates with the
+# API server via HTTP. The API server has its own platform-specific requirements
+# files (requirements_cpu.txt, requirements_apple.txt, requirements_cuda.txt).
+#
+# Installation:
+#   uv sync --python 3.11
+#
+# The MCP server requires the API server to be running at the configured base URL
+# (default: http://localhost:8000). See README.md for full setup instructions.
+
 [project]
 name = "chl-mcp-server"
 version = "0.2.0"
-description = "Curated Heuristic Loop MCP Server for experience management with semantic search"
-requires-python = ">=3.10,<3.12"  # Torch 2.0.x wheels are only for Python 3.10–3.11
+description = "Curated Heuristic Loop MCP Server - HTTP client for CHL API"
+requires-python = ">=3.10,<3.12"
 dependencies = [
+    # MCP protocol
     "fastmcp>=0.3.0",
-    "sqlalchemy>=2.0.0",
-    "numpy>=1.24.0,<2.0.0",
-    "gspread>=5.0.0",
-    "google-auth>=2.0.0",
-    "google-auth-oauthlib>=1.0.0",
-    "tqdm>=4.65.0",
+
+    # HTTP client for API communication
+    "httpx>=0.27.0",
+    "requests>=2.31.0",
+
+    # Configuration and utilities
+    "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
 ]
 
@@ -18,13 +32,6 @@ dependencies = [
 dev = [
     "pytest>=8.3.4",
     "pytest-mock>=3.14.0",
-]
-ml = [
-    # Using llama-cpp-python for GGUF quantized embeddings
-    "llama-cpp-python>=0.2.0",
-    "faiss-cpu>=1.7.4",
-    "huggingface-hub>=0.20.0",  # For downloading GGUF models
-    "sentence-transformers>=3.1.1",
 ]
 test = [
     "pytest>=8.3.4",
@@ -43,3 +50,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "cpu_only: run test with CHL_BACKEND=cpu",
+    "sqlite_only: (deprecated, use cpu_only) run test with CHL_BACKEND=cpu",
+]

@@ -1,0 +1,32 @@
+<section
+  id="audit-log-card"
+  class="card"
+  hx-get="/ui/settings/audit-log"
+  hx-trigger="load, settings-changed from:body"
+  hx-target="#audit-log-card"
+  hx-swap="outerHTML"
+>
+  <header>
+    <div>
+      <h2>Recent Audit Log</h2>
+      <p class="muted">Latest configuration changes for troubleshooting.</p>
+    </div>
+  </header>
+  <ul class="audit-list">
+    {% if audit_entries %}
+      {% for entry in audit_entries %}
+        <li>
+          <div>
+            <p class="audit-event">{{ entry.event_type }}</p>
+            <p class="audit-meta">by {{ entry.actor }} • {{ entry.created_at }}</p>
+          </div>
+          {% if entry.context_pretty %}
+            <pre class="audit-context">{{ entry.context_pretty }}</pre>
+          {% endif %}
+        </li>
+      {% endfor %}
+    {% else %}
+      <li><p class="muted">No audit entries yet.</p></li>
+    {% endif %}
+  </ul>
+</section>

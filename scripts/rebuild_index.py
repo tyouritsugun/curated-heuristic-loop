@@ -1,45 +1,21 @@
 #!/usr/bin/env python
-"""Rebuild FAISS index from embeddings table
+"""Trigger FAISS index rebuild via the API operations endpoint.
 
 Usage:
     python scripts/rebuild_index.py
 
-Environment Variables:
-    CHL_DATABASE_PATH: Path to SQLite database (default: <experience_root>/chl.db; relative resolves under <experience_root>)
-    CHL_EMBEDDING_MODEL: Embedding model name (default: Qwen/Qwen3-Embedding-0.6B)
-    CHL_FAISS_INDEX_PATH: FAISS index directory (default: <experience_root>/faiss_index; relative resolves under <experience_root>)
-
-This script will:
-1. Clear existing FAISS index and metadata
-2. Load all embeddings from the database
-3. Rebuild the FAISS index
-4. Save the index to disk
-
-Preconditions:
-- Database exists and has embeddings
-- ML/FAISS dependencies installed (pip install -e ".[ml]")
-- Sufficient disk space for index files
-
-Example:
-    # Basic usage
-    python scripts/rebuild_index.py
-
-    # With custom paths
-    CHL_DATABASE_PATH=data/test.db python scripts/rebuild_index.py
+This script now delegates rebuild work to `/api/v1/operations/rebuild-index`.
+The API server must be running and configured with GPU/FAISS support.
 """
-import os
-import sys
 import logging
+import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.common.config.config import ensure_project_root_on_sys_path, get_config
 
-from src.config import get_config
-from src.storage.database import Database
-from src.embedding.client import EmbeddingClient
-from src.search.faiss_index import FAISSIndexManager
-from src.search.vector_provider import VectorFAISSProvider
+ensure_project_root_on_sys_path()
+
+from src.common.api_client.client import CHLAPIClient, APIOperationError, APIConnectionError
 
 # Configure logging
 logging.basicConfig(
@@ -50,59 +26,47 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """Rebuild FAISS index from embeddings"""
+    """Trigger FAISS index rebuild job via HTTP."""
     try:
-        # Load configuration
-        logger.info("Loading configuration...")
         config = get_config()
+        client = CHLAPIClient(base_url=getattr(config, "api_base_url", "http://localhost:8000"))
 
-        # Initialize database
-        logger.info(f"Connecting to database: {config.database_path}")
-        db = Database(config.database_path, echo=config.database_echo)
-        db.init_database()
-
-        # Initialize GGUF embedding client
-        logger.info(f"Loading embedding model: {config.embedding_repo} [{config.embedding_quant}]")
-        embedding_client = EmbeddingClient(
-            model_repo=config.embedding_repo,
-            quantization=config.embedding_quant,
-            normalize=True
-        )
-
-        # Initialize FAISS index manager
-        logger.info(f"Initializing FAISS index: {config.faiss_index_path}")
-        with db.session_scope() as session:
-            index_manager = FAISSIndexManager(
-                index_dir=config.faiss_index_path,
-                model_name=config.embedding_model,
-                dimension=embedding_client.embedding_dimension,
-                session=session
+        if not client.check_health():
+            logger.error(
+                "API server is not reachable at %s. "
+                "Start the API server and try again.",
+                getattr(config, "api_base_url", "http://localhost:8000"),
             )
+            sys.exit(1)
 
-            # Initialize vector provider (has rebuild logic)
-            provider = VectorFAISSProvider(
-                session=session,
-                index_manager=index_manager,
-                embedding_client=embedding_client,
-                reranker_client=None,  # Not needed for rebuild
-                topk_retrieve=config.topk_retrieve,
-                topk_rerank=config.topk_rerank
-            )
+        logger.info("Triggering rebuild-index operation via API...")
+        job = client.start_operation("rebuild-index")
+        job_id = job.get("job_id")
+        if not job_id:
+            raise APIOperationError("API did not return a job_id for rebuild-index")
 
-            # Rebuild index
-            logger.info("Starting FAISS index rebuild...")
-            provider.rebuild_index()
+        logger.info("Rebuild job queued with id=%s; waiting for completion...", job_id)
+        # Simple polling loop; in practice you might add a timeout CLI arg.
+        while True:
+            status = client.get_operation_job(job_id)
+            state = status.get("status")
+            if state in {"succeeded", "failed", "cancelled"}:
+                break
+            logger.info("Job %s status=%s; waiting...", job_id, state)
+            import time
+            time.sleep(1.0)
 
-            logger.info("✓ FAISS index rebuild completed successfully!")
+        if state != "succeeded":
+            logger.error("✗ Rebuild-index job finished with status=%s error=%s", state, status.get("error"))
+            sys.exit(1)
 
-            # Print statistics
-            logger.info(f"  Total vectors: {index_manager.index.ntotal}")
-            logger.info(f"  Dimension: {index_manager.dimension}")
-            logger.info(f"  Model: {config.embedding_model}")
-            logger.info(f"  Index path: {index_manager.index_path}")
+        logger.info("✓ FAISS index rebuild completed successfully via API (job_id=%s)", job_id)
 
-    except Exception as e:
-        logger.error(f"✗ Index rebuild failed: {e}", exc_info=True)
+    except (APIOperationError, APIConnectionError) as exc:
+        logger.error("✗ API operation failed: %s", exc)
+        sys.exit(1)
+    except Exception as exc:
+        logger.error(f"✗ Index rebuild failed: {exc}", exc_info=True)
         sys.exit(1)
 
 

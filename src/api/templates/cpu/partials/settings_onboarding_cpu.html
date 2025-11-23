@@ -1,0 +1,42 @@
+<section class="card onboarding-card" id="settings-onboarding-card">
+  <header>
+    <div>
+      <h2>Search Mode: CPU-Only</h2>
+      <p class="muted">This page displays system status and provides diagnostic tools. Configuration is managed via <code>.env</code> file.</p>
+    </div>
+  </header>
+  <div class="info-box">
+    <p>This system is running in <strong>CPU-only mode</strong> using SQLite keyword search. Semantic search (FAISS, embeddings, reranker) is disabled.</p>
+    <p><strong>Search tips for keyword mode:</strong></p>
+    <ul>
+      <li>Use specific keywords from entry titles and content (e.g., "authentication", "validation", "error handling")</li>
+      <li>Avoid abstract queries like "best practices" — use literal terms</li>
+      <li>Break complex queries into multiple searches with different keywords</li>
+      <li>Use category filtering to narrow results</li>
+    </ul>
+    <p><small class="muted">To switch to GPU mode with semantic search, run <code>python scripts/check_api_env.py</code> and select GPU option (updates runtime_config.json), install ML extras (<code>uv sync --python 3.11 --extra ml</code>), run <code>scripts/setup-gpu.py --download-models</code>, restart the server, and rebuild the FAISS index. See <a href="/docs/manual#9-cpu-only-mode" target="_blank">CPU-Only Mode docs</a> for details.</small></p>
+  </div>
+  <div class="info-box">
+    <h3>New User Setup (CPU-Only)</h3>
+    <p>If you haven't set up the system yet, follow these steps:</p>
+    <ol>
+      <li>Edit the <code>.env</code> file in the project root (copy from <code>.env.sample</code> if needed):
+        <ul>
+          <li><code>GOOGLE_CREDENTIAL_PATH</code> - Path to service account JSON</li>
+          <li><code>IMPORT_SPREADSHEET_ID</code> - Published spreadsheet ID</li>
+          <li><code>EXPORT_SPREADSHEET_ID</code> - Review spreadsheet ID</li>
+        </ul>
+        <small class="muted">See <code>.env.sample</code> for complete list of available configuration options. Changes take effect on next import/export operation (no restart needed).</small>
+      </li>
+      <li>Run diagnostics and setup:
+        <ul>
+          <li><code>python scripts/check_api_env.py</code> (select CPU-only mode)</li>
+          <li><code>python scripts/setup-cpu.py</code></li>
+        </ul>
+      </li>
+      <li>Start the server and begin using the Settings dashboard</li>
+    </ol>
+    <p class="muted">See README.md and CPU-only docs for detailed setup instructions.</p>
+  </div>
+</section>
+

@@ -1,0 +1,28 @@
+# Configuration template for CHL maintenance scripts.
+# Fill in the values that match your environment. CLI flags can still override
+# these defaults when necessary.
+
+# Global defaults shared by export/import scripts (optional)
+# data_path → CHL's SQLite/FAISS/log directory.
+data_path: ../data
+
+# Optional override for the SQLite database filename (relative to data_path).
+database_filename: chl.db
+
+export:
+  worksheets:
+    categories: Categories
+    experiences: Experiences
+    manuals: Manuals
+
+  # Set to true to preview counts without writing to Google Sheets.
+  dry_run: false
+  verbose: false
+
+import:
+  worksheets:
+    categories: Categories
+    experiences: Experiences
+    manuals: Manuals
+
+  verbose: false

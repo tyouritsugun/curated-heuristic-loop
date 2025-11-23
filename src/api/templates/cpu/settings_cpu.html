@@ -1,0 +1,80 @@
+{% extends "cpu/base_cpu.html" %}
+{% block content %}
+<div class="content-wrapper">
+  <header class="page-header">
+    <div>
+      <h1>Settings &amp; Configuration</h1>
+      <div class="status-pill info" style="display: inline-block; margin-left: 1rem;">CPU-Only Mode (Keyword Search)</div>
+    </div>
+    <div class="actions">
+      <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
+    </div>
+  </header>
+
+  {% include "common/partials/flash.html" %}
+
+  <div id="setup" class="settings-section">
+    {% include "cpu/partials/settings_onboarding_cpu.html" %}
+  </div>
+  <div id="connectivity" class="settings-section">
+    {% include "common/partials/diagnostics_panel.html" %}
+  </div>
+  <div id="configuration" class="settings-section">
+    {% include "common/partials/config_status_card.html" %}
+  </div>
+
+  {% set cred_diag = diagnostics.credentials %}
+  {% if cred_diag.state != 'ok' %}
+    <article class="ops-status-alert">
+      <strong>Action required:</strong> {{ cred_diag.headline }} — {{ cred_diag.detail }}.
+      <a href="/settings">Update credentials</a>
+    </article>
+  {% endif %}
+
+  <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
+    <div id="jobs" class="full-span settings-section">
+      {% include "common/partials/ops_jobs_card.html" %}
+    </div>
+  </div>
+
+</div>
+  <script>
+    (function() {
+      function setSseState(cls, text) {
+        var el = document.getElementById('sse-conn-indicator');
+        if (!el) return;
+        el.classList.remove('ok','warn','error','info');
+        el.classList.add(cls);
+        el.textContent = text;
+      }
+
+      // Prefer events from the SSE extension if available
+      document.body.addEventListener('htmx:sseOpen', function () {
+        setSseState('ok', 'Live');
+      });
+      document.body.addEventListener('htmx:sseReconnect', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseError', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseClose', function () {
+        setSseState('error', 'Disconnected');
+      });
+    })();
+
+    // All sections are now visible by default
+    // Hash navigation will scroll to the targeted section
+    document.addEventListener('DOMContentLoaded', function () {
+      // Smooth scroll to hash target if present
+      if (window.location.hash) {
+        var target = document.getElementById(window.location.hash.substring(1));
+        if (target) {
+          setTimeout(function() {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        }
+      }
+    });
+  </script>
+{% endblock %}

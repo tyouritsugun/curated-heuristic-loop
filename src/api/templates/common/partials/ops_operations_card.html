@@ -1,0 +1,40 @@
+<section
+  id="ops-controls-card"
+  class="card ops-card"
+  hx-get="/ui/operations/controls"
+  hx-trigger="ops-refresh from:body, sse:controls, every 3s"
+  hx-target="this"
+  hx-swap="outerHTML"
+>
+  <header>
+    <div>
+      <h2>Embedding Operations</h2>
+      <p class="muted">Monitor embedding sync status. Sync triggers automatically after imports.</p>
+    </div>
+  </header>
+
+  <div class="ops-last-run">
+    {% set sync_summary = ((job_summaries or {}).get('sync-embeddings') or (job_summaries or {}).get('sync')) %}
+    <div class="run-row" data-job-type="sync">
+      <div>
+        <p class="run-label">Sync Status</p>
+        {% if sync_summary %}
+          <p class="muted">{{ sync_summary.description or 'Activity recorded.' }}</p>
+        {% else %}
+          <p class="muted">No runs yet.</p>
+        {% endif %}
+      </div>
+      {% if sync_summary %}
+        <span class="status-pill {{ sync_summary.pill_class }}" data-job-status="{{ sync_summary.status }}">
+          {{ sync_summary.status_label }}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+  <span class="htmx-indicator">Updating…</span>
+</section>
+{% if is_partial and (message or error) %}
+  {% with oob=True %}
+    {% include "common/partials/flash.html" %}
+  {% endwith %}
+{% endif %}

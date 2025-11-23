@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title or "Curated Heuristic Loop · GPU Mode" }}{% endblock %}
+
+{% block sidebar %}
+  {% include "gpu/partials/sidebar_gpu.html" %}
+{% endblock %}

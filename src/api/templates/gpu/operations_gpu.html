@@ -1,0 +1,93 @@
+{% extends "gpu/base_gpu.html" %}
+{% block content %}
+<div class="content-wrapper">
+  <header class="page-header">
+    <div>
+      <h1>Operations &amp; Monitoring</h1>
+      <div class="status-pill ok" style="display: inline-block; margin-left: 1rem;">Semantic Search Enabled</div>
+    </div>
+    <div class="actions">
+      <span id="sse-conn-indicator" class="status-pill info" aria-live="polite" title="Server-Sent Events connection status">Connecting…</span>
+    </div>
+  </header>
+
+  {% include "common/partials/flash.html" %}
+
+  <div id="operations-onboarding-card" class="operations-section">
+    {% include "gpu/partials/ops_onboarding_gpu.html" %}
+  </div>
+
+  {% set cred_diag = diagnostics.credentials %}
+  {% if cred_diag.state != 'ok' %}
+    <article class="ops-status-alert">
+      <strong>Action required:</strong> {{ cred_diag.headline }} — {{ cred_diag.detail }}.
+      <a href="/settings">Update credentials</a>
+    </article>
+  {% endif %}
+
+  <div class="ops-grid" hx-ext="sse" sse-connect="/ui/stream/telemetry">
+    <div id="ops-models-card" class="operations-section">
+      {% include "common/partials/ops_models_card.html" %}
+    </div>
+    <div id="ops-queue-card" class="full-span operations-section">
+      {% include "common/partials/ops_queue_card.html" %}
+    </div>
+    <div id="ops-jobs-card" class="full-span operations-section">
+      {% include "common/partials/ops_jobs_card.html" %}
+    </div>
+  </div>
+</div>
+  <script>
+    (function() {
+      function setSseState(cls, text) {
+        var el = document.getElementById('sse-conn-indicator');
+        if (!el) return;
+        el.classList.remove('ok','warn','error','info');
+        el.classList.add(cls);
+        el.textContent = text;
+      }
+
+      document.body.addEventListener('htmx:sseOpen', function () {
+        setSseState('ok', 'Live');
+      });
+      document.body.addEventListener('htmx:sseMessage', function () {
+        // Any message means the stream is healthy.
+        setSseState('ok', 'Live');
+      });
+      document.body.addEventListener('htmx:sseReconnect', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseError', function () {
+        setSseState('warn', 'Reconnecting…');
+      });
+      document.body.addEventListener('htmx:sseClose', function () {
+        setSseState('error', 'Disconnected');
+      });
+    })();
+
+    document.addEventListener('DOMContentLoaded', function () {
+      function showSection(sectionId) {
+        var sections = document.getElementsByClassName('operations-section');
+        for (var i = 0; i < sections.length; i++) {
+          sections[i].style.display = 'none';
+        }
+        var section = document.getElementById(sectionId);
+        if (section) {
+          section.style.display = 'block';
+        }
+      }
+
+      function handleHashChange() {
+        var hash = window.location.hash.substring(1);
+        if (hash) {
+          showSection(hash);
+        } else {
+          showSection('operations-onboarding-card');
+        }
+      }
+
+      window.addEventListener('hashchange', handleHashChange);
+      handleHashChange();
+    });
+  </script>
+{% endblock %}

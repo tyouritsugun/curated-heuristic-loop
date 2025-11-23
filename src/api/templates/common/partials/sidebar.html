@@ -1,0 +1,21 @@
+{% set config = request.app.state.config if request and request.app and request.app.state else None %}
+{% set sidebar_mode = config.search_mode if config and config.search_mode else request.headers.get('x-chl-search-mode') %}
+{% set sidebar_mode = (sidebar_mode or 'auto')|lower %}
+{% set gpu_enabled = sidebar_mode != 'cpu' %}
+
+<nav>
+  <div class="menu-label">Documentation</div>
+  <a href="/docs/concept">Concept</a>
+  <a href="/docs/architecture">Architecture</a>
+  <a href="/docs/manual">Manual</a>
+
+  <div class="menu-label">Settings</div>
+  <a href="/settings#setup">Setup</a>
+  {% if gpu_enabled %}
+  <a href="/settings#gpu-runtime">Hardware Acceleration</a>
+  {% endif %}
+  <a href="/settings#connectivity">Connectivity & Validation</a>
+  <a href="/settings#configuration">Configuration Status</a>
+  <a href="/settings#queue">Queue Health</a>
+  <a href="/settings#jobs">Job History</a>
+</nav>

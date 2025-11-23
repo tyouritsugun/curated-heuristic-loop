@@ -1,0 +1,83 @@
+{% set models = snapshot.models if snapshot else None %}
+{% set model_info = env_config_status.model_info if env_config_status else None %}
+<section
+  id="ops-models-card"
+  class="card ops-card"
+  hx-get="/ui/operations/models"
+  hx-trigger="ops-refresh from:body"
+  hx-target="this"
+  hx-swap="outerHTML"
+>
+  <header>
+    <div>
+      <h2>Model Management</h2>
+      <p class="muted">View and change embedding/reranker models. Changing models will automatically re-generate embeddings and rebuild the search index.</p>
+    </div>
+    {% if model_info %}
+      <span class="status-pill {{ model_info.state or 'ok' }}">
+        {{ model_info.headline or 'Loaded' }}
+      </span>
+    {% endif %}
+  </header>
+
+  {% if model_info %}
+    <dl class="model-meta">
+      <div>
+        <dt>Embedding Model</dt>
+        <dd>
+          <code>{{ model_info.embedding_repo or 'Not configured' }}</code>
+          {% if model_info.embedding_quant %}
+            <span class="tag">{{ model_info.embedding_quant }}</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt>Reranker Model</dt>
+        <dd>
+          <code>{{ model_info.reranker_repo or 'Not configured' }}</code>
+          {% if model_info.reranker_quant %}
+            <span class="tag">{{ model_info.reranker_quant }}</span>
+          {% endif %}
+        </dd>
+      </div>
+      {% if model_info.embedding_size %}
+        <div>
+          <dt>Embedding Dimension</dt>
+          <dd>{{ model_info.embedding_size }} dims</dd>
+        </div>
+      {% endif %}
+    </dl>
+  {% else %}
+    <p class="muted">Model information not available yet.</p>
+  {% endif %}
+
+  <div class="ops-actions">
+    <button
+      type="button"
+      class="secondary"
+      hx-get="/ui/operations/models/change"
+      hx-target="#model-change-modal"
+      hx-swap="innerHTML"
+      onclick="document.getElementById('model-change-modal').showModal()"
+    >
+      Change Models
+    </button>
+  </div>
+
+  <small class="muted">
+    Model changes require re-embedding all content. The process runs automatically in the background.
+  </small>
+
+  <span class="htmx-indicator">Loading…</span>
+</section>
+
+<!-- Modal dialog for model selection -->
+<dialog id="model-change-modal" class="modal">
+  <!-- Modal content will be loaded via HTMX -->
+</dialog>
+
+{% if is_partial and (message or error) %}
+  {% with oob=True %}
+    {% include "common/partials/flash.html" %}
+  {% endwith %}
+{% endif %}

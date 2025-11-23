@@ -11,26 +11,57 @@ Options:
     --skip-guidelines   Skip syncing generator/evaluator guidelines
 """
 import argparse
+import importlib.util
 import sys
 from pathlib import Path
 
 # Ensure project root (for src/ and scripts/) is importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
 
-from scripts.setup import _seed_default_content  # type: ignore
-from src.config import get_config  # type: ignore
+ensure_project_root_on_sys_path()
+
+from src.common.config.config import get_config  # type: ignore
+
+_SEED_HELPER = None
+
+
+def _get_seed_helper():
+    """Lazily load _seed_default_content from scripts/setup-gpu.py."""
+    global _SEED_HELPER
+    if _SEED_HELPER is not None:
+        return _SEED_HELPER
+
+    setup_path = Path(__file__).parent / "setup-gpu.py"
+    if not setup_path.exists():
+        raise RuntimeError(f"Missing setup-gpu.py at {setup_path}")
+
+    spec = importlib.util.spec_from_file_location("scripts.setup_gpu", setup_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load scripts.setup_gpu module spec")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+
+    helper = getattr(module, "_seed_default_content", None)
+    if helper is None:
+        raise RuntimeError("scripts/setup-gpu.py is missing _seed_default_content")
+
+    _SEED_HELPER = helper
+    return helper
 
 
 def _run_seed() -> bool:
     config = get_config()
-    return _seed_default_content(config)
+    helper = _get_seed_helper()
+    return helper(config)
 
 
 def _run_guidelines() -> bool:
     # Lazy import to keep surface minimal
     try:
         from scripts.sync_guidelines import sync_guidelines  # type: ignore
-        sync_guidelines()
+        config = get_config()
+        sync_guidelines(api_url=getattr(config, "api_base_url", None))
         return True
     except Exception as e:
         print(f"✗ Failed to sync guidelines: {e}")

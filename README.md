@@ -1,168 +1,487 @@
 # CHL MCP Server
 
-Curated Heuristic Loop (CHL) MCP Server – the Model Context Protocol backend for managing experience-based knowledge. For the full system overview and workflow philosophy, see [doc/chl_guide.md](doc/chl_guide.md).
+Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
-## Setup
+For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detailed operator procedures see [doc/manual.md](doc/manual.md).
 
-### Prerequisites
+## Architecture Overview
 
-- [uv](https://docs.astral.sh/uv/) - Fast Python package installer
-- Python 3.10 or 3.11
-- **Platform Requirements:**
-  - macOS: Apple Silicon (ARM/M1/M2/M3) required
-  - Intel Mac (x86_64) is **not supported** due to PyTorch compatibility
-  - Linux: x86_64 or ARM64
-  - Windows: x86_64
+CHL uses a two-tier architecture with clear separation of concerns:
 
-**Tested Hardware & Recommended Models:**
-- Tested on: Ubuntu 22.04 (32GB RAM, RTX 3060 6GB VRAM) and MacBook M2 (32GB unified memory)
-- Recommended models for best quality/performance balance:
-  - **Embedding**: `Qwen/Qwen3-Embedding-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
-  - **Reranker**: `Mungert/Qwen3-Reranker-4B-GGUF` with `Q4_K_M` quantization (~2.5 GB)
-- Notes: 8B models yield minimal quality improvement; 0.6B models reduce accuracy but remain usable for dev/testing
+1. **API Server** (`src/api/`): FastAPI server that handles all data persistence (SQLite), search operations (FAISS/text), and background workers. Platform-specific installation for CPU-only, Apple Metal, NVIDIA CUDA, or other GPUs.
 
-- Google Service Account credentials (for export/sync to Google Sheets)
-- Google Sheet for logging
+2. **MCP Server** (`src/mcp/`): Lightweight HTTP client that exposes CHL functionality to AI assistants via the Model Context Protocol. Installed separately via `uv sync`.
 
-**ONLY RUN THIS FOR ONE MCP CLIENT**
-- Do not run this in multiple MCP clients at the same time
-- If needed, you can make a copy of this repository and ensure each copy serves only one MCP. You can then export the data, merge it, and import it back.
-- I am currently updating this repository to support multiple MCP clients. Please stay tuned.
-  
-### Installation
+The API and MCP servers communicate exclusively via HTTP (default: `http://localhost:8000`). All operational scripts (import, export, rebuild index) run from the API server's environment.
 
-1. **Install uv (if not already installed):**
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
+**For detailed architecture diagrams and design decisions, see [doc/architecture.md](doc/architecture.md).**
 
-2. **Clone and setup the project:**
-   After clone this project, 
-   ```bash
-   cd curated_heuristic_loop
-   ```
+## Quick Start
 
-4. **Install the supported Python runtime (once):**
-   ```bash
-   uv python install 3.11
-   ```
-   > Torch/Faiss wheels are only published for Python 3.10–3.11. Using 3.12 triggers build failures.
+### Step 0: Verify Your Environment
 
-5. **Install dependencies with the 3.11 interpreter:**
-   ```bash
-   uv sync --python 3.11 --extra ml
-   ```
-   This creates/updates uv’s managed environment and installs the full ML stack (`sentence-transformers`, PyTorch, FAISS, llama-cpp`). You do not need to create or activate a separate `.venv`—uv will reuse this environment automatically.
+Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
 
-6. **Run first-time setup:**
-   ```bash
-   # Automatic setup - uses smallest models (0.6B)
-   uv run python scripts/setup.py
+```bash
+python3 scripts/check_api_env.py
+```
 
-   # Interactive model selection - choose larger models (4B, 8B)
-   uv run python scripts/setup.py --download-models
+This script checks:
+- GPU hardware detection (Metal/CUDA/CPU)
+- Driver and toolchain availability
+- VRAM capacity and model size recommendations (GPU modes only)
+- llama-cpp-python wheel compatibility (via the official wheel index)
 
-   ```
+If checks pass:
+- **GPU mode**: Writes recommended model choices to `data/model_selection.json` and runtime configuration to `data/runtime_config.json`
+- **CPU mode**: Writes runtime configuration to `data/runtime_config.json` (no models needed - uses SQLite keyword search only)
 
-   This will:
-   - Create database and data directory structure
-   - Auto-install ML dependencies if missing (`uv sync --python 3.11 --extra ml`)
-   - Download embedding models (~1.1 GB, if ML dependencies installed)
-   - Validate setup completeness
-   - For details about the setup, see [manual](./doc/chl_manual.md#2-search--embeddings)
+If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` – copy this text into ChatGPT/Claude and follow the steps to fix your environment before proceeding.
 
-7. **Seed starter content + sync guidelines:**
-   ```bash
-   uv run python scripts/seed_default_content.py
-   ```
-   This single command:
-   - Inserts the default CHL categories and sample entries (idempotent)
-   - Syncs the `GLN` guidelines category from `generator.md` and `evaluator.md`
-   Rerun any time to restore starter content or refresh guidelines.
+The API server automatically uses the backend from `runtime_config.json` - no manual configuration needed!
 
-8. **Configure MCP settings:**
-   
-   Add to your `~/.cursor/mcp.json`, or to an MCP client that accepts JSON. `CHL_EXPERIENCE_ROOT` is optional; if omitted, CHL uses `<project_root>/data` and auto-creates it on first run. `CHL_DATABASE_PATH` and `CHL_FAISS_INDEX_PATH` default to `<experience_root>/chl.db` and `<experience_root>/faiss_index` (relative values are resolved under `<experience_root>`). `CHL_GOOGLE_CREDENTIALS_PATH` is optional—export/import scripts already read the path from `scripts/scripts_config.yaml`, so set the env var only if you prefer managing it outside the YAML. `CHL_READ_DETAILS_LIMIT` defaults to `10`, so include it only if you need a different value.
-   
-   ```json
-   {
-     "mcpServers": {
-       "chl": {
-        "command": "uv",
-        "args": ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"],
-        "env": {
-          // Optional env overrides (use scripts/scripts_config.yaml for defaults)
-          // "CHL_GOOGLE_CREDENTIALS_PATH": "/absolute/path/to/credentials/service_account.json",
-          // "CHL_EXPERIENCE_ROOT": "/absolute/path/to/curated_heuristic_loop/data",
-          // Optional overrides (defaults shown)
-          // "CHL_DATABASE_PATH": "/absolute/path/to/curated_heuristic_loop/data/chl.db",
-          // "CHL_FAISS_INDEX_PATH": "/absolute/path/to/curated_heuristic_loop/data/faiss_index",
-          // "CHL_READ_DETAILS_LIMIT": "10",
-          // Export pipeline (configure after preparing Google Sheets):
-          // "CHL_REVIEW_SHEET_ID": "your-review-sheet-id",
-          // "CHL_PUBLISHED_SHEET_ID": "your-published-sheet-id"
-        }
+**Do not proceed to Step 1 until this script exits with code 0.**
+
+**Python version note:**
+- **CPU-only mode**: Python 3.10 or newer (including 3.13) - no version restrictions
+- **GPU modes** (Metal/CUDA): Python 3.10–3.12 only (Python 3.13 not supported by llama-cpp-python)
+  - Recommended: Python 3.11 for NVIDIA CUDA, Python 3.12 for Apple Silicon
+
+If you have Python 3.13 and want GPU acceleration, install a compatible version (e.g., `brew install python@3.12` or `python3.12`) alongside it.
+
+**Need a guide?** If you are not confident with Python/FAISS/GPU setup, open this repo in your preferred code assistant (Claude Code, Codex, Cursor, Gemini CLI, etc.) and ask it to walk you through the install. Some steps may still need manual permission/security approvals, but an assistant can simplify the process. This project assumes an engineering audience, so leaning on a code assistant is expected.
+
+### Step 1: Install API Server
+
+Choose your hardware platform and install the API server runtime:
+
+<details>
+<summary><b>Option A: CPU-Only Mode (No ML Dependencies)</b></summary>
+
+**Best for:** Limited VRAM, keyword search is sufficient, or testing without GPU overhead.
+
+**Prerequisites:**
+
+Python 3.10 or newer (3.11+ recommended, Python 3.13 is supported for CPU mode). Install instructions by platform:
+
+<details>
+<summary>macOS (Intel or Apple Silicon)</summary>
+
+```bash
+# Check your current Python version
+python3 --version
+
+# If you need a newer version, install via Homebrew
+brew install python@3.13
+# Or for older stable versions: brew install python@3.12 or python@3.11
+```
+</details>
+
+<details>
+<summary>Linux (Ubuntu/Debian)</summary>
+
+```bash
+# Check available versions
+ls /usr/bin/python3.1*
+
+# Ubuntu 24.04+ (has Python 3.12, or install 3.13 via deadsnakes)
+sudo apt update
+sudo apt install python3.12 python3.12-venv
+# Or for Python 3.13:
+# sudo add-apt-repository ppa:deadsnakes/ppa
+# sudo apt update
+# sudo apt install python3.13 python3.13-venv
+
+# Ubuntu 22.04 (has Python 3.10, use it or upgrade)
+sudo apt update
+sudo apt install python3.10 python3.10-venv
+
+# Install any specific version via deadsnakes PPA
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.11 python3.11-venv  # Or python3.12, python3.13
+```
+</details>
+
+<details>
+<summary>Windows</summary>
+
+1. Download Python 3.11, 3.12, or 3.13 from [python.org](https://www.python.org/downloads/)
+2. During installation, check "Add Python to PATH"
+3. Verify: `python --version` in Command Prompt or PowerShell
+</details>
+
+**Installation:**
+
+```bash
+# macOS/Linux: Create dedicated venv for API server
+python3 -m venv .venv-cpu
+# Activate venv (only needed once per terminal session)
+source .venv-cpu/bin/activate
+
+# Windows: Create dedicated venv for API server
+python -m venv .venv-cpu
+# Activate venv (only needed once per terminal session)
+.venv-cpu\Scripts\activate
+
+# All platforms: Install dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements_cpu.txt
+```
+
+**Note:** CPU mode supports Python 3.13 since it has no ML dependencies.
+
+**Note:** Search will use SQLite text search (LIKE queries) instead of semantic similarity. Good for exact phrase searches but won't find conceptually related entries.
+
+</details>
+
+<details>
+<summary><b>Option B: Apple Silicon (Metal GPU Acceleration)</b></summary>
+
+**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration.
+
+**Prerequisites:**
+- macOS with Apple Silicon (M1, M2, M3, etc.)
+- Xcode Command Line Tools: `xcode-select --install`
+- Python 3.12 installed (for example via Homebrew: `brew install python@3.12`)
+
+```bash
+# Create dedicated venv for API server (Python 3.12)
+python3.12 -m venv .venv-apple
+# Activate venv (only needed once per terminal session)
+source .venv-apple/bin/activate
+
+# Install API server dependencies with Metal-accelerated ML
+python -m pip install --upgrade pip
+PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
+  python -m pip install -r requirements_apple.txt
+```
+
+</details>
+
+<details>
+<summary><b>Option C: NVIDIA GPU Acceleration</b></summary>
+
+**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration.
+
+**Prerequisites:**
+- NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer: GTX 1060+, RTX series, etc.)
+- CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.4` or `/usr/local/cuda-12.5`)
+- cuDNN libraries
+- CMake 3.18+
+- **Python 3.10 or 3.11** (CUDA wheels don't support Python 3.12 yet)
+- Install if needed:
+  - Ubuntu 22.04: `sudo apt install python3.10 python3.10-venv`
+  - Other: Add deadsnakes PPA: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update && sudo apt install python3.11 python3.11-venv`
+
+```bash
+# Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
+# Use full path if you have conda/uv Python that conflicts:
+/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.11 if no PATH conflicts
+# Activate venv (only needed once per terminal session)
+source .venv-nvidia/bin/activate  # On Windows: .venv-nvidia\Scripts\activate
+
+# Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
+python -m pip install --upgrade pip
+PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+  python -m pip install -r requirements_nvidia.txt
+```
+
+**Troubleshooting:** If `python3.11 -m venv` fails with ensurepip errors and you have conda/uv installed, use the full system path `/usr/bin/python3.11` instead of just `python3.11` to avoid PATH conflicts.
+
+</details>
+
+<details>
+<summary><b>Option D: AMD GPU Acceleration</b> (TBD)</summary>
+
+**Best for:** Linux with AMD GPU (RDNA2 or newer), want semantic search with GPU acceleration.
+
+**Status:** Requirements file and installation instructions to be added in future release.
+
+**Prerequisites (planned):**
+- AMD GPU with ROCm support (RX 6000 series, RX 7000 series, etc.)
+- ROCm 5.x or 6.x installed
+- hipBLAS libraries
+- CMake 3.18+
+
+**Planned installation:**
+```bash
+# TBD: requirements_amd.txt to be created
+python -m venv .venv-amd
+source .venv-amd/bin/activate
+pip install -r requirements_amd.txt  # Not yet available
+```
+
+</details>
+
+<details>
+<summary><b>Option E: Intel GPU Acceleration</b> (TBD)</summary>
+
+**Best for:** Linux/Windows with Intel Arc or integrated GPU, want semantic search with oneAPI acceleration.
+
+**Status:** Requirements file and installation instructions to be added in future release.
+
+**Prerequisites (planned):**
+- Intel Arc GPU or integrated graphics with oneAPI support
+- Intel oneAPI Base Toolkit installed
+- oneMKL libraries
+- CMake 3.18+
+
+**Planned installation:**
+```bash
+# TBD: requirements_intel.txt to be created
+python -m venv .venv-intel
+source .venv-intel/bin/activate
+pip install -r requirements_intel.txt  # Not yet available
+```
+
+</details>
+
+### Step 2: Configure Environment
+
+Apply the google service account and download the json credential file.
+Prepare the google spreadsheets for import and export, and share them with the account in your google service credential file with read and write permission.
+
+```bash
+cp .env.sample .env
+# Edit .env and fill in:
+# - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
+# - IMPORT_SPREADSHEET_ID (if you want to try the sample of DataPipe, keep the ID in .env.sample, overwrite it when necessary)
+# - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
+```
+
+### Step 3: Initialize API Server
+
+**For CPU-only mode:**
+```bash
+# Activate API server venv (if not already activated from Step 1)
+source .venv-cpu/bin/activate
+
+# Initialize database with default categories
+python scripts/setup-cpu.py
+```
+
+This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sample DataPipe bug reporting guidance for the optional demo (see Step 7).
+
+**For GPU modes (Apple Metal, NVIDIA CUDA, AMD Rocm, or Intel oneAPI):**
+```bash
+# Activate API server venv (if not already activated from Step 1)
+source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
+
+# Download models and initialize database using recommended/active models
+python scripts/setup-gpu.py
+
+# (Optional) Open interactive model selection menu
+python scripts/setup-gpu.py --select-models
+```
+
+### Step 4: Start API Server
+
+**If continuing from Step 3 in the same terminal session:**
+```bash
+# Your venv is already activated, just start the server:
+python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+```
+
+**If starting fresh (after reboot, new terminal, or subsequent runs):**
+```bash
+# macOS/Linux: Run the startup script (handles activation automatically)
+./start-chl.sh
+
+# Windows: Run the startup script (handles activation automatically)
+start-chl.bat
+```
+
+The startup script automatically detects your installed venv (CPU, Apple Metal, NVIDIA, etc.) and starts the API server on http://127.0.0.1:8000.
+
+**Verify installation:**
+- Open http://127.0.0.1:8000/settings to verify configuration
+- Test connection to validate Google Sheets access
+- Review model selection and system diagnostics (GPU modes)
+- Download JSON backup once everything looks good
+
+### Step 5: Run Initial Import
+
+Open http://127.0.0.1:8000/operations to run import:
+- Click **Run Import** to pull data from Google Sheets
+- **GPU modes**: Background worker automatically processes pending embeddings and updates FAISS index
+- **CPU mode**: Import completes immediately (no embeddings generated)
+
+### Step 6: Install MCP Server
+
+The MCP server allows AI assistants to interact with CHL. It communicates with the API server via HTTP.
+
+**Prerequisites:**
+- API server must be running at `http://localhost:8000`
+- Install [uv](https://docs.astral.sh/uv/) if not already installed:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+**Configure MCP client** (e.g., Claude Code, Claude Desktop, Cursor, ChatGPT Codex):
+
+Add to your MCP configuration file:
+
+**For Claude Code** - Choose one of these configuration scopes:
+
+*Option 1: User-level (recommended)* - Available across all projects on your machine:
+```bash
+claude mcp add \
+  --scope user \
+  --transport stdio \
+  --env UV_PROJECT_ENVIRONMENT=.venv-mcp \
+  chl \
+  -- \
+  uv --directory /absolute/path/to/curated-heuristic-loop run python -m src.mcp.server
+```
+
+*Option 2: Project-level* - Create `.mcp.json` in the project root (good for team sharing):
+```json
+{
+  "mcpServers": {
+    "chl": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
       }
     }
   }
-   ```
-   
-   For Codex CLI (TOML format), add to `~/.config/codex/mcp.toml`:
-   
-   ```toml
-   [mcp_servers.chl]
-   command = "uv"
-   args = ["--directory", "/absolute/path/to/curated_heuristic_loop", "run", "python", "src/server.py"]
+}
+```
 
-   [mcp_servers.chl.env]
-   # Optional override if you prefer env vars for the Google credentials path
-   # CHL_GOOGLE_CREDENTIALS_PATH = "/absolute/path/to/credentials/service_account.json"
-   # CHL_EXPERIENCE_ROOT = "/absolute/path/to/curated_heuristic_loop/data"
-   # Optional overrides (defaults shown)
-   # CHL_DATABASE_PATH = "/absolute/path/to/curated_heuristic_loop/data/chl.db"
-   # CHL_FAISS_INDEX_PATH = "/absolute/path/to/curated_heuristic_loop/data/faiss_index"
-   # Export pipeline (configure after preparing Google Sheets)
-   # CHL_REVIEW_SHEET_ID = "your-review-sheet-id"
-   # CHL_PUBLISHED_SHEET_ID = "your-published-sheet-id"
-   ```
+> **Important**: After adding the MCP server via command or creating `.mcp.json`, restart Claude Code/Cursor for the MCP server to be recognized. User-scope configuration avoids reconfiguring for each project.
 
-   **Note:** The `--directory` flag tells `uv` where to find the `pyproject.toml` file for dependency management.
-   **Note:** After this step it should be possible to ask your code assistant "Can you access your CHL toolset? ", if can not, then you can go to `data/log` to see the log and troubleshot the problem.
+**For Cursor** (`~/.cursor/mcp.json`) or **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+```json
+{
+  "mcpServers": {
+    "chl": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
+      }
+    }
+  }
+}
+```
 
-8. **Restart Cursor or other code assistant** to load the MCP server configuration.
+**For ChatGPT Codex** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.chl]
+command = "uv"
+args = ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"]
+env = { UV_PROJECT_ENVIRONMENT = ".venv-mcp" }
+```
+If `uv` complains about permissions in `~/.cache/uv`, set `UV_CACHE_DIR` in `env` to a writable path (for example the project root); otherwise keep it minimal as above.
 
-9. **Verify MCP integration (optional but recommended):**
-   - `list_categories` (or `codex-cli mcp describe chl`) should list the seeded CHL shelves.
-   - Fetch the guidelines via MCP:
-     ```bash
-     codex-cli mcp tool call chl get_guidelines --params guide_type=generator
-     ```
-     (Use `guide_type=evaluator` for the evaluator version.)
+**Configure agent instructions:**
 
-## Import & Export
+To keep assistants from forgetting to call MCP tools and to prompt for reflections, add the CHL agent instructions to your project's AGENTS.md:
 
-### Prepare Google Sheets
+**If you don't have AGENTS.md yet:**
+- Ask your code assistant: "Please read AGENTS.md.sample and create an AGENTS.md for my project"
+- Or copy from a coworker who already has good agent instructions set up
+- Or as a last resort: `cp AGENTS.md.sample AGENTS.md`
 
-- Create the Google Sheet(s) you plan to sync with. You can use a single sheet or split review/published sheets depending on your workflow.
-- Create a service account in Google Cloud Console.
-- Download the credentials JSON file.
-- Share each sheet with the service account email.
-- See the [manual](./doc/chl_manual.md#3-export--import-mvp) for the end-to-end workflow and role expectations.
+**If you already have AGENTS.md:**
+- Ask your code assistant: "Please merge the CHL instructions into my existing AGENTS.md, the instructions are `{copy of AGENTS.md.sample}`"
 
-### Configure script defaults
+These CHL instructions in the standard `AGENTS.md` ensure the assistant:
+- Calls `list_categories()` and `get_guidelines()` at startup
+- Uses CHL MCP tools for retrieval instead of guessing
+- Prompts for reflection and curation at conversation end
 
-1. Edit `scripts/scripts_config.yaml` and fill in the commented placeholders:
-   - Set `data_path` and `google_credentials_path` if you want paths different from the defaults.
-   - Under both `export` and `import`, provide the `sheet_id` (or per-sheet `id`) and confirm the worksheet names.
-   - If you use separate review/published sheets, use different IDs in those sections. Shared IDs also work when you curate in a single sheet.
-2. Optionally override settings via CLI flags when running the scripts—the YAML provides the base defaults.
+**Note:** All environment variables have defaults and are optional:
+- `CHL_API_BASE_URL` defaults to `http://localhost:8000`
+- `CHL_EXPERIENCE_ROOT` defaults to `<project>/data` (auto-created if missing)
+- `CHL_DATABASE_PATH` defaults to `<experience_root>/chl.db`
 
-### Run the sync scripts
+Only add `env` section if you need non-default values.
 
-- `uv run python scripts/export.py` – writes the local SQLite content to the configured worksheets. Add `--dry-run` to preview counts without making changes.
-- `uv run python scripts/import.py --yes` – replaces local tables with the sheet contents and automatically regenerates embeddings/FAISS metadata (skip with `--skip-embeddings`). If you skip or the sync is skipped due to missing ML dependencies, run `python scripts/sync_embeddings.py --retry-failed` afterwards and restart the MCP server so it reloads the updated index.
+**Test MCP integration:**
+- Restart your MCP client (Cursor, Claude Code, etc.)
+- Try: "List available categories"
+- Try: "Search for entries about bug reporting"
 
+### Step 7: Try the Demo (Optional)
+
+CHL includes a demo that shows how it teaches LLMs project-specific conventions. The demo uses a fictional "DataPipe" project to demonstrate the difference between generic bug reporting vs. team-specific ticket requirements.
+
+**What the demo shows:**
+- **Without CHL**: LLM rushes to fix code and writes incomplete tickets missing required artifacts
+- **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
+
+**Full instructions:** See [doc/run_sample.md](doc/run_sample.md) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
+
+## Mode Switching
+
+To switch between CPU and GPU modes:
+1. Stop the API server
+2. Run `python scripts/check_api_env.py` and select target mode (updates `runtime_config.json`)
+3. Create new venv for target mode and install corresponding requirements file
+4. GPU mode only: Run `python scripts/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
+5. Start API server (automatically uses backend from `runtime_config.json`)
+
+> **Note**: FAISS snapshots are not portable between modes. Switching requires rebuilding search index in the target mode.
+
+## Routine Operations
+
+After initial installation, use the web dashboards for most operations:
+
+- **Import/Export**: Use `/operations` dashboard to sync with Google Sheets or rebuild search index
+- **Settings**: Use `/settings` dashboard for configuration, model selection, and JSON backup
+
+**CLI scripts** (activate API server venv first: `source .venv-cpu/bin/activate`):
+- `python scripts/rebuild_index.py` – rebuild search index if needed
+- `python scripts/search_health.py` – check search system health
+
+## Managing Categories
+
+CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. To add custom categories for your team's workflows:
+
+**Quick steps:**
+1. Export current database via Settings → "Export Spreadsheet"
+2. Save export as timestamped backup in Google Drive (recommended)
+3. Copy Categories worksheet to your import spreadsheet
+4. Add new row with `code`, `name`, and `description`
+5. Import via Operations → "Run Import"
+
+**Example categories:**
+- `DEP` / `deployment_procedures` - Deployment checklists and rollback procedures
+- `SEC` / `security_review` - Security review patterns and vulnerability checks
+- `ONC` / `oncall_runbook` - Incident response and on-call procedures
+
+**Full instructions:** See [doc/manual.md - Managing Categories](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
+
+
+## Web Dashboards
+
+Access these dashboards while the API server is running:
+
+- **Settings** (`/settings`) – First-time checklist, configuration loader, model picker, diagnostics, audit log, and JSON backup/restore
+- **Operations** (`/operations`) – Import/export/index triggers, live queue depth, job history, and FAISS snapshot upload/download
+
+Both dashboards share the same process as the API server, so every change is logged and subject to the same safety constraints (locks, validation, audit trail).
+
+## System Requirements
+
+- Python 3.10 or 3.11 (API server and MCP server)
+- Supported OS: macOS Apple Silicon, Linux x86_64/ARM64, Windows x86_64
+- Recommended hardware:
+  - **CPU mode**: 8GB+ RAM
+  - **GPU mode**: 16GB+ RAM (32GB for large datasets), GPU with 8GB+ VRAM
+- Google Service Account credential JSON + shared review sheet
+- One MCP client at a time per repo clone (export/import scripts let you merge later)
+
+## Advanced References
+
+- Workflow philosophy: [doc/concept.md](doc/concept.md)
+- Operator runbooks & API details: [doc/manual.md](doc/manual.md)
+- Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
+- Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
 
 ## License
 
-See project [license](LICENSE) file.
+[MIT](LICENSE)
