@@ -163,8 +163,6 @@ Prefer the API server for import/export/index operations; remaining scripts focu
 - `setup-cpu.py` - Initialize database schema (direct DB access)
 - `smoke_test_cuda.py` - Test NVIDIA CUDA GPU components (direct API imports)
 
-These setup scripts are **exceptions** that can import from `src.api.*` because they configure internal components during initial setup (see [Phase 0 Scripts Migration](plan/phase_0_scripts_migration.md#exception-policy)).
-
 ## 3. Data Flow Patterns
 
 ### 3.1. Generator Mode (Read Path)
@@ -261,7 +259,7 @@ flowchart TD
 
 ## 4. Data Models and Storage
 
-The system utilizes three primary data surfaces: local SQLite, a local FAISS index (GPU mode only), and remote Google Sheets.
+The system utilizes three primary data surfaces: local SQLite, a local FAISS index, local embedding and reranking (GPU mode only), and remote Google Sheets.
 
 ### 4.1. Local SQLite
 
