@@ -11,7 +11,7 @@ For step-by-step installation, follow the **Quick Start** in [README.md](../READ
 
 **Choose your installation mode:**
 
-- **GPU mode** (recommended for semantic search): Use the API server venv with the platform requirements file (`requirements_apple.txt` or `requirements_nvidia.txt`) for FAISS + embeddings. Requires ≥8 GB VRAM.
+- **GPU mode** (recommended for semantic search): Use the API server venv with the platform requirements file (`requirements_apple.txt` or `requirements_nvidia.txt`) for FAISS + embeddings. 
 - **CPU-only mode** (keyword search): Use the API server venv with `requirements_cpu.txt` for SQLite text search (no ML dependencies).
 
 **Decision guidance:**
@@ -72,6 +72,7 @@ After setup, import the default content (categories, sample entries, and guideli
 4. Click **Import Spreadsheet**
 
 This operation imports all data from the configured Google Sheet, including:
+
 - Categories (TMG, PGT, etc.)
 - Sample entries (bug reporting guidance, etc.)
 - Guidelines (generator.md and evaluator.md)
@@ -139,17 +140,20 @@ Manuals are **process-oriented playbooks** that describe complete workflows or m
 Experiences are **single, actionable heuristics**—small lessons learned from real work. They answer "What's one thing I should remember when doing X?"
 
 **Characteristics:**
+
 - Atomic (one insight per entry)
 - Action-oriented (prescriptive, not descriptive)
 - Context-specific (tied to real situations)
 - Short (1-3 sentences or bullet points)
 
 **Examples (TMG category):**
+
 - "Always check for Run ID in metadata JSON before filing pipeline bugs"
 - "When user reports a bug, clarify intent first: fix code, file ticket, or investigate?"
 - "Look for `data/output/app.log` for pipeline error stack traces"
 
 **When to write an experience:**
+
 - You learned something specific during a task
 - It's a "gotcha" or non-obvious insight
 - You want to remember this for next time
@@ -172,7 +176,8 @@ Category: TMG (Ticket Management)
 └── Experience: "Pipeline logs live in data/output/app.log"
 ```
 
-**Workflow:**
+**User Story:**
+
 1. During tasks, assistant captures **experiences** (atomic learnings)
 2. Over time, related experiences are synthesized into **manuals** (playbooks)
 3. Both are organized by **category** (domain boundaries)
@@ -189,8 +194,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/rebuild_index.py`. This process generates embeddings for all `pending` entries.
 3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using the API server's Operations dashboard (or `GET /api/v1/entries/export` for automation).
 4.  **Curate (Curator):** The curator reviews the submitted entries in Google Sheets, merging duplicates, editing for clarity, and approving the highest-quality insights.
-5.  **Publish (Curator):** Approved entries are moved to a "Published" tab or a separate Published Sheet.
-6.  **Distribute (Developer):** Developers sync their local databases from the Published Sheet using the API server import job (`/operations` dashboard or `POST /api/v1/operations/import-sheets`). This updates their local knowledge base with the latest curated heuristics.
+5.  **Distribute (Developer):** Developers sync their local databases from the Published Sheet using the API server import job (`/operations` dashboard or `POST /api/v1/operations/import-sheets`). This updates their local knowledge base with the latest curated heuristics.
 
 ### 3.2. MCP Interaction Flow (for Assistant developers)
 
@@ -206,23 +210,15 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 
 ## 4. Web UI Guide
 
-The simplest way to manage CHL is through the built-in web interface, available by running `uvicorn src.api.server:app` and navigating to `http://127.0.0.1:8000`.
+**Note:** For daily work, you don't need to use the web interface. CHL handles most operations automatically (capturing entries via MCP, embedding generation, search). The web UI is primarily used for:
+- **Initial setup**: Configuring credentials and importing default content
+- **Team coordination**: Importing/exporting Google Sheets for curation
 
-### 4.1. Settings Dashboard (`/settings`)
-This page is for initial configuration and system management.
+The web interface is available by running `uvicorn src.api.server:app` and navigating to `http://127.0.0.1:8000`.
 
--   **First-Time Checklist:** Guides you through setting up credentials and sheet IDs.
--   **Configuration:** Load `scripts_config.yaml` to configure Google Sheets access.
--   **Models:** Select the embedding and reranker models.
--   **Diagnostics:** Validate connections and review audit logs.
--   **Backup/Restore:** Download or restore a JSON backup of system metadata.
-
-### 4.2. Operations Dashboard (`/operations`)
-This page is for day-to-day operational tasks.
-
--   **Jobs:** Trigger `import`, `export`, and `rebuild_index` jobs with a single click.
--   **Job History:** View the status and logs of recent jobs.
--   **FAISS Snapshots:** Download the current FAISS index for backup or upload a new one to quickly update the search index.
+**CPU vs GPU differences:**
+- CPU mode: No model selection (no ML dependencies), simpler interface (no worker status, no FAISS snapshots)
+- GPU mode: Model selection for embedding and reranker models, full control over embedding worker and FAISS operations
 
 ## 5. Command-Line Operations
 
@@ -241,40 +237,12 @@ For automation and scripting, activate the API server venv first, then use these
 ### 5.2. Data Synchronization
 Before running, ensure your `scripts/scripts_config.yaml` is configured with the correct Google Sheet IDs.
 
--   **Export for review:** From a running API server, open `/operations` and click **Export Spreadsheet**, or fetch the JSON snapshot directly for automation:
-    ```bash
-    curl http://localhost:8000/api/v1/entries/export > chl-export.json
-    ```
--   **Import from Google Sheets:** From `/operations`, click **Import Spreadsheet** to overwrite the local database with the published sheet. For API calls (destructive):
-    ```bash
-    curl -X POST http://localhost:8000/api/v1/operations/import-sheets -H "Content-Type: application/json" -d '{}'
-    ```
+-   **Export for review:** From a running API server, click **Export Spreadsheet**, 
+-   **Import from Google Sheets:**  click **Import Spreadsheet** to overwrite the local database with the published sheet(reset all):
 
-## 6. API Server Operations
+## 6. Reference
 
-The FastAPI server provides REST endpoints for advanced control.
-
--   **Health Check:**
-    ```bash
-    curl http://localhost:8000/health
-    ```
--   **Queue Status:**
-    ```bash
-    curl http://localhost:8000/admin/queue/status
-    ```
--   **Pause/Resume Workers:**
-    ```bash
-    curl -X POST http://localhost:8000/admin/queue/pause
-    curl -X POST http://localhost:8000/admin/queue/resume
-    ```
--   **Retry Failed Embeddings:**
-    ```bash
-    curl -X POST http://localhost:8000/admin/queue/retry-failed
-    ```
-
-## 7. Reference
-
-### 7.1. Category Index
+### 6.1. Category Index
 The system is pre-configured with the following categories. You can add more as needed.
 
   - `figma_page_design` (`FPD`)
@@ -290,7 +258,7 @@ The system is pre-configured with the following categories. You can add more as 
   - `e2e_test` (`EET`)
   - `pull_request` (`PRQ`)
 
-### 7.2. Managing Categories
+### 6.2. Managing Categories
 
 Categories define the organizational "shelves" where experiences and manuals are stored. The 12 default categories above are seeded during setup, but you can add custom categories for your team's specific workflows.
 
@@ -357,7 +325,7 @@ Categories are managed via Google Sheets import. Follow these steps:
 - **Start small**: Begin with 2-3 custom categories and add more as your team's needs become clear
 - **Document purpose**: Use clear descriptions so team members know what each category is for
 
-### 7.3. Environment Variables
+### 6.3. Environment Variables
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. Key variables include:
 
 - `CHL_EXPERIENCE_ROOT` - Path to data directory
@@ -372,21 +340,11 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 
 For a complete list of configuration options, see [src/common/config/config.py](../src/common/config/config.py).
 
-## 8. Troubleshooting
-
--   **Script won't run:** Activate the API server venv (the one using `requirements_*.txt`) and run commands from the project root.
--   **Import errors:** Your dependencies may be out of sync. Reinstall the platform requirements in the API server venv (e.g., `pip install -r requirements_cpu.txt` or `requirements_apple.txt`/`requirements_nvidia.txt`).
--   **Permission denied:** Make scripts executable with `chmod +x scripts/<script_name>.py`.
-
-## 9. Script Development Guidelines
-
-When adding new scripts, follow the structure used in existing scripts like `scripts/search_health.py`. Ensure they use `CHLAPIClient` for API communication and have clear documentation.
-
-## 10. CPU-Only Mode
+## 7. CPU-Only Mode
 
 CHL can run in CPU-only mode without ML dependencies (FAISS, embeddings, reranker) using SQLite text search instead of semantic search.
 
-### 10.1. When to Use CPU-Only Mode
+### 7.1. When to Use CPU-Only Mode
 
 Use CPU-only mode when:
 
@@ -395,7 +353,7 @@ Use CPU-only mode when:
 - You want to minimize dependencies and resource usage
 - You're running on constrained hardware or in containers
 
-### 10.2. Installation
+### 7.2. Installation
 
 Install CHL without ML extras (API server venv):
 ```bash
@@ -426,7 +384,7 @@ python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 # Backend is automatically detected from data/runtime_config.json
 ```
 
-### 10.3. Behavior Differences
+### 7.3. Behavior Differences
 
 In CPU-only mode:
 
@@ -436,7 +394,7 @@ In CPU-only mode:
 - **Vector components**: FAISS, embedding models, and reranker are not initialized
 - **Imports**: Import operations skip worker coordination because `/admin/queue/*` endpoints are unavailable without the embedding worker
 
-### 10.4. Search Tips for CPU-Only Mode
+### 7.4. Search Tips for CPU-Only Mode
 
 Since SQLite text search uses literal keyword matching:
 
@@ -446,31 +404,11 @@ Since SQLite text search uses literal keyword matching:
 - Use category filtering to narrow results
 - Avoid abstract or conceptual queries (e.g., "best practices" won't match "recommended approaches")
 
-### 10.5. Switching Modes
+### 7.5. Switching Modes
 
-**From CPU-only to GPU mode:**
+Refer to [Mode Switching](../README.md#mode-switching)
 
-1. Run diagnostics: `python scripts/check_api_env.py` and select GPU option
-   - This updates `data/runtime_config.json` with the detected GPU backend (metal/nvidia/amd)
-2. Create/activate a GPU API server venv and install the matching requirements file:
-   - Apple Silicon: `python3.12 -m venv .venv-apple && source .venv-apple/bin/activate && pip install -r requirements_apple.txt`
-   - NVIDIA GPU: `python3.11 -m venv .venv-nvidia && source .venv-nvidia/bin/activate && pip install -r requirements_nvidia.txt`
-3. Download models and initialize: `python scripts/setup-gpu.py --download-models`
-4. Restart the API/MCP server (backend auto-detected from runtime_config.json)
-5. Rebuild FAISS: Visit `/operations` and click **Rebuild Index**
-
-**From GPU to CPU-only mode:**
-
-1. Run diagnostics: `python scripts/check_api_env.py` and select option 1 (CPU-only)
-   - This updates `data/runtime_config.json` with backend="cpu"
-2. Activate the CPU API server venv (`.venv-cpu`) with `requirements_cpu.txt` installed
-3. Restart the API/MCP server (backend auto-detected from runtime_config.json)
-4. FAISS artifacts remain on disk but are ignored
-5. Any pending embedding tasks are dropped on restart
-
-**Important**: FAISS snapshots built in GPU mode are NOT compatible with CPU-only mode. When switching between modes, you must rebuild from scratch in the target mode.
-
-### 10.6. Limitations
+### 7.6. Limitations
 
 CPU-only mode has the following limitations:
 
