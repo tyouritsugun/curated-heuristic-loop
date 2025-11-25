@@ -22,63 +22,35 @@ def parse_two_phase_query(query: str) -> tuple[str, str]:
     """
     Parse a two-phase query into (search_phrase, full_context).
 
-    Required format:
-    - "[SEARCH] phrase [TASK] context"
+    Supported formats (precedence order):
+    1) "[SEARCH] phrase [TASK] context"
+    2) "phrase | context"
+    3) Fallback: use the full query for both phases
 
-    Returns:
-        (search_phrase, full_query_for_reranking)
-
-    Raises:
-        ValueError: If query doesn't match required format or has empty parts.
-                   Error message is designed to guide LLM to correct the format.
-
-    Examples:
-        >>> parse_two_phase_query("[SEARCH] auth patterns [TASK] Implement OAuth2")
-        ('auth patterns', 'Implement OAuth2\\n\\nRelevant concepts: auth patterns')
+    If either parsed part is empty, fallback to (query, query).
+    full_context appends the search phrase for reranking: "{task}\n\nRelevant concepts: {search}".
     """
-    # Check for required markers
-    if "[SEARCH]" not in query:
-        raise ValueError(
-            "Query format error: Missing [SEARCH] marker.\n"
-            "Required format: [SEARCH] <short keyword phrase> [TASK] <task description>\n"
-            "Example: [SEARCH] authentication implementation patterns [TASK] Implement OAuth2 login\n"
-            f"Your query: {query[:200]}"
-        )
 
-    if "[TASK]" not in query:
-        raise ValueError(
-            "Query format error: Missing [TASK] marker.\n"
-            "Required format: [SEARCH] <short keyword phrase> [TASK] <task description>\n"
-            "Example: [SEARCH] authentication implementation patterns [TASK] Implement OAuth2 login\n"
-            f"Your query: {query[:200]}"
-        )
+    def _build_context(task_part: str, search_part: str) -> tuple[str, str]:
+        task_part = task_part.strip()
+        search_part = search_part.strip()
+        if not task_part or not search_part:
+            return (query, query)
+        return (search_part, f"{task_part}\n\nRelevant concepts: {search_part}")
 
-    # Parse [SEARCH]/[TASK] format
-    parts = query.split("[TASK]", 1)
-    search = parts[0].replace("[SEARCH]", "").strip()
-    task = parts[1].strip()
+    # Format 1: [SEARCH] ... [TASK] ...
+    if "[SEARCH]" in query and "[TASK]" in query:
+        prefix, task_part = query.split("[TASK]", 1)
+        search_part = prefix.replace("[SEARCH]", "", 1)
+        return _build_context(task_part, search_part)
 
-    # Validate: both parts must be non-empty
-    if not search:
-        raise ValueError(
-            "Query format error: [SEARCH] phrase is empty.\n"
-            "The SEARCH phrase should be 3-6 words combining [process] + [domain].\n"
-            "Examples: 'migration planning', 'performance troubleshooting', 'API design'\n"
-            f"Your query: {query[:200]}"
-        )
+    # Format 2: pipe delimiter
+    if "|" in query:
+        search_part, task_part = query.split("|", 1)
+        return _build_context(task_part, search_part)
 
-    if not task:
-        raise ValueError(
-            "Query format error: [TASK] context is empty.\n"
-            "The TASK should be one sentence describing your goal and constraints.\n"
-            "Example: Implement secure OAuth2 login with refresh tokens\n"
-            f"Your query: {query[:200]}"
-        )
-
-    # Return task as-is for reranking
-    # Generator LLM formats task as natural question in generator.md
-    logger.debug("Parsed two-phase query: search=%r, task=%r", search, task)
-    return (search, task)
+    # Fallback: unchanged query for both phases
+    return (query, query)
 
 
 class VectorFAISSProvider(SearchProvider):
