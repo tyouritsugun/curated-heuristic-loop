@@ -66,6 +66,10 @@ def unified_search(
         )
 
         # Build response with rich metadata and snippets
+        # TODO Phase 3: Consider optimizing N+1 queries here
+        # Current flow: unified_search returns IDs → fetch each entity for snippets
+        # With limit=25 max, this is 25 queries (acceptable for local tool)
+        # Optimization: batch fetch entities via `WHERE id IN (...)` if needed
         exp_repo = ExperienceRepository(session)
         manual_repo = CategoryManualRepository(session)
 
