@@ -75,10 +75,10 @@ def parse_two_phase_query(query: str) -> tuple[str, str]:
             f"Your query: {query[:200]}"
         )
 
-    # Construct full context for reranking
-    full_context = f"{task}\n\nRelevant concepts: {search}"
+    # Return task as-is for reranking
+    # Generator LLM formats task as natural question in generator.md
     logger.debug("Parsed two-phase query: search=%r, task=%r", search, task)
-    return (search, full_context)
+    return (search, task)
 
 
 class VectorFAISSProvider(SearchProvider):

@@ -36,15 +36,16 @@ Search uses two phases:
 **Query format:**
 ```
 [SEARCH] authentication implementation patterns
-[TASK] Implement secure OAuth2 login with refresh tokens
+[TASK] I want to implement secure OAuth2 login with refresh tokens. Will this help?
 ```
 
 **Basic principle:**
 - SEARCH: Combine [process] + [domain] (3-6 words)
   - Examples: "migration planning", "performance troubleshooting", "feature rollout", "API design"
   - Broader beats narrow; patterns beat technologies
-- TASK: Your goal + key constraints (one sentence)
-  - Helps ranker identify what would be useful
+- TASK: Frame as a natural question asking if the experience helps
+  - Format: "I want to {goal}. Will this help?" or "I need to {goal}. Will this experience help?"
+  - Adapt phrasing to task type (implement/troubleshoot/review/analyze)
 
 **Issue 2–3 variants** with different SEARCH phrases to explore the semantic space.
 
@@ -52,9 +53,10 @@ Search uses two phases:
 
 | User Request | Query |
 |---|---|
-| Implement OAuth2 login | `[SEARCH] authentication implementation patterns`<br>`[TASK] Implement secure OAuth2 login with refresh tokens` |
-| Fix slow database queries | `[SEARCH] query performance troubleshooting`<br>`[TASK] Optimize slow Postgres queries in production API` |
-| Add feature flags | `[SEARCH] gradual feature rollout`<br>`[TASK] Deploy new checkout flow with progressive rollout` |
+| Implement OAuth2 login | `[SEARCH] authentication implementation patterns`<br>`[TASK] I want to implement secure OAuth2 login with refresh tokens. Will this help?` |
+| Fix slow database queries | `[SEARCH] query performance troubleshooting`<br>`[TASK] I'm trying to optimize slow Postgres queries in production API. Will this help?` |
+| Draft page specification | `[SEARCH] specification workflow`<br>`[TASK] I want to draft page specification for user dashboard. Will this help?` |
+| Scan existing specs | `[SEARCH] specification review patterns`<br>`[TASK] I need to scan the codebase and audit existing specifications. Will this manual help?` |
 
 If top score <0.50, reformulate the SEARCH phrase.
 

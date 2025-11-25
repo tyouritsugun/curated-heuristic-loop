@@ -1,5 +1,9 @@
 # Semantic Search Refinement Plan
 
+**Status**: ✅ Phase 1 Implemented (2025-11-25)
+**Final Decision**: Natural question format in generator.md, embedding-based reranking
+**See**: `doc/plan/phase2-final-decision.md` for complete validation results
+
 ## Problem Statement
 
 ### Current State
@@ -77,8 +81,10 @@ This requires:
 **Required format (strict):**
 ```
 [SEARCH] authentication implementation patterns
-[TASK] Implement secure OAuth2 login with refresh tokens
+[TASK] I want to implement secure OAuth2 login with refresh tokens. Will this help?
 ```
+
+**TASK field best practice:** Format as a natural question ("I want to {goal}. Will this help?") to help the embedding model understand logical relevance vs textual similarity. The Generator LLM adapts phrasing based on task type (implement/troubleshoot/review/analyze).
 
 **No backward compatibility:** Queries without proper format will raise `ValueError` with helpful error messages to guide the LLM to correct the format.
 
@@ -200,8 +206,9 @@ Search uses two phases:
 - SEARCH: Combine [process] + [domain] (3-6 words)
   - Examples: "migration planning", "performance troubleshooting", "feature rollout", "API design"
   - Broader beats narrow; patterns beat technologies
-- TASK: Your goal + key constraints (one sentence)
-  - Helps ranker identify what would be useful
+- TASK: Frame as a natural question asking if the experience helps
+  - Format: "I want to {goal}. Will this help?" or "I need to {goal}. Will this experience help?"
+  - Adapt phrasing to task type (implement/troubleshoot/review/analyze)
 
 **Issue 2-3 variants** with different SEARCH phrases to explore the semantic space.
 
@@ -209,9 +216,10 @@ Search uses two phases:
 
 | User Request | Query |
 |---|---|
-| Implement OAuth2 login | `[SEARCH] authentication implementation patterns`<br>`[TASK] Implement secure OAuth2 login with refresh tokens` |
-| Fix slow database queries | `[SEARCH] query performance troubleshooting`<br>`[TASK] Optimize slow Postgres queries in production API` |
-| Add feature flags | `[SEARCH] gradual feature rollout`<br>`[TASK] Deploy new checkout flow with progressive rollout` |
+| Implement OAuth2 login | `[SEARCH] authentication implementation patterns`<br>`[TASK] I want to implement secure OAuth2 login with refresh tokens. Will this help?` |
+| Fix slow database queries | `[SEARCH] query performance troubleshooting`<br>`[TASK] I'm trying to optimize slow Postgres queries in production API. Will this help?` |
+| Draft page specification | `[SEARCH] specification workflow`<br>`[TASK] I want to draft page specification for user dashboard. Will this help?` |
+| Scan existing specs | `[SEARCH] specification review patterns`<br>`[TASK] I need to scan the codebase and audit existing specifications. Will this manual help?` |
 
 If top score <0.50, reformulate the SEARCH phrase.
 ```
@@ -671,6 +679,137 @@ The following Phase 2 enhancements are based on Qwen3 paper analysis but **requi
    - Needs: Compare with/without reasoning step
 
 **Recommendation**: Implement Phase 1 first, collect real usage data, then validate Phase 2 hypotheses systematically before coding.
+
+---
+
+## Final Implementation & Conclusion (2025-11-25)
+
+### ✅ What We Implemented: Phase 1 with Natural Question Enhancement
+
+After extensive validation testing, we implemented **Phase 1** with a simple but effective enhancement:
+
+**1. Two-Phase Query Format (Implemented)**
+- `[SEARCH] {keyword phrase}` - For FAISS broad recall
+- `[TASK] {natural question}` - For embedding-based reranking
+- Strict format validation with helpful error messages
+- Parser in `src/api/gpu/search_provider.py::parse_two_phase_query()`
+
+**2. Natural Question Format (Enhanced)**
+- Guide Generator LLM to format TASK as natural question in `generator.md`
+- Example: "I want to {goal}. Will this help?"
+- Adapts phrasing to task type (implement/troubleshoot/review/analyze)
+- **Result**: +7.4% improvement in relevance scores, better logical relevance detection
+
+**3. Code Implementation**
+- `src/api/gpu/search_provider.py` - Returns TASK field as-is (no transformation)
+- `generator.md` Section 3 - Natural question guidance with examples
+- No changes to reranker client (continues using embedding mode correctly)
+
+### ❌ What We Did NOT Implement: Phase 2 Instruction-Aware Generation Mode
+
+**Extensive testing proved this approach is not viable:**
+
+**Tests conducted**:
+1. `test_instruction_aware_feasibility.py` - 4 technical feasibility tests
+2. `test_template_variations.py` - 4 different prompt templates
+3. `test_logit_bias.py` - Forced token output approach
+4. `test_simple_question.py` - Natural question in generation mode (5 cases)
+
+**Results**: All tests failed to produce yes/no tokens
+- Model outputs reasoning text ("Okay...", "thinking") instead of "yes"/"no"
+- Cannot extract yes/no logprobs for relevance scoring
+- Template engineering did not fix the issue
+
+**Root cause**: Qwen3-Reranker was trained for **embedding-based similarity**, not generative binary classification. The "instruction-aware" feature in the paper refers to instruction-conditioned embeddings during training, not generation-mode inference.
+
+### Key Insight: Logical Relevance Through Semantic Embeddings
+
+**The original problem**:
+> "Similarity search for demanding materials for crafting a specification—the result 'database design cannot be TBD' or 'Figma design link must be provided' might be not so similar to page specification, but logically it is 100% related."
+
+**The solution**: Natural question format helps embeddings capture logical relationships
+
+**Example that validates the approach** (`test_hybrid_approach.py`):
+```
+Query:
+  [SEARCH] specification workflow
+  [TASK] I want to draft page specification for user dashboard. Will this help?
+
+Result:
+  "Always ask for Figma link before starting specification"
+  Moved from Rank 4 → Rank 1 (↑3 positions)
+```
+
+**Why it works**:
+- Question format: "I want to draft page spec... Will this help?"
+- Embedding captures semantic meaning: preparation + prerequisite for task type
+- Even though words differ ("Figma link" ≠ "page specification"), the **logical relationship** (prerequisite → task) is captured in semantic embeddings
+
+### Design Philosophy
+
+**Trust the Generator LLM**, don't hardcode:
+- Different task types need different phrasings
+- "I want to" (implementation) vs "I need to" (review/audit) vs "I'm trying to" (troubleshooting)
+- LLM adapts naturally based on user's request
+- Keeps code simple and maintainable
+
+**Keep generator.md concise and effective**:
+- Added natural question guidance (1 bullet point)
+- Updated examples (4 cases showing different task types)
+- No inflation, no over-specification
+- Trust LLM intelligence to understand the principle
+
+### Validation Results Summary
+
+| Test | Purpose | Result |
+|---|---|---|
+| Generation mode feasibility | Can model output yes/no? | ❌ No |
+| Template variations | Can prompts fix it? | ❌ No |
+| Logit bias forcing | Can we force tokens? | ❌ Partial only |
+| Question in generation mode | Does simple format work? | ❌ No |
+| Question in embedding mode | Does it improve embeddings? | ✅ +7.4% |
+| Hybrid approach | Does it improve ranking? | ✅ Yes (logical relevance) |
+
+### Production Status
+
+**✅ Phase 1 is production-ready**:
+- Two-phase query format enforced
+- Natural question guidance in generator.md
+- Embedding-based reranking (correct model usage)
+- Logical relevance detection working
+
+**❌ Phase 2 abandoned**:
+- Instruction-aware generation mode not viable
+- Model not designed for this usage pattern
+- Keep embedding-based approach (correct usage)
+
+### Documentation
+
+**Complete validation documented in**:
+- `doc/plan/phase2-step1-results.md` - Technical feasibility tests
+- `doc/plan/phase2-final-decision.md` - Complete rationale and test results
+- `doc/plan/phase2-validation-plan.md` - Original validation strategy
+- This document - Final implementation summary
+
+**Test scripts preserved for reference**:
+- `test_instruction_aware_feasibility.py`
+- `test_template_variations.py`
+- `test_logit_bias.py`
+- `test_simple_question.py`
+- `test_question_embedding.py`
+- `test_hybrid_approach.py`
+
+### Key Takeaway
+
+**Phase 1 with natural question format solves the logical relevance problem** through semantic embeddings enhanced by task-aware phrasing. This is simpler, more maintainable, and more effective than instruction-aware generation mode would have been.
+
+The two-phase query architecture is the key innovation:
+- **SEARCH**: Keywords for fast recall
+- **TASK**: Natural question for semantic understanding of logical relevance
+
+**This is the correct way to use Qwen3-Reranker.**
+
+---
 
 ## References
 
