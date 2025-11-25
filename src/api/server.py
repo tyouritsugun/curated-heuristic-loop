@@ -26,6 +26,7 @@ from src.api.routers.health import router as health_router
 from src.api.routers.categories import router as categories_router
 from src.api.routers.entries import router as entries_router
 from src.api.routers.search import router as search_router
+from src.api.routers.session import router as session_router
 from src.api.routers.guidelines import router as guidelines_router
 from src.api.routers.admin import router as admin_router
 from src.api.routers.settings import router as settings_router
@@ -211,6 +212,7 @@ app.include_router(health_router)
 app.include_router(categories_router)
 app.include_router(entries_router)
 app.include_router(search_router)
+app.include_router(session_router)
 app.include_router(guidelines_router)
 app.include_router(admin_router)
 app.include_router(settings_router)

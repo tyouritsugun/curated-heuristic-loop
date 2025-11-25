@@ -1,8 +1,8 @@
 """Entry endpoints for experiences and manuals."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from src.api.dependencies import get_db_session, get_search_service, get_config
@@ -15,6 +15,7 @@ from src.api.models import (
     UpdateEntryResponse,
 )
 from src.api.services.snippet import generate_snippet
+from src.api.services.session_store import get_session_store
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
@@ -67,8 +68,13 @@ def read_entries(
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),
     config=Depends(get_config),
+    x_chl_session: Optional[str] = Header(None, alias="X-CHL-Session"),
 ):
-    """Read entries by query or IDs."""
+    """Read entries by query or IDs.
+
+    Phase 2: Automatically tracks viewed entry IDs in session store when
+    X-CHL-Session header is provided.
+    """
     try:
         # Validate category exists
         cat_repo = CategoryRepository(session)
@@ -285,6 +291,13 @@ def read_entries(
                             entry["summary"] = man.summary
 
                     entries.append(entry)
+
+        # Phase 2: Track viewed entries in session store
+        session_id = x_chl_session or request.session_id
+        if session_id and entries:
+            store = get_session_store()
+            viewed_ids = {entry["id"] for entry in entries}
+            store.add_viewed_ids(session_id, viewed_ids)
 
         meta = {
             "category": {"code": category.code, "name": category.name},

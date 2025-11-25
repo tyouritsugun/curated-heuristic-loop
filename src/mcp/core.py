@@ -218,7 +218,53 @@ def build_handshake_payload() -> Dict[str, Any]:
                     "Clarify user's intent before taking action when they report bugs/errors. "
                     "They may want to: fix code, write a ticket (check TMG category), "
                     "investigate, or document. Don't assume they want an immediate code fix."
-                )
+                ),
+                "session_memory": {
+                    "overview": (
+                        "Phase 2: Session memory tracks viewed entries to avoid repetition. "
+                        "Initialize a session once per conversation using CHLAPIClient(session_id=...), "
+                        "or let the API generate one via GET /session."
+                    ),
+                    "workflow": {
+                        "1_initialize": (
+                            "Call client.get_session_info() to get or create a session_id. "
+                            "Store this ID and pass it to CHLAPIClient constructor for auto-injection."
+                        ),
+                        "2_automatic_tracking": (
+                            "POST /entries/read automatically tracks viewed IDs when X-CHL-Session header is present. "
+                            "CHLAPIClient auto-injects this header if session_id was provided in __init__."
+                        ),
+                        "3_manual_marking": (
+                            "Optionally call client.mark_entries_cited(entity_ids=[...]) to explicitly mark entries "
+                            "the LLM has cited/used in its response (beyond what was read)."
+                        ),
+                        "4_filtering": (
+                            "Use hide_viewed=True in search requests to remove previously seen entries. "
+                            "Use downrank_viewed=True to penalize viewed entries (score * 0.5) instead of hiding them. "
+                            "Both require X-CHL-Session header."
+                        )
+                    },
+                    "example": {
+                        "description": "Typical session usage",
+                        "code": (
+                            "# Initialize client with session\n"
+                            "info = client.get_session_info()  # Get or generate session_id\n"
+                            "session_id = info['session_id']\n"
+                            "client = CHLAPIClient(session_id=session_id)  # Auto-inject header\n\n"
+                            "# Search and read (auto-tracked)\n"
+                            "results = client.read_entries(entity_type='experience', category_code='PGS', query='handoff')\n\n"
+                            "# Subsequent search hides viewed entries\n"
+                            "# (add hide_viewed=True to search request payload)\n\n"
+                            "# Clear session if needed\n"
+                            "client.clear_session()"
+                        )
+                    },
+                    "limits": {
+                        "max_sessions": 500,
+                        "ttl_seconds": 3600,
+                        "eviction_policy": "LRU (least recently used)"
+                    }
+                }
             },
         }
     except MCPTransportError as exc:

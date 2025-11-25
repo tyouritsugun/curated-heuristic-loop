@@ -17,6 +17,7 @@ from src.api.models import (
     UnifiedSearchResult,
 )
 from src.api.services.snippet import generate_snippet, extract_heading
+from src.api.services.session_store import get_session_store
 from src.common.storage.schema import Experience, CategoryManual
 from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
 
@@ -45,13 +46,15 @@ def unified_search(
         # Session ID resolution: header takes precedence over body
         session_id = x_chl_session or request.session_id
 
-        # Phase 2 TODO: Session filtering not yet implemented
-        # When Phase 2 lands, this will:
-        # - Track viewed_ids per session
-        # - Apply hide_viewed (remove seen entries)
-        # - Apply downrank_viewed (score * 0.5 for viewed)
-        # - Return session_applied=True when filtering active
-        session_applied = False  # Always False until Phase 2
+        # Phase 2: Session filtering implementation
+        # Get viewed IDs from session store if session_id provided
+        viewed_ids = set()
+        session_applied = False
+
+        if session_id:
+            store = get_session_store()
+            viewed_ids = store.get_viewed_ids(session_id)
+            session_applied = (request.hide_viewed or request.downrank_viewed) and len(viewed_ids) > 0
 
         # Perform unified search
         search_result = search_service.unified_search(
@@ -64,6 +67,27 @@ def unified_search(
             min_score=request.min_score,
             filters=request.filters,
         )
+
+        # Phase 2: Apply session filtering to results
+        if session_id and viewed_ids:
+            results = search_result["results"]
+
+            # Apply hide_viewed: remove viewed entries
+            if request.hide_viewed:
+                results = [r for r in results if r.entity_id not in viewed_ids]
+
+            # Apply downrank_viewed: multiply score by 0.5 for viewed entries
+            if request.downrank_viewed and not request.hide_viewed:
+                for r in results:
+                    if r.entity_id in viewed_ids:
+                        r.score = (r.score or 0.0) * 0.5
+
+                # Re-sort by score and reassign ranks after downranking
+                results.sort(key=lambda x: x.score or 0.0, reverse=True)
+                for i, r in enumerate(results):
+                    r.rank = i
+
+            search_result["results"] = results
 
         # Build response with rich metadata and snippets
         # TODO Phase 3: Consider optimizing N+1 queries here
