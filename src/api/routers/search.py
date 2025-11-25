@@ -69,12 +69,20 @@ def unified_search(
         )
 
         # Phase 2: Apply session filtering to results
+        pre_filter_total = search_result["total"]
         if session_id and viewed_ids:
             results = search_result["results"]
 
             # Apply hide_viewed: remove viewed entries
             if request.hide_viewed:
+                before_count = len(results)
                 results = [r for r in results if r.entity_id not in viewed_ids]
+                filtered_count = before_count - len(results)
+
+                # Adjust total to account for filtered results
+                # This is an approximation: we don't know how many viewed IDs exist beyond current page
+                # Conservative estimate: subtract filtered_count from total
+                search_result["total"] = max(0, pre_filter_total - filtered_count)
 
             # Apply downrank_viewed: multiply score by 0.5 for viewed entries
             if request.downrank_viewed and not request.hide_viewed:
@@ -168,6 +176,12 @@ def unified_search(
                 continue
 
             formatted_results.append(UnifiedSearchResult(**result_dict))
+
+        # Phase 2: Track viewed IDs in session store after building results
+        if session_id and formatted_results:
+            store = get_session_store()
+            viewed_ids_to_add = {r.entity_id for r in formatted_results}
+            store.add_viewed_ids(session_id, viewed_ids_to_add)
 
         # Add provider hints for degraded mode
         warnings = search_result["warnings"].copy()
