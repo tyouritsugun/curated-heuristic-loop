@@ -77,6 +77,34 @@
 - MCP: client injects `X-CHL-Session`, session_applied flag true, LRU expiry behavior, session expiry mid-run, invalid/malformed session ignored gracefully, 501st session evicts oldest.
 - Load (lightweight): 500-session LRU performance sanity.
 
+## Test Coverage (Implementation Status)
+All phases (1-4) are complete with comprehensive test coverage:
+
+**Phase 2 - Session Memory** (`tests/test_phase2_behaviors.py` - 21 tests):
+- Hide/downrank viewed with backfill logic (2x limit, capped at 50)
+- Total count approximation after filtering (extrapolation with MIN_SAMPLE_SIZE=5 guard)
+- Session expiry (TTL) and LRU eviction
+- Auto session header injection in CHLAPIClient
+- Hide/downrank mutual exclusion
+
+**Phase 3 - Quality Rails** (`tests/test_phase3_duplicate_check.py` - 20 tests):
+- Duplicate check decision tree (≥0.85 review_first, 0.50-0.84 FYI, <0.50 normal)
+- Hard 750ms timeout enforcement using threading
+- Timeout handling and warning generation
+- Duplicate response formatting
+- Provider transparency in responses
+- Warning messages for high/medium duplicate scores
+
+**Phase 4 - MCP Wiring** (`tests/test_phase4_mcp_session.py` - 12 tests):
+- Auto-generation of session_id on MCP startup
+- CHL_SESSION_ID env override behavior
+- Session persistence across operations
+- Session expiry and clearing
+- Handshake payload verification
+- Automatic tracking in read/search operations
+
+**Total: 53 passing tests** covering all phases of the search improvement plan.
+
 ## Schema Sketches (for clarity)
 ```python
 class UnifiedSearchRequest(BaseModel):

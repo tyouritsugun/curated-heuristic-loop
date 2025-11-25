@@ -154,6 +154,15 @@ def init_server() -> None:
         )
         sys.exit(1)
 
+    # Log session status for diagnostics
+    if session_id:
+        logger.info("Session memory ENABLED (session_id=%s). Viewed entries will be tracked.", session_id)
+    else:
+        logger.warning(
+            "Session memory DISABLED. Session-aware features (hide_viewed, downrank_viewed) will not work. "
+            "Set CHL_SESSION_ID env var or ensure /api/v1/session endpoint is available."
+        )
+
     # Register tools
     mcp.tool()(list_categories)
     mcp.tool()(read_entries)
