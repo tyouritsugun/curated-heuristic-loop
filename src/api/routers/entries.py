@@ -346,34 +346,45 @@ def write_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check with 750ms timeout
+            # Phase 3: Auto-run duplicate check with hard 750ms timeout
             import time
+            import threading
             duplicate_candidates = []
             duplicate_check_timeout = False
-            duplicate_check_start = time.time()
 
             if search_service is not None:
-                try:
-                    # Run duplicate check with timeout (0.75 seconds)
-                    duplicate_candidates = search_service.find_duplicates(
-                        session=session,
-                        title=validated.title,
-                        content=validated.playbook,
-                        entity_type="experience",
-                        category_code=request.category_code,
-                        exclude_id=None,
-                        threshold=0.50,  # Only return results >= 0.50
-                    )
+                # Run duplicate check with hard timeout using threading
+                result_container = {"candidates": None, "error": None}
 
-                    duplicate_check_elapsed = time.time() - duplicate_check_start
-                    if duplicate_check_elapsed > 0.75:
-                        # Check took too long, treat as timeout
-                        duplicate_check_timeout = True
-                        duplicate_candidates = []
-                except Exception as e:
-                    logger.warning("Duplicate check failed: %s", e)
+                def run_duplicate_check():
+                    try:
+                        result_container["candidates"] = search_service.find_duplicates(
+                            session=session,
+                            title=validated.title,
+                            content=validated.playbook,
+                            entity_type="experience",
+                            category_code=request.category_code,
+                            exclude_id=None,
+                            threshold=0.50,
+                        )
+                    except Exception as e:
+                        result_container["error"] = e
+
+                thread = threading.Thread(target=run_duplicate_check, daemon=True)
+                thread.start()
+                thread.join(timeout=0.75)  # Hard 750ms timeout
+
+                if thread.is_alive():
+                    # Thread still running - timeout
+                    logger.warning("Duplicate check timed out after 750ms")
                     duplicate_check_timeout = True
-                    duplicate_candidates = []
+                elif result_container["error"]:
+                    # Exception occurred
+                    logger.warning("Duplicate check failed: %s", result_container["error"])
+                    duplicate_check_timeout = True
+                elif result_container["candidates"] is not None:
+                    # Success
+                    duplicate_candidates = result_container["candidates"]
 
             exp_repo = ExperienceRepository(session)
             new_obj = exp_repo.create({
@@ -423,6 +434,10 @@ def write_entry(
 
                 if max_score >= 0.85:
                     recommendation = "review_first"
+                    warnings.append(f"Found {len(duplicate_candidates)} similar entries (max score: {max_score:.2f}). Review recommended.")
+                else:
+                    # Medium score (0.50-0.84): informational only
+                    warnings.append(f"Found {len(duplicate_candidates)} potentially similar entries (max score: {max_score:.2f}).")
 
                 # Format duplicates for response
                 duplicates_response = [
@@ -476,32 +491,44 @@ def write_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check for manuals
-            import time
+            # Phase 3: Auto-run duplicate check for manuals with hard 750ms timeout
+            import threading
             duplicate_candidates = []
             duplicate_check_timeout = False
-            duplicate_check_start = time.time()
 
             if search_service is not None:
-                try:
-                    duplicate_candidates = search_service.find_duplicates(
-                        session=session,
-                        title=title,
-                        content=content,
-                        entity_type="manual",
-                        category_code=request.category_code,
-                        exclude_id=None,
-                        threshold=0.50,
-                    )
+                # Run duplicate check with hard timeout using threading
+                result_container = {"candidates": None, "error": None}
 
-                    duplicate_check_elapsed = time.time() - duplicate_check_start
-                    if duplicate_check_elapsed > 0.75:
-                        duplicate_check_timeout = True
-                        duplicate_candidates = []
-                except Exception as e:
-                    logger.warning("Duplicate check failed: %s", e)
+                def run_duplicate_check():
+                    try:
+                        result_container["candidates"] = search_service.find_duplicates(
+                            session=session,
+                            title=title,
+                            content=content,
+                            entity_type="manual",
+                            category_code=request.category_code,
+                            exclude_id=None,
+                            threshold=0.50,
+                        )
+                    except Exception as e:
+                        result_container["error"] = e
+
+                thread = threading.Thread(target=run_duplicate_check, daemon=True)
+                thread.start()
+                thread.join(timeout=0.75)  # Hard 750ms timeout
+
+                if thread.is_alive():
+                    # Thread still running - timeout
+                    logger.warning("Duplicate check timed out after 750ms")
                     duplicate_check_timeout = True
-                    duplicate_candidates = []
+                elif result_container["error"]:
+                    # Exception occurred
+                    logger.warning("Duplicate check failed: %s", result_container["error"])
+                    duplicate_check_timeout = True
+                elif result_container["candidates"] is not None:
+                    # Success
+                    duplicate_candidates = result_container["candidates"]
 
             man_repo = CategoryManualRepository(session)
             new_manual = man_repo.create({
@@ -523,7 +550,7 @@ def write_entry(
             }
 
             # Phase 3: Apply decision tree for manuals
-            warnings = []
+            warnings: list[str] = []
             recommendation = None
             duplicates_response = None
 
@@ -534,6 +561,10 @@ def write_entry(
 
                 if max_score >= 0.85:
                     recommendation = "review_first"
+                    warnings.append(f"Found {len(duplicate_candidates)} similar entries (max score: {max_score:.2f}). Review recommended.")
+                else:
+                    # Medium score (0.50-0.84): informational only
+                    warnings.append(f"Found {len(duplicate_candidates)} potentially similar entries (max score: {max_score:.2f}).")
 
                 duplicates_response = [
                     {
