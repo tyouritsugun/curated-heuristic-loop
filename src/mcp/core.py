@@ -219,6 +219,29 @@ def build_handshake_payload() -> Dict[str, Any]:
                     "They may want to: fix code, write a ticket (check TMG category), "
                     "investigate, or document. Don't assume they want an immediate code fix."
                 ),
+                "duplicate_check": {
+                    "overview": (
+                        "Phase 3: write_entry automatically checks for duplicates with 750ms timeout. "
+                        "All writes proceed (no blocking), but response includes duplicates and recommendations."
+                    ),
+                    "decision_tree": {
+                        "timeout": "Adds warning 'duplicate_check_timeout=true'; write proceeds normally",
+                        "high_score_0.85+": "Returns duplicates + recommendation='review_first' (strong match)",
+                        "medium_score_0.50_0.84": "Returns duplicates as FYI (moderate match); no recommendation",
+                        "low_score_<0.50": "No duplicates returned (already filtered by threshold)"
+                    },
+                    "response_fields": {
+                        "duplicates": "List of {entity_id, entity_type, score, reason, provider, title, summary}",
+                        "recommendation": "'review_first' when max(score) >= 0.85; None otherwise",
+                        "warnings": "['duplicate_check_timeout=true'] if check timed out"
+                    },
+                    "workflow": (
+                        "Check response.duplicates after write_entry. If recommendation='review_first', "
+                        "suggest user reviews duplicates before keeping the new entry. "
+                        "If duplicates present without recommendation, inform user as FYI."
+                    ),
+                    "performance": "Adds +50-750ms latency to write_entry; no opt-out in v1.1"
+                },
                 "session_memory": {
                     "overview": (
                         "Phase 2: Session memory tracks viewed entries to avoid repetition. "

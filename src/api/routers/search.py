@@ -97,10 +97,17 @@ def unified_search(
                 # Extrapolate to estimate how many viewed IDs might exist in the full result set.
                 # Formula: total_filtered_estimate = (filtered_count / fetch_limit) * pre_filter_total
                 # Adjusted total = pre_filter_total - total_filtered_estimate
-                if fetch_limit > 0:
+                #
+                # Guard: Only apply extrapolation if we have a reasonable sample size (>= 5)
+                # to avoid wild swings on tiny samples (e.g., limit=1 → fetch_limit=2).
+                MIN_SAMPLE_SIZE = 5
+                if fetch_limit >= MIN_SAMPLE_SIZE:
                     filter_rate = filtered_count / fetch_limit
                     estimated_total_filtered = int(filter_rate * pre_filter_total)
                     search_result["total"] = max(0, pre_filter_total - estimated_total_filtered)
+                elif fetch_limit > 0:
+                    # Small sample: use conservative simple subtraction
+                    search_result["total"] = max(0, pre_filter_total - filtered_count)
                 else:
                     search_result["total"] = pre_filter_total
 

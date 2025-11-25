@@ -320,7 +320,15 @@ def write_entry(
     search_service=Depends(get_search_service),
     config=Depends(get_config),
 ):
-    """Create a new entry."""
+    """Create a new entry.
+
+    Phase 3: Automatically runs duplicate check with 750ms timeout.
+    Decision tree:
+    - Timeout → proceed with warning
+    - Max score ≥ 0.85 → write, return duplicates + recommendation="review_first"
+    - 0.50-0.84 → write, return duplicates as FYI
+    - <0.50 → write normally
+    """
     try:
         if request.entity_type == "experience":
             # Validate experience data before checking category to surface schema issues first
@@ -337,6 +345,35 @@ def write_entry(
                     status_code=404,
                     detail=f"Category '{request.category_code}' not found"
                 )
+
+            # Phase 3: Auto-run duplicate check with 750ms timeout
+            import time
+            duplicate_candidates = []
+            duplicate_check_timeout = False
+            duplicate_check_start = time.time()
+
+            if search_service is not None:
+                try:
+                    # Run duplicate check with timeout (0.75 seconds)
+                    duplicate_candidates = search_service.find_duplicates(
+                        session=session,
+                        title=validated.title,
+                        content=validated.playbook,
+                        entity_type="experience",
+                        category_code=request.category_code,
+                        exclude_id=None,
+                        threshold=0.50,  # Only return results >= 0.50
+                    )
+
+                    duplicate_check_elapsed = time.time() - duplicate_check_start
+                    if duplicate_check_elapsed > 0.75:
+                        # Check took too long, treat as timeout
+                        duplicate_check_timeout = True
+                        duplicate_candidates = []
+                except Exception as e:
+                    logger.warning("Duplicate check failed: %s", e)
+                    duplicate_check_timeout = True
+                    duplicate_candidates = []
 
             exp_repo = ExperienceRepository(session)
             new_obj = exp_repo.create({
@@ -369,12 +406,44 @@ def write_entry(
                     "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
                 )
 
+            # Phase 3: Apply decision tree based on duplicate check results
+            recommendation = None
+            duplicates_response = None
+
+            if duplicate_check_timeout:
+                warnings.append("duplicate_check_timeout=true")
+            elif duplicate_candidates:
+                # Find max score
+                max_score = max(c.score for c in duplicate_candidates)
+
+                # Decision tree:
+                # - Max score ≥ 0.85 → recommendation="review_first"
+                # - 0.50-0.84 → duplicates as FYI (no recommendation)
+                # - <0.50 → no duplicates (already filtered by threshold=0.50)
+
+                if max_score >= 0.85:
+                    recommendation = "review_first"
+
+                # Format duplicates for response
+                duplicates_response = [
+                    {
+                        "entity_id": c.entity_id,
+                        "entity_type": c.entity_type,
+                        "score": c.score,
+                        "reason": getattr(c.reason, "value", str(c.reason)),
+                        "provider": c.provider,
+                        "title": c.title,
+                        "summary": c.summary,
+                    }
+                    for c in duplicate_candidates
+                ]
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=entry_id,
                 entry=entry_dict,
-                duplicates=None,
-                recommendation=None,
+                duplicates=duplicates_response,
+                recommendation=recommendation,
                 warnings=warnings or None,
                 message=(
                     "Experience created successfully. Indexing is in progress and may take up to 15 seconds. "
@@ -407,6 +476,33 @@ def write_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
+            # Phase 3: Auto-run duplicate check for manuals
+            import time
+            duplicate_candidates = []
+            duplicate_check_timeout = False
+            duplicate_check_start = time.time()
+
+            if search_service is not None:
+                try:
+                    duplicate_candidates = search_service.find_duplicates(
+                        session=session,
+                        title=title,
+                        content=content,
+                        entity_type="manual",
+                        category_code=request.category_code,
+                        exclude_id=None,
+                        threshold=0.50,
+                    )
+
+                    duplicate_check_elapsed = time.time() - duplicate_check_start
+                    if duplicate_check_elapsed > 0.75:
+                        duplicate_check_timeout = True
+                        duplicate_candidates = []
+                except Exception as e:
+                    logger.warning("Duplicate check failed: %s", e)
+                    duplicate_check_timeout = True
+                    duplicate_candidates = []
+
             man_repo = CategoryManualRepository(session)
             new_manual = man_repo.create({
                 "category_code": request.category_code,
@@ -426,12 +522,39 @@ def write_entry(
                 "author": new_manual.author,
             }
 
+            # Phase 3: Apply decision tree for manuals
+            warnings = []
+            recommendation = None
+            duplicates_response = None
+
+            if duplicate_check_timeout:
+                warnings.append("duplicate_check_timeout=true")
+            elif duplicate_candidates:
+                max_score = max(c.score for c in duplicate_candidates)
+
+                if max_score >= 0.85:
+                    recommendation = "review_first"
+
+                duplicates_response = [
+                    {
+                        "entity_id": c.entity_id,
+                        "entity_type": c.entity_type,
+                        "score": c.score,
+                        "reason": getattr(c.reason, "value", str(c.reason)),
+                        "provider": c.provider,
+                        "title": c.title,
+                        "summary": c.summary,
+                    }
+                    for c in duplicate_candidates
+                ]
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=manual_id,
                 entry=manual_dict,
-                duplicates=None,
-                recommendation=None,
+                duplicates=duplicates_response,
+                recommendation=recommendation,
+                warnings=warnings or None,
                 message=(
                     "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
