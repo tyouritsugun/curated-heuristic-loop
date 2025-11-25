@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from sqlalchemy.orm import Session
 
@@ -308,6 +308,168 @@ class SearchService:
         raise SearchServiceError(
             f"Duplicate detection failed after {self.max_retries + 1} attempts"
         )
+
+    def unified_search(
+        self,
+        session: Session,
+        query: str,
+        types: List[str],
+        category_code: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0,
+        min_score: Optional[float] = None,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Unified search supporting multiple entity types with filtering.
+
+        Args:
+            session: Request-scoped SQLAlchemy session
+            query: Search query text
+            types: List of entity types to search ('experience', 'manual')
+            category_code: Filter by category code (None for all)
+            limit: Maximum number of results to return
+            offset: Pagination offset
+            min_score: Minimum relevance score (uses provider defaults if None)
+            filters: AND-based filters (exact match): author, section
+
+        Returns:
+            Dict with keys:
+                - results: List[SearchResult]
+                - degraded: bool (whether fallback was used)
+                - provider: str (provider that returned results)
+                - warnings: List[str]
+        """
+        all_results: List[SearchResult] = []
+        used_provider = self.primary_provider_name
+        degraded = False
+        warnings: List[str] = []
+
+        # Search each entity type
+        for entity_type in types:
+            if entity_type not in ("experience", "manual"):
+                warnings.append(f"Unsupported entity type '{entity_type}' ignored")
+                continue
+
+            try:
+                # Search with sufficient headroom for filtering + pagination
+                search_limit = limit + offset + 50  # Extra buffer for post-filtering
+                type_results = self.search(
+                    session=session,
+                    query=query,
+                    entity_type=entity_type,
+                    category_code=category_code,
+                    top_k=search_limit,
+                )
+                all_results.extend(type_results)
+
+                # Track if we fell back to text search
+                if type_results and type_results[0].provider == "sqlite_text" and self.primary_provider_name != "sqlite_text":
+                    degraded = True
+                    used_provider = "sqlite_text"
+
+            except SearchServiceError as exc:
+                logger.warning("Search failed for entity_type=%s: %s", entity_type, exc)
+                warnings.append(f"Search failed for {entity_type}: {str(exc)}")
+                continue
+
+        # Apply post-search filters
+        if filters:
+            all_results = self._apply_filters(session, all_results, filters)
+
+        # Sort by score (descending) and assign global ranks
+        all_results.sort(key=lambda r: r.score or 0.0, reverse=True)
+        for idx, result in enumerate(all_results):
+            result.rank = idx
+
+        # Apply min_score filtering
+        if min_score is not None:
+            before_count = len(all_results)
+            all_results = [r for r in all_results if (r.score or 0.0) >= min_score]
+            if before_count > len(all_results):
+                warnings.append(
+                    f"Filtered {before_count - len(all_results)} results below min_score={min_score}"
+                )
+
+        # Check if top result is below typical thresholds
+        if all_results:
+            top_score = all_results[0].score or 0.0
+            default_threshold = 0.50 if used_provider == "vector_faiss" else 0.35
+            if top_score < default_threshold:
+                warnings.append(
+                    f"Top result score ({top_score:.2f}) below recommended threshold ({default_threshold})"
+                )
+
+        # Apply pagination
+        total_before_pagination = len(all_results)
+        paginated_results = all_results[offset : offset + limit]
+
+        return {
+            "results": paginated_results,
+            "total": total_before_pagination,
+            "degraded": degraded,
+            "provider": used_provider,
+            "warnings": warnings,
+        }
+
+    def _apply_filters(
+        self,
+        session: Session,
+        results: List[SearchResult],
+        filters: Dict[str, Any],
+    ) -> List[SearchResult]:
+        """Apply AND-based filters to search results.
+
+        Args:
+            session: SQLAlchemy session
+            results: Search results to filter
+            filters: Dict with keys: author, section (null values ignored)
+
+        Returns:
+            Filtered list of results
+        """
+        from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
+
+        if not filters:
+            return results
+
+        # Extract filter values, ignoring None
+        author_filter = filters.get("author")
+        section_filter = filters.get("section")
+
+        if not author_filter and not section_filter:
+            return results
+
+        filtered = []
+        exp_repo = ExperienceRepository(session)
+        manual_repo = CategoryManualRepository(session)
+
+        for result in results:
+            # Fetch entity to check filters
+            if result.entity_type == "experience":
+                entity = exp_repo.get_by_id(result.entity_id)
+                if not entity:
+                    continue
+
+                # Apply filters (AND semantics, exact match)
+                if author_filter and entity.author != author_filter:
+                    continue
+                if section_filter and entity.section != section_filter:
+                    continue
+
+                filtered.append(result)
+
+            elif result.entity_type == "manual":
+                entity = manual_repo.get_by_id(result.entity_id)
+                if not entity:
+                    continue
+
+                # Manuals only have author filter (no section)
+                if author_filter and entity.author != author_filter:
+                    continue
+
+                filtered.append(result)
+
+        return filtered
 
     def rebuild_index(self, session: Session, provider_name: Optional[str] = None) -> None:
         """Rebuild search index for specified provider.

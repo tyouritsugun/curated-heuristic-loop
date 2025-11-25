@@ -27,6 +27,10 @@ class ReadEntriesRequest(BaseModel):
     query: Optional[str] = None
     ids: Optional[List[str]] = None
     limit: Optional[int] = None
+    # v1.1 additions (backward compatible)
+    fields: Optional[List[str]] = Field(None, description="Field filter: 'preview' for snippets, specific fields for allowlist")
+    snippet_len: Optional[int] = Field(None, ge=80, le=640, description="Snippet length if fields=['preview']")
+    session_id: Optional[str] = Field(None, description="Session ID for tracking (prefer X-CHL-Session header)")
 
 
 class WriteEntryRequest(BaseModel):
@@ -192,3 +196,61 @@ class TelemetrySnapshotResponse(BaseModel):
     workers: List[Dict[str, Any]]
     jobs: List[Dict[str, Any]]
     meta: Optional[Dict[str, Any]] = None
+
+
+# Unified search models (v1.1)
+class UnifiedSearchRequest(BaseModel):
+    """Request model for unified search API v1.1."""
+    query: str = Field(..., description="Search query text")
+    types: List[str] = Field(
+        default=["experience", "manual"],
+        description="Entity types to search (experience, manual, or both)"
+    )
+    category: Optional[str] = Field(None, description="Filter to specific category code")
+    limit: int = Field(10, ge=1, le=25, description="Maximum results to return (capped at 25)")
+    offset: int = Field(0, ge=0, description="Pagination offset")
+    min_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum relevance score")
+    filters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="AND-based filters (exact match): author, section. Null values ignored."
+    )
+    snippet_len: int = Field(320, ge=80, le=640, description="Snippet length in characters")
+    fields: Optional[List[str]] = Field(
+        None,
+        description="Additional fields to include (additive, e.g. ['playbook'] for full body)"
+    )
+    hide_viewed: bool = Field(False, description="Remove previously viewed entries")
+    downrank_viewed: bool = Field(True, description="Apply score penalty (0.5x) to viewed entries")
+    session_id: Optional[str] = Field(None, description="Session ID for tracking (prefer X-CHL-Session header)")
+
+
+class UnifiedSearchResult(BaseModel):
+    """Single result from unified search API v1.1."""
+    entity_id: str
+    entity_type: str  # 'experience' or 'manual'
+    title: str
+    section: Optional[str] = None
+    score: float = Field(..., description="Relevance score (always present for search results)")
+    rank: int = Field(..., description="Position in merged result list (0-indexed)")
+    reason: str = Field(..., description="How this result was found (semantic_match, text_match, etc)")
+    provider: str = Field(..., description="Provider that returned this result")
+    degraded: bool = Field(False, description="Whether provider is in fallback/degraded mode")
+    hint: Optional[str] = Field(None, description="Provider hint for degraded results")
+    heading: Optional[str] = Field(None, description="Display heading (title or extracted)")
+    snippet: Optional[str] = Field(None, description="Content snippet")
+    author: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class UnifiedSearchResponse(BaseModel):
+    """Response model for unified search API v1.1."""
+    results: List[UnifiedSearchResult]
+    count: int = Field(..., description="Number of results in this response")
+    total: Optional[int] = Field(
+        None,
+        description="Total matching results (expensive to compute; may be None)"
+    )
+    has_more: bool = Field(..., description="Whether more results exist beyond this page")
+    top_score: Optional[float] = Field(None, description="Highest score in results")
+    warnings: List[str] = Field(default_factory=list, description="Warnings (e.g., low scores, fallback mode)")
+    session_applied: bool = Field(False, description="Whether session filtering was applied")

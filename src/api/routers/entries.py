@@ -14,6 +14,7 @@ from src.api.models import (
     UpdateEntryRequest,
     UpdateEntryResponse,
 )
+from src.api.services.snippet import generate_snippet
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
@@ -28,13 +29,25 @@ router = APIRouter(prefix="/api/v1/entries", tags=["entries"])
 
 
 def _make_preview(text: str | None, limit: int = 320) -> tuple[str | None, bool]:
-    """Return a truncated preview and whether truncation occurred."""
+    """Return a truncated preview and whether truncation occurred.
+
+    Note: Deprecated in favor of generate_snippet from snippet module.
+    Kept for backward compatibility with existing code.
+    """
     if text is None:
         return None, False
     trimmed = text.strip()
     if len(trimmed) <= limit:
         return trimmed, False
     return trimmed[:limit].rstrip() + "...", True
+
+
+def _should_use_preview(fields: list[str] | None) -> bool:
+    """Determine if preview mode should be used based on fields parameter."""
+    # fields=None → full bodies (backward compatible)
+    # fields=["preview"] → snippets only
+    # fields with specific field names → include those fields
+    return fields is not None and "preview" in fields
 
 
 def _runtime_search_mode(config, search_service):
@@ -68,6 +81,10 @@ def read_entries(
 
         limit = request.limit if request.limit is not None else (config.read_details_limit if config else 10)
 
+        # Determine snippet length (default 320, or from request)
+        snippet_len = request.snippet_len if request.snippet_len is not None else 320
+        use_preview = _should_use_preview(request.fields)
+
         if request.entity_type not in {"experience", "manual"}:
             raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
@@ -92,14 +109,13 @@ def read_entries(
                     exp = exp_repo.get_by_id(r.entity_id)
                     if not exp:
                         continue
-                    preview, truncated = _make_preview(exp.playbook)
-                    entries.append({
+
+                    # Use new snippet generation for v1.1
+                    preview, truncated = generate_snippet(exp.playbook, max_length=snippet_len)
+
+                    entry = {
                         "id": exp.id,
                         "title": exp.title,
-                        "playbook": preview,
-                        "playbook_preview": preview,
-                        "playbook_truncated": truncated,
-                        "context": normalize_context(exp.context),
                         "section": exp.section,
                         "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
@@ -112,7 +128,21 @@ def read_entries(
                         "rank": r.rank,
                         "degraded": getattr(r, "degraded", False),
                         "provider_hint": getattr(r, "hint", None),
-                    })
+                    }
+
+                    # fields=None → full bodies (backward compatible)
+                    # fields=["preview"] → only previews
+                    if use_preview:
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+                    else:
+                        # Default: include full playbook + preview
+                        entry["playbook"] = exp.playbook
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+                        entry["context"] = normalize_context(exp.context)
+
+                    entries.append(entry)
             else:
                 # ID lookup or list all
                 if request.ids:

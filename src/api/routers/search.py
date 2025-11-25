@@ -1,8 +1,8 @@
 """Search endpoints and diagnostics."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from src.api.dependencies import get_search_service, get_db_session, get_config
@@ -12,57 +12,152 @@ from src.api.models import (
     DuplicateCheckRequest,
     DuplicateCheckResponse,
     DuplicateCandidateResponse,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
+    UnifiedSearchResult,
 )
+from src.api.services.snippet import generate_snippet, extract_heading
 from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
-@router.post("/", response_model=SearchResponse)
-def search(
-    request: SearchRequest,
+@router.post("/", response_model=UnifiedSearchResponse)
+def unified_search(
+    request: UnifiedSearchRequest,
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),
+    x_chl_session: Optional[str] = Header(None, alias="X-CHL-Session"),
 ):
     """
-    Search for entries using semantic or text search.
+    Unified search API v1.1 with snippets, filtering, and session support.
 
-    Note: Core read path remains `/api/v1/entries/read`; this endpoint
-    is for explicit search requests.
+    Returns rich results with snippets to reduce token usage for LLM contexts.
+    Supports cross-type search, filtering, and session-based ranking (Phase 2).
     """
     try:
         if search_service is None:
             raise HTTPException(status_code=503, detail="Search service not initialized")
 
-        results = search_service.search(
+        # Session ID resolution: header takes precedence over body
+        session_id = x_chl_session or request.session_id
+        # TODO Phase 2: Apply session filtering (hide_viewed, downrank_viewed)
+        session_applied = False
+
+        # Perform unified search
+        search_result = search_service.unified_search(
             session=session,
             query=request.query,
-            entity_type=request.entity_type,
-            category_code=request.category_code,
-            top_k=request.limit or 10,
+            types=request.types,
+            category_code=request.category,
+            limit=request.limit,
+            offset=request.offset,
+            min_score=request.min_score,
+            filters=request.filters,
         )
 
+        # Build response with rich metadata and snippets
+        exp_repo = ExperienceRepository(session)
+        manual_repo = CategoryManualRepository(session)
+
         formatted_results = []
-        for r in results:
-            formatted_results.append(
-                {
+        for r in search_result["results"]:
+            # Fetch entity for snippet generation
+            if r.entity_type == "experience":
+                entity = exp_repo.get_by_id(r.entity_id)
+                if not entity:
+                    continue
+
+                # Generate heading and snippet
+                heading = extract_heading(entity.playbook, fallback=entity.title)
+                snippet, _ = generate_snippet(entity.playbook, max_length=request.snippet_len)
+
+                result_dict = {
                     "entity_id": r.entity_id,
                     "entity_type": r.entity_type,
-                    "score": r.score,
+                    "title": entity.title,
+                    "section": entity.section,
+                    "score": r.score or 0.0,
+                    "rank": r.rank,
                     "reason": getattr(r.reason, "value", str(r.reason)),
                     "provider": r.provider,
-                    "rank": r.rank,
+                    "degraded": r.degraded,
+                    "hint": r.hint,
+                    "heading": heading,
+                    "snippet": snippet,
+                    "author": entity.author,
+                    "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
                 }
-            )
 
-        return SearchResponse(results=formatted_results, count=len(formatted_results))
+                # Add full bodies if requested via fields
+                if request.fields and "playbook" in request.fields:
+                    result_dict["playbook"] = entity.playbook
+                if request.fields and "context" in request.fields:
+                    result_dict["context"] = entity.context
+
+            elif r.entity_type == "manual":
+                entity = manual_repo.get_by_id(r.entity_id)
+                if not entity:
+                    continue
+
+                # Generate heading and snippet
+                heading = extract_heading(entity.content, fallback=entity.title)
+                snippet, _ = generate_snippet(entity.content, max_length=request.snippet_len)
+
+                result_dict = {
+                    "entity_id": r.entity_id,
+                    "entity_type": r.entity_type,
+                    "title": entity.title,
+                    "section": None,  # Manuals don't have sections
+                    "score": r.score or 0.0,
+                    "rank": r.rank,
+                    "reason": getattr(r.reason, "value", str(r.reason)),
+                    "provider": r.provider,
+                    "degraded": r.degraded,
+                    "hint": r.hint,
+                    "heading": heading,
+                    "snippet": snippet,
+                    "author": entity.author,
+                    "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+                }
+
+                # Add full bodies if requested via fields
+                if request.fields and "content" in request.fields:
+                    result_dict["content"] = entity.content
+                if request.fields and "summary" in request.fields:
+                    result_dict["summary"] = entity.summary
+
+            else:
+                continue
+
+            formatted_results.append(UnifiedSearchResult(**result_dict))
+
+        # Add provider hints for degraded mode
+        warnings = search_result["warnings"].copy()
+        if search_result["degraded"]:
+            warnings.append("Vector search unavailable; text fallback used")
+
+        # Calculate top_score and has_more
+        top_score = formatted_results[0].score if formatted_results else None
+        has_more = (request.offset + len(formatted_results)) < search_result["total"]
+
+        return UnifiedSearchResponse(
+            results=formatted_results,
+            count=len(formatted_results),
+            total=search_result["total"],
+            has_more=has_more,
+            top_score=top_score,
+            warnings=warnings,
+            session_applied=session_applied,
+        )
 
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Error performing search")
+        logger.exception("Error performing unified search")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
