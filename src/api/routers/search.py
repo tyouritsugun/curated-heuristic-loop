@@ -44,8 +44,14 @@ def unified_search(
 
         # Session ID resolution: header takes precedence over body
         session_id = x_chl_session or request.session_id
-        # TODO Phase 2: Apply session filtering (hide_viewed, downrank_viewed)
-        session_applied = False
+
+        # Phase 2 TODO: Session filtering not yet implemented
+        # When Phase 2 lands, this will:
+        # - Track viewed_ids per session
+        # - Apply hide_viewed (remove seen entries)
+        # - Apply downrank_viewed (score * 0.5 for viewed)
+        # - Return session_applied=True when filtering active
+        session_applied = False  # Always False until Phase 2
 
         # Perform unified search
         search_result = search_service.unified_search(

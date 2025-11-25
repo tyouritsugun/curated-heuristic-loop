@@ -130,17 +130,24 @@ def read_entries(
                         "provider_hint": getattr(r, "hint", None),
                     }
 
-                    # fields=None → full bodies (backward compatible)
-                    # fields=["preview"] → only previews
-                    if use_preview:
+                    # v1.1: Default to previews (cut tokens); full bodies only when explicitly requested
+                    # fields=None → previews only (NEW default per plan)
+                    # fields=["preview"] → previews only (explicit)
+                    # fields=["playbook"] or ["playbook", "context"] → include requested full bodies
+
+                    if request.fields is None or use_preview:
+                        # Preview mode: snippets only
                         entry["playbook_preview"] = preview
                         entry["playbook_truncated"] = truncated
                     else:
-                        # Default: include full playbook + preview
-                        entry["playbook"] = exp.playbook
+                        # Explicit fields requested: include those
                         entry["playbook_preview"] = preview
                         entry["playbook_truncated"] = truncated
-                        entry["context"] = normalize_context(exp.context)
+
+                        if "playbook" in request.fields:
+                            entry["playbook"] = exp.playbook
+                        if "context" in request.fields:
+                            entry["context"] = normalize_context(exp.context)
 
                     entries.append(entry)
             else:
@@ -154,11 +161,12 @@ def read_entries(
 
                 entries = []
                 for exp in entities:
-                    entries.append({
+                    # Generate preview
+                    preview, truncated = generate_snippet(exp.playbook, max_length=snippet_len)
+
+                    entry = {
                         "id": exp.id,
                         "title": exp.title,
-                        "playbook": exp.playbook,
-                        "context": normalize_context(exp.context),
                         "section": exp.section,
                         "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
@@ -167,7 +175,22 @@ def read_entries(
                         "sync_status": exp.sync_status,
                         "reason": "id_lookup",
                         "provider": "direct",
-                    })
+                    }
+
+                    # Apply same field logic as search path
+                    if request.fields is None or use_preview:
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+                    else:
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+
+                        if "playbook" in request.fields:
+                            entry["playbook"] = exp.playbook
+                        if "context" in request.fields:
+                            entry["context"] = normalize_context(exp.context)
+
+                    entries.append(entry)
 
         else:  # manual
             man_repo = CategoryManualRepository(session)
@@ -190,14 +213,13 @@ def read_entries(
                     man = man_repo.get_by_id(r.entity_id)
                     if not man:
                         continue
-                    preview, truncated = _make_preview(man.content)
-                    entries.append({
+
+                    # Use new snippet generation for v1.1
+                    preview, truncated = generate_snippet(man.content, max_length=snippet_len)
+
+                    entry = {
                         "id": man.id,
                         "title": man.title,
-                        "content": preview,
-                        "content_preview": preview,
-                        "content_truncated": truncated,
-                        "summary": man.summary,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
@@ -207,7 +229,24 @@ def read_entries(
                         "rank": r.rank,
                         "degraded": getattr(r, "degraded", False),
                         "provider_hint": getattr(r, "hint", None),
-                    })
+                    }
+
+                    # v1.1: Default to previews; full bodies only when explicitly requested
+                    if request.fields is None or use_preview:
+                        # Preview mode: snippets only
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+                    else:
+                        # Explicit fields requested: include those
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+
+                        if "content" in request.fields:
+                            entry["content"] = man.content
+                        if "summary" in request.fields:
+                            entry["summary"] = man.summary
+
+                    entries.append(entry)
             else:
                 # ID lookup or list all
                 if request.ids:
@@ -219,17 +258,33 @@ def read_entries(
 
                 entries = []
                 for man in entities:
-                    entries.append({
+                    # Generate preview
+                    preview, truncated = generate_snippet(man.content, max_length=snippet_len)
+
+                    entry = {
                         "id": man.id,
                         "title": man.title,
-                        "content": man.content,
-                        "summary": man.summary,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
                         "reason": "id_lookup",
                         "provider": "direct",
-                    })
+                    }
+
+                    # Apply same field logic as search path
+                    if request.fields is None or use_preview:
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+                    else:
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+
+                        if "content" in request.fields:
+                            entry["content"] = man.content
+                        if "summary" in request.fields:
+                            entry["summary"] = man.summary
+
+                    entries.append(entry)
 
         meta = {
             "category": {"code": category.code, "name": category.name},
