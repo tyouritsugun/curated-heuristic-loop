@@ -56,13 +56,23 @@ def unified_search(
             viewed_ids = store.get_viewed_ids(session_id)
             session_applied = (request.hide_viewed or request.downrank_viewed) and len(viewed_ids) > 0
 
+        # Phase 2: Backfill logic for hide_viewed
+        # When hide_viewed is active, fetch extra results to account for filtering
+        # Strategy: fetch 2x limit initially, then filter to target limit
+        initial_limit = request.limit
+        if session_id and viewed_ids and request.hide_viewed:
+            # Fetch extra results (2x limit, capped at 50 to avoid excessive DB load)
+            fetch_limit = min(initial_limit * 2, 50)
+        else:
+            fetch_limit = initial_limit
+
         # Perform unified search
         search_result = search_service.unified_search(
             session=session,
             query=request.query,
             types=request.types,
             category_code=request.category,
-            limit=request.limit,
+            limit=fetch_limit,
             offset=request.offset,
             min_score=request.min_score,
             filters=request.filters,
@@ -79,12 +89,24 @@ def unified_search(
                 results = [r for r in results if r.entity_id not in viewed_ids]
                 filtered_count = before_count - len(results)
 
+                # Trim to requested limit after filtering
+                results = results[:initial_limit]
+
                 # Adjust total to account for filtered results
-                # This is an approximation: we don't know how many viewed IDs exist beyond current page
-                # Conservative estimate: subtract filtered_count from total
-                search_result["total"] = max(0, pre_filter_total - filtered_count)
+                # Approximation: We fetched fetch_limit results and filtered filtered_count.
+                # Extrapolate to estimate how many viewed IDs might exist in the full result set.
+                # Formula: total_filtered_estimate = (filtered_count / fetch_limit) * pre_filter_total
+                # Adjusted total = pre_filter_total - total_filtered_estimate
+                if fetch_limit > 0:
+                    filter_rate = filtered_count / fetch_limit
+                    estimated_total_filtered = int(filter_rate * pre_filter_total)
+                    search_result["total"] = max(0, pre_filter_total - estimated_total_filtered)
+                else:
+                    search_result["total"] = pre_filter_total
 
             # Apply downrank_viewed: multiply score by 0.5 for viewed entries
+            # Note: downrank_viewed does NOT adjust total, as no results are removed.
+            # Total still reflects the full result set; only scores/ranks change.
             if request.downrank_viewed and not request.hide_viewed:
                 for r in results:
                     if r.entity_id in viewed_ids:
