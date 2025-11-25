@@ -18,6 +18,69 @@ from src.api.gpu.faiss_manager import FAISSIndexManager, FAISSIndexError
 logger = logging.getLogger(__name__)
 
 
+def parse_two_phase_query(query: str) -> tuple[str, str]:
+    """
+    Parse a two-phase query into (search_phrase, full_context).
+
+    Required format:
+    - "[SEARCH] phrase [TASK] context"
+
+    Returns:
+        (search_phrase, full_query_for_reranking)
+
+    Raises:
+        ValueError: If query doesn't match required format or has empty parts.
+                   Error message is designed to guide LLM to correct the format.
+
+    Examples:
+        >>> parse_two_phase_query("[SEARCH] auth patterns [TASK] Implement OAuth2")
+        ('auth patterns', 'Implement OAuth2\\n\\nRelevant concepts: auth patterns')
+    """
+    # Check for required markers
+    if "[SEARCH]" not in query:
+        raise ValueError(
+            "Query format error: Missing [SEARCH] marker.\n"
+            "Required format: [SEARCH] <short keyword phrase> [TASK] <task description>\n"
+            "Example: [SEARCH] authentication implementation patterns [TASK] Implement OAuth2 login\n"
+            f"Your query: {query[:200]}"
+        )
+
+    if "[TASK]" not in query:
+        raise ValueError(
+            "Query format error: Missing [TASK] marker.\n"
+            "Required format: [SEARCH] <short keyword phrase> [TASK] <task description>\n"
+            "Example: [SEARCH] authentication implementation patterns [TASK] Implement OAuth2 login\n"
+            f"Your query: {query[:200]}"
+        )
+
+    # Parse [SEARCH]/[TASK] format
+    parts = query.split("[TASK]", 1)
+    search = parts[0].replace("[SEARCH]", "").strip()
+    task = parts[1].strip()
+
+    # Validate: both parts must be non-empty
+    if not search:
+        raise ValueError(
+            "Query format error: [SEARCH] phrase is empty.\n"
+            "The SEARCH phrase should be 3-6 words combining [process] + [domain].\n"
+            "Examples: 'migration planning', 'performance troubleshooting', 'API design'\n"
+            f"Your query: {query[:200]}"
+        )
+
+    if not task:
+        raise ValueError(
+            "Query format error: [TASK] context is empty.\n"
+            "The TASK should be one sentence describing your goal and constraints.\n"
+            "Example: Implement secure OAuth2 login with refresh tokens\n"
+            f"Your query: {query[:200]}"
+        )
+
+    # Construct full context for reranking
+    full_context = f"{task}\n\nRelevant concepts: {search}"
+    logger.debug("Parsed two-phase query: search=%r, task=%r", search, task)
+    return (search, full_context)
+
+
 class VectorFAISSProvider(SearchProvider):
     """Vector search provider using FAISS with optional reranking."""
 
@@ -45,10 +108,14 @@ class VectorFAISSProvider(SearchProvider):
         category_code: Optional[str] = None,
         top_k: int = 10,
     ) -> List[SearchResult]:
-        """Search using vector similarity."""
+        """Search using vector similarity with two-phase query support."""
         try:
+            # Parse query into two phases
+            search_phrase, full_context = parse_two_phase_query(query)
+
+            # Phase 1: FAISS with search phrase only
             try:
-                query_embedding = self.embedding_client.encode_single(query)
+                query_embedding = self.embedding_client.encode_single(search_phrase)
             except EmbeddingClientError as exc:
                 raise SearchProviderError(f"Failed to generate query embedding: {exc}") from exc
 
@@ -76,9 +143,10 @@ class VectorFAISSProvider(SearchProvider):
                         }
                     )
 
+            # Phase 2: Reranking with full context
             if self.reranker_client and len(entity_mappings) > 1:
                 entity_mappings = self._rerank_candidates(
-                    session, query, entity_mappings[: self.topk_rerank]
+                    session, full_context, entity_mappings[: self.topk_rerank]
                 )
 
             if category_code:
@@ -100,8 +168,9 @@ class VectorFAISSProvider(SearchProvider):
                 )
 
             logger.info(
-                "Vector search completed: query=%r, entity_type=%s, category=%s, results=%s",
+                "Vector search completed: original_query=%r, search_phrase=%r, entity_type=%s, category=%s, results=%s",
                 query,
+                search_phrase,
                 entity_type,
                 category_code,
                 len(results),

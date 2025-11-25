@@ -27,19 +27,40 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 1. Run `list_categories` only if you need a refresher of the available shelves.
 2. Choose the one category that best matches the work. If you truly need two, finish one pass end-to-end before switching.
 
-### 3. Craft high-signal queries
+### 3. Craft two-phase queries
 
-- Remember the library holds **process guidance**, not domain knowledge about the specific artifact you are creating. Query for the *pattern* (e.g., “database schema authoring playbook”), not the exact schema you need to build.
-- Brainstorm persona / task / need for yourself, but send **only** the final noun-heavy string to `read_entries`.
-- Issue 2–3 variants that cover:  
-  • the concrete outcome you want (`access control spec heuristics`)  
-  • a synonym set or alternate phrasing (`permissions filtering checklist`)  
-  • a risk or failure phrasing if relevant (`access control retrofit pitfalls`)
-- Keep each query short (<12 words), focused on nouns and verbs that could appear in titles or playbooks.
+Search uses two phases:
+1. **SEARCH phrase** (fast vector search) → casts wide net with keywords
+2. **TASK context** (smart reranking) → picks most relevant for your goal
+
+**Query format:**
+```
+[SEARCH] authentication implementation patterns
+[TASK] Implement secure OAuth2 login with refresh tokens
+```
+
+**Basic principle:**
+- SEARCH: Combine [process] + [domain] (3-6 words)
+  - Examples: "migration planning", "performance troubleshooting", "feature rollout", "API design"
+  - Broader beats narrow; patterns beat technologies
+- TASK: Your goal + key constraints (one sentence)
+  - Helps ranker identify what would be useful
+
+**Issue 2–3 variants** with different SEARCH phrases to explore the semantic space.
+
+**Examples:**
+
+| User Request | Query |
+|---|---|
+| Implement OAuth2 login | `[SEARCH] authentication implementation patterns`<br>`[TASK] Implement secure OAuth2 login with refresh tokens` |
+| Fix slow database queries | `[SEARCH] query performance troubleshooting`<br>`[TASK] Optimize slow Postgres queries in production API` |
+| Add feature flags | `[SEARCH] gradual feature rollout`<br>`[TASK] Deploy new checkout flow with progressive rollout` |
+
+If top score <0.50, reformulate the SEARCH phrase.
 
 ### 4. Pull experiences first
-1. Call `read_entries(entity_type=\"experience\", category_code=..., query=...)` for each variant.
-2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the query immediately instead of skimming everything.
+1. Call `read_entries(entity_type="experience", category_code=..., query="[SEARCH] ... [TASK] ...")` for each variant.
+2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the SEARCH phrase immediately instead of skimming everything.
 3. When you find strong hits, fetch the full text with `read_entries(..., ids=[...])` and note the IDs you intend to use.
 
 ### 5. Run a duplicate check before writing
