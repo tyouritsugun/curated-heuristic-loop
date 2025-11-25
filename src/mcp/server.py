@@ -118,18 +118,24 @@ def init_server() -> None:
 
     logger.info("Initializing HTTP API client: %s", config.api_base_url)
 
-    # Phase 2: Auto-generate session ID for this MCP process
+    # Phase 4: Session ID management - check env override first, then auto-generate
     # This enables automatic session memory without user action
-    temp_client = CHLAPIClient(base_url=config.api_base_url, timeout=config.api_timeout)
-    try:
-        session_info = temp_client.get_session_info()
-        session_id = session_info['session_id']
-        logger.info("Auto-generated session ID: %s", session_id)
-    except Exception as exc:
-        logger.warning("Failed to auto-generate session ID, continuing without session: %s", exc)
-        session_id = None
-    finally:
-        temp_client.session.close()
+    session_id = os.getenv("CHL_SESSION_ID")
+
+    if session_id:
+        logger.info("Using session ID from CHL_SESSION_ID env: %s", session_id)
+    else:
+        # Auto-generate session ID via API
+        temp_client = CHLAPIClient(base_url=config.api_base_url, timeout=config.api_timeout)
+        try:
+            session_info = temp_client.get_session_info()
+            session_id = session_info['session_id']
+            logger.info("Auto-generated session ID: %s", session_id)
+        except Exception as exc:
+            logger.warning("Failed to auto-generate session ID, continuing without session: %s", exc)
+            session_id = None
+        finally:
+            temp_client.session.close()
 
     # Create main client with session ID injected
     api_client = CHLAPIClient(
