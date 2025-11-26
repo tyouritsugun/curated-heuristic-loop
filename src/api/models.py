@@ -89,21 +89,7 @@ class UpdateEntryResponse(BaseModel):
     message: Optional[str] = None
 
 
-# Search models
-class SearchRequest(BaseModel):
-    """Request model for search."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
-    category_code: str
-    query: str
-    limit: Optional[int] = 10
-
-
-class SearchResponse(BaseModel):
-    """Response model for search."""
-    results: List[Dict[str, Any]]
-    count: int
-
-
+# Search models (Phase 1: Unified search)
 class DuplicateCheckRequest(BaseModel):
     """Request model for duplicate detection."""
 

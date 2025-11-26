@@ -7,8 +7,6 @@ import logging
 
 from src.api.dependencies import get_search_service, get_db_session, get_config
 from src.api.models import (
-    SearchRequest,
-    SearchResponse,
     DuplicateCheckRequest,
     DuplicateCheckResponse,
     DuplicateCandidateResponse,
