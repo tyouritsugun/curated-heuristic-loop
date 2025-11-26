@@ -218,7 +218,66 @@ def build_handshake_payload() -> Dict[str, Any]:
                     "Clarify user's intent before taking action when they report bugs/errors. "
                     "They may want to: fix code, write a ticket (check TMG category), "
                     "investigate, or document. Don't assume they want an immediate code fix."
-                )
+                ),
+                "duplicate_check": {
+                    "overview": (
+                        "Phase 3: write_entry automatically checks for duplicates with 750ms timeout. "
+                        "All writes proceed (no blocking), but response includes duplicates and recommendations."
+                    ),
+                    "decision_tree": {
+                        "timeout": "Adds warning 'duplicate_check_timeout=true'; write proceeds normally",
+                        "high_score_0.85+": "Returns duplicates + recommendation='review_first' (strong match)",
+                        "medium_score_0.50_0.84": "Returns duplicates as FYI (moderate match); no recommendation",
+                        "low_score_<0.50": "No duplicates returned (already filtered by threshold)"
+                    },
+                    "response_fields": {
+                        "duplicates": "List of {entity_id, entity_type, score, reason, provider, title, summary}",
+                        "recommendation": "'review_first' when max(score) >= 0.85; None otherwise",
+                        "warnings": "['duplicate_check_timeout=true'] if check timed out"
+                    },
+                    "workflow": (
+                        "Check response.duplicates after write_entry. If recommendation='review_first', "
+                        "suggest user reviews duplicates before keeping the new entry. "
+                        "If duplicates present without recommendation, inform user as FYI."
+                    ),
+                    "performance": "Adds +50-750ms latency to write_entry; no opt-out in v1.1"
+                },
+                "session_memory": {
+                    "overview": (
+                        "Phase 4: Session memory is auto-initialized per MCP process. "
+                        "The MCP server automatically generates and injects a session_id; viewed entries are tracked "
+                        "across all API calls in this process. Use hide_viewed/downrank_viewed to filter results. "
+                        "Override with CHL_SESSION_ID env var if needed."
+                    ),
+                    "scope": "Per MCP process (auto-initialized on startup; persists until process restarts)",
+                    "workflow": {
+                        "1_automatic_initialization": (
+                            "MCP server auto-generates session_id on startup and injects X-CHL-Session header on all API calls. "
+                            "No manual setup required."
+                        ),
+                        "2_automatic_tracking": (
+                            "POST /entries/read and POST /api/v1/search automatically track viewed IDs when X-CHL-Session header is present. "
+                            "Already injected by MCP client."
+                        ),
+                        "3_manual_marking": (
+                            "Optionally call client.mark_entries_cited(entity_ids=[...]) to explicitly mark entries "
+                            "the LLM has cited/used in its response (beyond what was read)."
+                        ),
+                        "4_filtering": (
+                            "Use hide_viewed=True in search requests to remove previously seen entries. "
+                            "Use downrank_viewed=True to penalize viewed entries (score * 0.5) instead of hiding them. "
+                            "Session header is already present; filtering happens automatically."
+                        )
+                    },
+                    "env_override": {
+                        "CHL_SESSION_ID": "Set this env var to use a specific session ID instead of auto-generating. Useful for debugging or session persistence across restarts."
+                    },
+                    "limits": {
+                        "max_sessions": 500,
+                        "ttl_seconds": 3600,
+                        "eviction_policy": "LRU (least recently used)"
+                    }
+                }
             },
         }
     except MCPTransportError as exc:

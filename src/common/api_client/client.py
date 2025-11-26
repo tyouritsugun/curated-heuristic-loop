@@ -42,10 +42,24 @@ class CHLAPIClient:
         self,
         base_url: str = "http://localhost:8000",
         timeout: int = DEFAULT_TIMEOUT,
+        session_id: Optional[str] = None,
     ):
+        """Initialize CHL API client.
+
+        Args:
+            base_url: Base URL of the CHL API server
+            timeout: Default request timeout in seconds
+            session_id: Optional session ID for Phase 2 session memory.
+                       If provided, automatically adds X-CHL-Session header to all requests.
+        """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.session_id = session_id
         self.session = requests.Session()
+
+        # Phase 2: Auto-inject session header if session_id provided
+        if session_id:
+            self.session.headers["X-CHL-Session"] = session_id
 
     # Low-level helpers
 
@@ -423,6 +437,72 @@ class CHLAPIClient:
         return self.request(
             "GET",
             "/api/v1/entries/export",
+            timeout=timeout or self.timeout,
+        )
+
+    # Phase 2: Session management helpers
+
+    def get_session_info(self, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Get session information (viewed count, last accessed).
+
+        If X-CHL-Session header is present, returns info for that session.
+        Otherwise, generates a new session ID.
+
+        Returns:
+            Dict with 'session_id', 'viewed_count', 'last_accessed'
+        """
+        return self.request(
+            "GET",
+            "/api/v1/session",
+            timeout=timeout or self.timeout,
+        )
+
+    def mark_entries_cited(
+        self,
+        entity_ids: List[str],
+        timeout: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Mark entries as cited/viewed in the current session.
+
+        Requires X-CHL-Session header to be set (via session_id in __init__ or manually).
+
+        Args:
+            entity_ids: List of entity IDs to mark as viewed
+
+        Returns:
+            Dict with 'session_id', 'added_count', 'total_viewed'
+        """
+        payload = {"entity_ids": entity_ids}
+        return self.request(
+            "POST",
+            "/api/v1/session/cited",
+            json=payload,
+            timeout=timeout or self.timeout,
+        )
+
+    def clear_session(self, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Clear the current session's viewed history.
+
+        Requires X-CHL-Session header to be set.
+
+        Returns:
+            Dict with 'status' and 'session_id'
+        """
+        return self.request(
+            "DELETE",
+            "/api/v1/session",
+            timeout=timeout or self.timeout,
+        )
+
+    def get_session_stats(self, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Get session store statistics (for diagnostics).
+
+        Returns:
+            Dict with 'active_sessions', 'max_sessions', 'ttl_seconds'
+        """
+        return self.request(
+            "GET",
+            "/api/v1/session/stats",
             timeout=timeout or self.timeout,
         )
 

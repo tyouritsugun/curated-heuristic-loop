@@ -1,8 +1,8 @@
 """Entry endpoints for experiences and manuals."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from src.api.dependencies import get_db_session, get_search_service, get_config
@@ -14,6 +14,8 @@ from src.api.models import (
     UpdateEntryRequest,
     UpdateEntryResponse,
 )
+from src.api.services.snippet import generate_snippet
+from src.api.services.session_store import get_session_store
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
@@ -28,13 +30,25 @@ router = APIRouter(prefix="/api/v1/entries", tags=["entries"])
 
 
 def _make_preview(text: str | None, limit: int = 320) -> tuple[str | None, bool]:
-    """Return a truncated preview and whether truncation occurred."""
+    """Return a truncated preview and whether truncation occurred.
+
+    Note: Deprecated in favor of generate_snippet from snippet module.
+    Kept for backward compatibility with existing code.
+    """
     if text is None:
         return None, False
     trimmed = text.strip()
     if len(trimmed) <= limit:
         return trimmed, False
     return trimmed[:limit].rstrip() + "...", True
+
+
+def _should_use_preview(fields: list[str] | None) -> bool:
+    """Determine if preview mode should be used based on fields parameter."""
+    # fields=None → full bodies (backward compatible)
+    # fields=["preview"] → snippets only
+    # fields with specific field names → include those fields
+    return fields is not None and "preview" in fields
 
 
 def _runtime_search_mode(config, search_service):
@@ -54,8 +68,13 @@ def read_entries(
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),
     config=Depends(get_config),
+    x_chl_session: Optional[str] = Header(None, alias="X-CHL-Session"),
 ):
-    """Read entries by query or IDs."""
+    """Read entries by query or IDs.
+
+    Phase 2: Automatically tracks viewed entry IDs in session store when
+    X-CHL-Session header is provided.
+    """
     try:
         # Validate category exists
         cat_repo = CategoryRepository(session)
@@ -67,6 +86,10 @@ def read_entries(
             )
 
         limit = request.limit if request.limit is not None else (config.read_details_limit if config else 10)
+
+        # Determine snippet length (default 320, or from request)
+        snippet_len = request.snippet_len if request.snippet_len is not None else 320
+        use_preview = _should_use_preview(request.fields)
 
         if request.entity_type not in {"experience", "manual"}:
             raise HTTPException(status_code=400, detail="Unsupported entity_type")
@@ -92,14 +115,13 @@ def read_entries(
                     exp = exp_repo.get_by_id(r.entity_id)
                     if not exp:
                         continue
-                    preview, truncated = _make_preview(exp.playbook)
-                    entries.append({
+
+                    # Use new snippet generation for v1.1
+                    preview, truncated = generate_snippet(exp.playbook, max_length=snippet_len)
+
+                    entry = {
                         "id": exp.id,
                         "title": exp.title,
-                        "playbook": preview,
-                        "playbook_preview": preview,
-                        "playbook_truncated": truncated,
-                        "context": normalize_context(exp.context),
                         "section": exp.section,
                         "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
@@ -112,7 +134,28 @@ def read_entries(
                         "rank": r.rank,
                         "degraded": getattr(r, "degraded", False),
                         "provider_hint": getattr(r, "hint", None),
-                    })
+                    }
+
+                    # v1.1: Default to previews (cut tokens); full bodies only when explicitly requested
+                    # fields=None → previews only (NEW default per plan)
+                    # fields=["preview"] → previews only (explicit)
+                    # fields=["playbook"] or ["playbook", "context"] → include requested full bodies
+
+                    if request.fields is None or use_preview:
+                        # Preview mode: snippets only
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+                    else:
+                        # Explicit fields requested: include those
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+
+                        if "playbook" in request.fields:
+                            entry["playbook"] = exp.playbook
+                        if "context" in request.fields:
+                            entry["context"] = normalize_context(exp.context)
+
+                    entries.append(entry)
             else:
                 # ID lookup or list all
                 if request.ids:
@@ -124,11 +167,12 @@ def read_entries(
 
                 entries = []
                 for exp in entities:
-                    entries.append({
+                    # Generate preview
+                    preview, truncated = generate_snippet(exp.playbook, max_length=snippet_len)
+
+                    entry = {
                         "id": exp.id,
                         "title": exp.title,
-                        "playbook": exp.playbook,
-                        "context": normalize_context(exp.context),
                         "section": exp.section,
                         "embedding_status": getattr(exp, "embedding_status", None),
                         "updated_at": exp.updated_at,
@@ -137,7 +181,22 @@ def read_entries(
                         "sync_status": exp.sync_status,
                         "reason": "id_lookup",
                         "provider": "direct",
-                    })
+                    }
+
+                    # Apply same field logic as search path
+                    if request.fields is None or use_preview:
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+                    else:
+                        entry["playbook_preview"] = preview
+                        entry["playbook_truncated"] = truncated
+
+                        if "playbook" in request.fields:
+                            entry["playbook"] = exp.playbook
+                        if "context" in request.fields:
+                            entry["context"] = normalize_context(exp.context)
+
+                    entries.append(entry)
 
         else:  # manual
             man_repo = CategoryManualRepository(session)
@@ -160,14 +219,13 @@ def read_entries(
                     man = man_repo.get_by_id(r.entity_id)
                     if not man:
                         continue
-                    preview, truncated = _make_preview(man.content)
-                    entries.append({
+
+                    # Use new snippet generation for v1.1
+                    preview, truncated = generate_snippet(man.content, max_length=snippet_len)
+
+                    entry = {
                         "id": man.id,
                         "title": man.title,
-                        "content": preview,
-                        "content_preview": preview,
-                        "content_truncated": truncated,
-                        "summary": man.summary,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
@@ -177,7 +235,24 @@ def read_entries(
                         "rank": r.rank,
                         "degraded": getattr(r, "degraded", False),
                         "provider_hint": getattr(r, "hint", None),
-                    })
+                    }
+
+                    # v1.1: Default to previews; full bodies only when explicitly requested
+                    if request.fields is None or use_preview:
+                        # Preview mode: snippets only
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+                    else:
+                        # Explicit fields requested: include those
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+
+                        if "content" in request.fields:
+                            entry["content"] = man.content
+                        if "summary" in request.fields:
+                            entry["summary"] = man.summary
+
+                    entries.append(entry)
             else:
                 # ID lookup or list all
                 if request.ids:
@@ -189,17 +264,40 @@ def read_entries(
 
                 entries = []
                 for man in entities:
-                    entries.append({
+                    # Generate preview
+                    preview, truncated = generate_snippet(man.content, max_length=snippet_len)
+
+                    entry = {
                         "id": man.id,
                         "title": man.title,
-                        "content": man.content,
-                        "summary": man.summary,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
                         "reason": "id_lookup",
                         "provider": "direct",
-                    })
+                    }
+
+                    # Apply same field logic as search path
+                    if request.fields is None or use_preview:
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+                    else:
+                        entry["content_preview"] = preview
+                        entry["content_truncated"] = truncated
+
+                        if "content" in request.fields:
+                            entry["content"] = man.content
+                        if "summary" in request.fields:
+                            entry["summary"] = man.summary
+
+                    entries.append(entry)
+
+        # Phase 2: Track viewed entries in session store
+        session_id = x_chl_session or request.session_id
+        if session_id and entries:
+            store = get_session_store()
+            viewed_ids = {entry["id"] for entry in entries}
+            store.add_viewed_ids(session_id, viewed_ids)
 
         meta = {
             "category": {"code": category.code, "name": category.name},
@@ -222,7 +320,15 @@ def write_entry(
     search_service=Depends(get_search_service),
     config=Depends(get_config),
 ):
-    """Create a new entry."""
+    """Create a new entry.
+
+    Phase 3: Automatically runs duplicate check with 750ms timeout.
+    Decision tree:
+    - Timeout → proceed with warning
+    - Max score ≥ 0.85 → write, return duplicates + recommendation="review_first"
+    - 0.50-0.84 → write, return duplicates as FYI
+    - <0.50 → write normally
+    """
     try:
         if request.entity_type == "experience":
             # Validate experience data before checking category to surface schema issues first
@@ -239,6 +345,46 @@ def write_entry(
                     status_code=404,
                     detail=f"Category '{request.category_code}' not found"
                 )
+
+            # Phase 3: Auto-run duplicate check with hard 750ms timeout
+            import time
+            import threading
+            duplicate_candidates = []
+            duplicate_check_timeout = False
+
+            if search_service is not None:
+                # Run duplicate check with hard timeout using threading
+                result_container = {"candidates": None, "error": None}
+
+                def run_duplicate_check():
+                    try:
+                        result_container["candidates"] = search_service.find_duplicates(
+                            session=session,
+                            title=validated.title,
+                            content=validated.playbook,
+                            entity_type="experience",
+                            category_code=request.category_code,
+                            exclude_id=None,
+                            threshold=0.50,
+                        )
+                    except Exception as e:
+                        result_container["error"] = e
+
+                thread = threading.Thread(target=run_duplicate_check, daemon=True)
+                thread.start()
+                thread.join(timeout=0.75)  # Hard 750ms timeout
+
+                if thread.is_alive():
+                    # Thread still running - timeout
+                    logger.warning("Duplicate check timed out after 750ms")
+                    duplicate_check_timeout = True
+                elif result_container["error"]:
+                    # Exception occurred
+                    logger.warning("Duplicate check failed: %s", result_container["error"])
+                    duplicate_check_timeout = True
+                elif result_container["candidates"] is not None:
+                    # Success
+                    duplicate_candidates = result_container["candidates"]
 
             exp_repo = ExperienceRepository(session)
             new_obj = exp_repo.create({
@@ -271,12 +417,48 @@ def write_entry(
                     "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
                 )
 
+            # Phase 3: Apply decision tree based on duplicate check results
+            recommendation = None
+            duplicates_response = None
+
+            if duplicate_check_timeout:
+                warnings.append("duplicate_check_timeout=true")
+            elif duplicate_candidates:
+                # Find max score
+                max_score = max(c.score for c in duplicate_candidates)
+
+                # Decision tree:
+                # - Max score ≥ 0.85 → recommendation="review_first"
+                # - 0.50-0.84 → duplicates as FYI (no recommendation)
+                # - <0.50 → no duplicates (already filtered by threshold=0.50)
+
+                if max_score >= 0.85:
+                    recommendation = "review_first"
+                    warnings.append(f"Found {len(duplicate_candidates)} similar entries (max score: {max_score:.2f}). Review recommended.")
+                else:
+                    # Medium score (0.50-0.84): informational only
+                    warnings.append(f"Found {len(duplicate_candidates)} potentially similar entries (max score: {max_score:.2f}).")
+
+                # Format duplicates for response
+                duplicates_response = [
+                    {
+                        "entity_id": c.entity_id,
+                        "entity_type": c.entity_type,
+                        "score": c.score,
+                        "reason": getattr(c.reason, "value", str(c.reason)),
+                        "provider": c.provider,
+                        "title": c.title,
+                        "summary": c.summary,
+                    }
+                    for c in duplicate_candidates
+                ]
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=entry_id,
                 entry=entry_dict,
-                duplicates=None,
-                recommendation=None,
+                duplicates=duplicates_response,
+                recommendation=recommendation,
                 warnings=warnings or None,
                 message=(
                     "Experience created successfully. Indexing is in progress and may take up to 15 seconds. "
@@ -309,6 +491,45 @@ def write_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
+            # Phase 3: Auto-run duplicate check for manuals with hard 750ms timeout
+            import threading
+            duplicate_candidates = []
+            duplicate_check_timeout = False
+
+            if search_service is not None:
+                # Run duplicate check with hard timeout using threading
+                result_container = {"candidates": None, "error": None}
+
+                def run_duplicate_check():
+                    try:
+                        result_container["candidates"] = search_service.find_duplicates(
+                            session=session,
+                            title=title,
+                            content=content,
+                            entity_type="manual",
+                            category_code=request.category_code,
+                            exclude_id=None,
+                            threshold=0.50,
+                        )
+                    except Exception as e:
+                        result_container["error"] = e
+
+                thread = threading.Thread(target=run_duplicate_check, daemon=True)
+                thread.start()
+                thread.join(timeout=0.75)  # Hard 750ms timeout
+
+                if thread.is_alive():
+                    # Thread still running - timeout
+                    logger.warning("Duplicate check timed out after 750ms")
+                    duplicate_check_timeout = True
+                elif result_container["error"]:
+                    # Exception occurred
+                    logger.warning("Duplicate check failed: %s", result_container["error"])
+                    duplicate_check_timeout = True
+                elif result_container["candidates"] is not None:
+                    # Success
+                    duplicate_candidates = result_container["candidates"]
+
             man_repo = CategoryManualRepository(session)
             new_manual = man_repo.create({
                 "category_code": request.category_code,
@@ -328,12 +549,43 @@ def write_entry(
                 "author": new_manual.author,
             }
 
+            # Phase 3: Apply decision tree for manuals
+            warnings: list[str] = []
+            recommendation = None
+            duplicates_response = None
+
+            if duplicate_check_timeout:
+                warnings.append("duplicate_check_timeout=true")
+            elif duplicate_candidates:
+                max_score = max(c.score for c in duplicate_candidates)
+
+                if max_score >= 0.85:
+                    recommendation = "review_first"
+                    warnings.append(f"Found {len(duplicate_candidates)} similar entries (max score: {max_score:.2f}). Review recommended.")
+                else:
+                    # Medium score (0.50-0.84): informational only
+                    warnings.append(f"Found {len(duplicate_candidates)} potentially similar entries (max score: {max_score:.2f}).")
+
+                duplicates_response = [
+                    {
+                        "entity_id": c.entity_id,
+                        "entity_type": c.entity_type,
+                        "score": c.score,
+                        "reason": getattr(c.reason, "value", str(c.reason)),
+                        "provider": c.provider,
+                        "title": c.title,
+                        "summary": c.summary,
+                    }
+                    for c in duplicate_candidates
+                ]
+
             return WriteEntryResponse(
                 success=True,
                 entry_id=manual_id,
                 entry=manual_dict,
-                duplicates=None,
-                recommendation=None,
+                duplicates=duplicates_response,
+                recommendation=recommendation,
+                warnings=warnings or None,
                 message=(
                     "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."

@@ -18,6 +18,41 @@ from src.api.gpu.faiss_manager import FAISSIndexManager, FAISSIndexError
 logger = logging.getLogger(__name__)
 
 
+def parse_two_phase_query(query: str) -> tuple[str, str]:
+    """
+    Parse a two-phase query into (search_phrase, full_context).
+
+    Supported formats (precedence order):
+    1) "[SEARCH] phrase [TASK] context"
+    2) "phrase | context"
+    3) Fallback: use the full query for both phases
+
+    If either parsed part is empty, fallback to (query, query).
+    full_context appends the search phrase for reranking: "{task}\n\nRelevant concepts: {search}".
+    """
+
+    def _build_context(task_part: str, search_part: str) -> tuple[str, str]:
+        task_part = task_part.strip()
+        search_part = search_part.strip()
+        if not task_part or not search_part:
+            return (query, query)
+        return (search_part, f"{task_part}\n\nRelevant concepts: {search_part}")
+
+    # Format 1: [SEARCH] ... [TASK] ...
+    if "[SEARCH]" in query and "[TASK]" in query:
+        prefix, task_part = query.split("[TASK]", 1)
+        search_part = prefix.replace("[SEARCH]", "", 1)
+        return _build_context(task_part, search_part)
+
+    # Format 2: pipe delimiter
+    if "|" in query:
+        search_part, task_part = query.split("|", 1)
+        return _build_context(task_part, search_part)
+
+    # Fallback: unchanged query for both phases
+    return (query, query)
+
+
 class VectorFAISSProvider(SearchProvider):
     """Vector search provider using FAISS with optional reranking."""
 
@@ -45,10 +80,14 @@ class VectorFAISSProvider(SearchProvider):
         category_code: Optional[str] = None,
         top_k: int = 10,
     ) -> List[SearchResult]:
-        """Search using vector similarity."""
+        """Search using vector similarity with two-phase query support."""
         try:
+            # Parse query into two phases
+            search_phrase, full_context = parse_two_phase_query(query)
+
+            # Phase 1: FAISS with search phrase only
             try:
-                query_embedding = self.embedding_client.encode_single(query)
+                query_embedding = self.embedding_client.encode_single(search_phrase)
             except EmbeddingClientError as exc:
                 raise SearchProviderError(f"Failed to generate query embedding: {exc}") from exc
 
@@ -76,9 +115,10 @@ class VectorFAISSProvider(SearchProvider):
                         }
                     )
 
+            # Phase 2: Reranking with full context
             if self.reranker_client and len(entity_mappings) > 1:
                 entity_mappings = self._rerank_candidates(
-                    session, query, entity_mappings[: self.topk_rerank]
+                    session, full_context, entity_mappings[: self.topk_rerank]
                 )
 
             if category_code:
@@ -100,8 +140,9 @@ class VectorFAISSProvider(SearchProvider):
                 )
 
             logger.info(
-                "Vector search completed: query=%r, entity_type=%s, category=%s, results=%s",
+                "Vector search completed: original_query=%r, search_phrase=%r, entity_type=%s, category=%s, results=%s",
                 query,
+                search_phrase,
                 entity_type,
                 category_code,
                 len(results),
