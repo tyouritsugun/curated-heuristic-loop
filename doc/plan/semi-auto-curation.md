@@ -10,49 +10,39 @@ Code touchpoints already in repo:
 - `src/api/cpu/search_provider.py#L150` and `src/api/gpu/search_provider.py` — duplicate search implementations (text and vector).
 - `src/common/storage/repository.py` — session helpers for CRUD.
 
-Minimal plan (easiest implementation path)
-1) **Candidate selection**  
-   - Query pending experiences: `session.query(Experience).filter(Experience.sync_status == 1)` (add constant for readability).  
-   - Anchor pool: all experiences with `sync_status != 1` (or explicitly `= synced` once we enumerate statuses).
+1) **Candidate selection + atomicity scoring**  
+   - Introduce `SyncStatus` `IntEnum` (`PENDING=1, SYNCED=2, REMOTE=3, REJECTED=4`) and swap all magic `1` filters to `SyncStatus.PENDING`.  
+   - Query pending: `session.query(Experience).filter(Experience.sync_status == SyncStatus.PENDING)`. Anchor pool: `!= SyncStatus.PENDING`.  
+   - Add `score_atomicity(experience)` heuristic (bullets>8, words>500, multiple headings) returning `score, flags, suggestion`. Store in the report; allow `--min-atomicity` / `--atomicity-below` to focus review.
 
-2) **Reuse existing duplicate hooks with a filter**  
-   - Extend `SearchService.find_duplicates` (and provider methods) to accept `sync_status_filter` or a `where_clause` callable.  
-   - In SQLite provider (`_find_experience_duplicates`), add `.filter(Experience.sync_status != 1)` so we only compare pending items against the anchor pool.  
-   - In FAISS provider, load vectors only from the anchor pool when building the index or querying. This avoids re-adding new locals to the index until they are approved.
+2) **Duplicate search with scoped pools**  
+   - `SearchService.find_duplicates` accepts `where_clause`/`sync_status_filter`. SQLite provider filters anchors to non-pending; FAISS builds/query index from anchors only.  
+   - Optional `--compare-pending` does pending-vs-pending, scoped by category and recent window (e.g., last 30 days, group size ≤50) to avoid quadratic blowup.
 
-3) **Duplication pass (Agent 1 equivalent)**  
-   - For each pending experience: call `find_duplicates(title, playbook, entity_type="experience", category_code=...)` with a threshold of 0.60 (current default).  
-   - Emit: `[ {pending_id, candidate_id, score, provider, reason, title, summary} ]`.  
-   - Bucket: `score >=0.90 → high-confidence dup`, `0.70–0.90 → needs-review`, `<0.70 → ignore`.
+3) **Duplication pass & bucketing**  
+   - Call `find_duplicates(..., threshold=0.60)`.  
+   - Buckets: `>=0.92 → high`, `0.75–0.92 → medium`, `<0.75 → low/ignore`.  
+   - Each row carries: pending_id, candidate_id, score, provider, atomicity, conflicts, recommended_action.
 
-4) **Conflict/high-drift detection (Agent 2 equivalent, lightweight)**  
-   - Only run on candidate pairs from step 3.  
-   - Checks (no LLM required initially):  
-     - Section mismatch (`useful` vs `contextual`).  
-     - Title similarity high but playbook diff ratio low (e.g., `SequenceMatcher` or token Jaccard < 0.5).  
-     - `updated_at` newer on pending but playbook shorter by >30% (possible regression).  
-   - Output per pair: `{pending_id, candidate_id, conflict_types[], notes}` with a short diff snippet (first differing paragraph).
+4) **Conflict/high-drift detection (richer signals, still lightweight)**  
+   - Checks: section mismatch; high title similarity + low playbook overlap; pending newer but shorter by >30% (regression); pending extends canonical (≥2 shared bullets and ≤2 unique bullets); canonical outdated (pending 20–100% longer and newer).  
+   - Mark conflict types; feed into recommended action (e.g., `PENDING_EXTENDS_CANONICAL → update canonical`).
 
-5) **Output & review loop**  
-   - Write a CLI under `scripts/find_pending_dups.py` that dumps a JSON/CSV report and prints a tiny table summary (counts per bucket, top 10 pairs).  
-   - Accept flags: `--category`, `--limit`, `--threshold`, `--format json|csv|table`.
-   - Keep it read-only for now (no auto-merge).
+5) **Interactive review loop (actionable CLI)**  
+   - `python scripts/find_pending_dups.py --bucket high --interactive [--dry-run]`.  
+   - For each pair: show pending vs canonical side-by-side, similarity, conflicts, atomicity. Actions: merge (mark pending synced), update canonical with pending deltas, reject pending, split (flag), skip, show diff.  
+   - Default non-interactive output still supports `--format table|json|csv`; print counts per bucket plus recommended actions. Colorize but also emit plain tags for logs/CI.
 
-6) **Iteration hooks**  
-   - Add a test fixture with a few synthetic pending vs canonical experiences to lock thresholds.  
-   - If vector search is enabled, plug in the GPU provider to improve recall; else text provider still works with title substring.
-   - Later: replace conflict heuristics with an LLM comparator once basic pipeline is stable.
+6) **Metrics & tuning loop**  
+   - `--report-metrics` aggregates manual spot-checks (log to `evaluation_log.csv`): precision by bucket, false positives, conflict distribution.  
+   - Emit threshold suggestions (e.g., raise high bucket to 0.92 if precision <90%).
 
-Atomization-first (manual checklist):
-- Before duplicate/conflict detection, skim pending experiences to ensure each is atomic (one outcome, ≤8 bullets, ≤500 words, no unrelated headings).
-- Flag non-atomic items for split/merge: note their IDs and briefly describe the extra topics they contain.
+7) **Iteration hooks & tests**  
+   - Add synthetic fixtures covering: high-similar dup, pending-extends-canonical, non-atomic entry, section mismatch.  
+   - Keep GPU provider optional; text provider remains default.
 
-Quick evaluation steps after implementing:
-- Apply the atomization checklist above to a sample of pending items (e.g., newest 50).
-- Then run `python scripts/find_pending_dups.py --limit 200 --format table` on the atomic subset and confirm buckets look sane.
-- Spot check high-confidence pairs manually to measure precision; adjust thresholds accordingly.
-
-Open questions to settle when coding:
-- Enumerate `sync_status` values into an Enum (pending/synced/remote) to avoid magic `1`.
-- Decide whether pending items should be compared against each other (likely yes, but behind a flag to avoid quadratic blowup).
-- Where to surface the report in UI: start with CLI; later feed the JSON into the MCP evaluator or a Streamlit pane.
+Workflow (user-facing)
+1. Run detection with atomicity scoring: `python scripts/find_pending_dups.py --category PGS --format table`.  
+2. Triage non-atomic first: `--atomicity-below 0.6 --suggest-splits`.  
+3. Process high bucket interactively: `--bucket high --interactive --dry-run` (remove `--dry-run` to apply).  
+4. Generate metrics: `--report-metrics > tuning_report.txt` and adjust thresholds.
