@@ -30,7 +30,6 @@ This script checks:
 - GPU hardware detection (Metal/CUDA/CPU)
 - Driver and toolchain availability
 - VRAM capacity and model size recommendations (GPU modes only)
-- llama-cpp-python wheel compatibility (via the official wheel index)
 
 If checks pass:
 - **GPU mode**: Writes recommended model choices to `data/model_selection.json` and runtime configuration to `data/runtime_config.json`
@@ -138,7 +137,7 @@ python -m pip install -r requirements_cpu.txt
 <details>
 <summary><b>Option B: Apple Silicon (Metal GPU Acceleration)</b></summary>
 
-**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration.
+**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration (HF embeddings + HF reranker).
 
 **Prerequisites:**
 - macOS with Apple Silicon (M1, M2, M3, etc.)
@@ -151,11 +150,19 @@ python3.12 -m venv .venv-apple
 # Activate venv (only needed once per terminal session)
 source .venv-apple/bin/activate
 
-# Install API server dependencies with Metal-accelerated ML
+# Install API server dependencies (HF embeddings + HF reranker)
 python -m pip install --upgrade pip
-PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
-  python -m pip install -r requirements_apple.txt
-```
+python -m pip install -r requirements_apple.txt
+
+# Decide and download models via the helper scripts:
+#   python3 scripts/check_api_env.py    # pick embedding/reranker (HF IDs, no -GGUF)
+#   python3 scripts/setup-gpu.py        # download the selected models into HF cache and write data/model_selection.json
+
+# Start API server (Metal accel via torch mps)
+python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+
+**Notes:**
+- Default model choice (via `scripts/check_api_env.py` → `scripts/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
 
 </details>
 

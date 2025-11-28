@@ -325,17 +325,17 @@ class Config:
                         "Q4_K_S", "Q4_K_M", "Q5_0", "Q5_1", "Q5_K_S", "Q5_K_M",
                         "Q6_K", "Q8_0", "F16", "f16"]
 
-        if self.embedding_quant not in valid_quants:
-            raise ValueError(
-                f"Invalid CHL_EMBEDDING_QUANT='{self.embedding_quant}'. "
-                f"Must be one of: {', '.join(valid_quants)}"
-            )
+        def _validate_quant(repo: str, quant: str, label: str) -> None:
+            # For HF repos (non-GGUF), allow any quant string (fp16/bfloat16/etc.).
+            if not repo.endswith("-GGUF"):
+                return
+            if quant not in valid_quants:
+                raise ValueError(
+                    f"Invalid {label}='{quant}'. Must be one of: {', '.join(valid_quants)}"
+                )
 
-        if self.reranker_quant not in valid_quants:
-            raise ValueError(
-                f"Invalid CHL_RERANKER_QUANT='{self.reranker_quant}'. "
-                f"Must be one of: {', '.join(valid_quants)}"
-            )
+        _validate_quant(self.embedding_repo, self.embedding_quant, "CHL_EMBEDDING_QUANT")
+        _validate_quant(self.reranker_repo, self.reranker_quant, "CHL_RERANKER_QUANT")
 
         # Validate positive integers
         if self.search_timeout_ms <= 0:

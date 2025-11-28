@@ -83,7 +83,7 @@ class VectorFAISSProvider(SearchProvider):
         """Search using vector similarity with two-phase query support."""
         try:
             # Parse query into two phases
-            search_phrase, full_context = parse_two_phase_query(query)
+            search_phrase, task_text = parse_two_phase_query(query)
 
             # Phase 1: FAISS with search phrase only
             try:
@@ -115,14 +115,22 @@ class VectorFAISSProvider(SearchProvider):
                         }
                     )
 
+            # Deduplicate by entity (FAISS can return multiple vectors per entry).
+            entity_mappings = self._dedup_by_entity(entity_mappings)
+
             # Phase 2: Reranking with full context
             if self.reranker_client and len(entity_mappings) > 1:
                 entity_mappings = self._rerank_candidates(
-                    session, full_context, entity_mappings[: self.topk_rerank]
+                    session,
+                    {"search": search_phrase, "task": task_text},
+                    entity_mappings[: self.topk_rerank],
                 )
 
             if category_code:
                 entity_mappings = self._filter_by_category(session, entity_mappings, category_code)
+
+            # Final dedup in case downstream steps reintroduced ties
+            entity_mappings = self._dedup_by_entity(entity_mappings)
 
             entity_mappings = entity_mappings[:top_k]
 
@@ -220,10 +228,17 @@ class VectorFAISSProvider(SearchProvider):
                     }
                 )
 
+            candidates = self._dedup_candidates(candidates)
+
             if self.reranker_client and len(candidates) > 1:
+                query_parts = {
+                    "search": title,
+                    "task": f"Determine if this {entity_type} matches the proposed content:\n{content[:1000]}",
+                }
                 candidates = self._rerank_duplicates(
-                    session, query_text, candidates[: self.topk_rerank]
+                    session, query_parts, candidates[: self.topk_rerank]
                 )
+                candidates = self._dedup_candidates(candidates)
 
             results: List[DuplicateCandidate] = []
             for candidate in candidates:
@@ -296,7 +311,7 @@ class VectorFAISSProvider(SearchProvider):
     def _rerank_candidates(
         self,
         session: Session,
-        query: str,
+        query_parts: Dict[str, str],
         candidates: List[Dict[str, object]],
     ) -> List[Dict[str, object]]:
         if not self.reranker_client:
@@ -317,7 +332,7 @@ class VectorFAISSProvider(SearchProvider):
                 else:
                     texts.append("")
 
-            reranked_scores = self.reranker_client.rerank(query, texts)
+            reranked_scores = self.reranker_client.rerank(query_parts, texts)
 
             for candidate, new_score in zip(candidates, reranked_scores):
                 candidate["score"] = new_score
@@ -331,7 +346,7 @@ class VectorFAISSProvider(SearchProvider):
     def _rerank_duplicates(
         self,
         session: Session,
-        query_text: str,
+        query_parts: Dict[str, str],
         candidates: List[Dict[str, object]],
     ) -> List[Dict[str, object]]:
         if not self.reranker_client:
@@ -352,7 +367,7 @@ class VectorFAISSProvider(SearchProvider):
                 else:
                     texts.append("")
 
-            reranked_scores = self.reranker_client.rerank(query_text, texts)
+            reranked_scores = self.reranker_client.rerank(query_parts, texts)
 
             for candidate, new_score in zip(candidates, reranked_scores):
                 candidate["score"] = new_score
@@ -362,6 +377,17 @@ class VectorFAISSProvider(SearchProvider):
         except Exception as exc:
             logger.warning("Reranking failed, using FAISS scores: %s", exc)
             return candidates
+
+    def _dedup_candidates(
+        self, candidates: List[Dict[str, object]]
+    ) -> List[Dict[str, object]]:
+        """Collapse duplicates by (entity_id, entity_type), keeping highest score."""
+        best: Dict[tuple, Dict[str, object]] = {}
+        for cand in candidates:
+            key = (cand.get("entity_id"), cand.get("entity_type"))
+            if key not in best or float(cand.get("score", 0.0)) > float(best[key].get("score", 0.0)):
+                best[key] = cand
+        return sorted(best.values(), key=lambda x: float(x.get("score", 0.0)), reverse=True)
 
     def _fetch_entity(self, session: Session, entity_id: str, entity_type: str):
         try:
@@ -394,6 +420,21 @@ class VectorFAISSProvider(SearchProvider):
             if entity and getattr(entity, "category_code", None) == category_code:
                 filtered.append(mapping)
         return filtered
+
+    @staticmethod
+    def _dedup_by_entity(mappings: List[Dict[str, object]]) -> List[Dict[str, object]]:
+        """Collapse duplicates by (entity_id, entity_type), keeping highest score."""
+        best: Dict[tuple[str, str], Dict[str, object]] = {}
+        for m in mappings:
+            key = (str(m["entity_id"]), str(m["entity_type"]))
+            if key not in best or float(m.get("score", 0.0)) > float(
+                best[key].get("score", 0.0)
+            ):
+                best[key] = m
+        # Preserve deterministic ordering by score desc then entity_id
+        deduped = list(best.values())
+        deduped.sort(key=lambda x: (float(x.get("score", 0.0)), str(x["entity_id"])), reverse=True)
+        return deduped
 
     @property
     def name(self) -> str:

@@ -97,23 +97,15 @@ GPU_STATE_PATH = gpu_installer.GPU_STATE_PATH
 SUPPORTED_GPU_BACKENDS = gpu_installer.SUPPORTED_GPU_BACKENDS
 DEFAULT_GPU_PRIORITY = gpu_installer.DEFAULT_GPU_PRIORITY
 
-# Supported GGUF model options (repo, quantization, VRAM requirement, description)
+# Supported model options (HF only)
 EMBEDDING_MODELS = [
-    ("Qwen/Qwen3-Embedding-0.6B-GGUF", "Q8_0", "~600 MB", "Smallest, CPU-friendly (recommended)"),
-    ("Qwen/Qwen3-Embedding-0.6B-GGUF", "f16", "~1.2 GB", "Smallest, best quality"),
-    ("Qwen/Qwen3-Embedding-4B-GGUF", "Q4_K_M", "~2.5 GB", "Balanced (popular choice)"),
-    ("Qwen/Qwen3-Embedding-4B-GGUF", "Q5_K_M", "~2.9 GB", "Good balance"),
-    ("Qwen/Qwen3-Embedding-4B-GGUF", "Q8_0", "~4.3 GB", "Near-perfect quality"),
-    ("Qwen/Qwen3-Embedding-4B-GGUF", "f16", "~8 GB", "Perfect quality, GPU needed"),
-    ("Qwen/Qwen3-Embedding-8B-GGUF", "Q4_K_M", "~5 GB", "Best overall (if you have VRAM)"),
-    ("Qwen/Qwen3-Embedding-8B-GGUF", "Q8_0", "~8.6 GB", "Best quality, GPU required"),
+    ("Qwen/Qwen3-Embedding-0.6B", "fp16", "~1.2 GB", "HF Transformers, Metal-friendly (recommended)"),
+    ("Qwen/Qwen3-Embedding-4B", "fp16", "~7.5 GB", "HF Transformers, better quality (heavier)"),
 ]
 
 RERANKER_MODELS = [
-    ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q4_K_M", "~300 MB", "Smallest, CPU-friendly (recommended)"),
-    ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q8_0", "~600 MB", "Smallest, high quality"),
-    ("Mungert/Qwen3-Reranker-4B-GGUF", "Q4_K_M", "~2.5 GB", "Balanced"),
-    ("Mungert/Qwen3-Reranker-4B-GGUF", "Q8_0", "~4.3 GB", "Better quality"),
+    ("Qwen/Qwen3-Reranker-0.6B", "fp16", "~1.2 GB", "HF Transformers (yes/no logits) - fast, recommended"),
+    ("Qwen/Qwen3-Reranker-4B", "fp16", "~7.5 GB", "HF Transformers, better quality (may be slow on Metal)"),
 ]
 
 DEFAULT_SELECTION = {
@@ -245,6 +237,23 @@ def format_model_display(repo: str | None, quant: str | None) -> str:
         return "Unknown"
     model_name = repo.split("/")[1].replace("-GGUF", "") if "/" in repo else repo
     return f"{model_name} [{quant}]"
+
+
+def is_repo_snapshot_cached(repo_id: str | None) -> bool:
+    """Check if a HF repo has any cached snapshot locally."""
+    if not repo_id:
+        return False
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache_name = f"models--{repo_id.replace('/', '--')}"
+    snapshots = cache_dir / model_cache_name / "snapshots"
+    if not snapshots.exists():
+        return False
+    return any(snapshots.glob("*"))
+
+
+def is_model_cached(repo: str | None, quant: str | None) -> bool:
+    """Check cache status for HF Transformer repos."""
+    return is_repo_snapshot_cached(repo)
 
 
 def load_selected_models() -> dict:
@@ -602,7 +611,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
 
 
 def select_models_interactive(current_selection: dict | None = None) -> tuple[str, str, str, str]:
-    """Interactive model selection menu with GGUF quantization
+    """Interactive model selection menu (HF only)
 
     Returns:
         tuple[str, str, str, str]: (embedding_repo, embedding_quant, reranker_repo, reranker_quant)
@@ -636,8 +645,7 @@ def select_models_interactive(current_selection: dict | None = None) -> tuple[st
 
     for i, (repo, quant, vram, desc) in enumerate(EMBEDDING_MODELS, 1):
         model_name = repo.replace("-GGUF", "").split("/")[1]
-        filename = get_gguf_filename(repo, quant)
-        cached = is_gguf_cached(repo, filename)
+        cached = is_model_cached(repo, quant)
         markers = []
         if (repo, quant) == current_embedding:
             markers.append("active")
@@ -691,8 +699,7 @@ def select_models_interactive(current_selection: dict | None = None) -> tuple[st
 
     for i, (repo, quant, vram, desc) in enumerate(RERANKER_MODELS, 1):
         model_name = repo.replace("-GGUF", "").split("/")[1]
-        filename = get_gguf_filename(repo, quant)
-        cached = is_gguf_cached(repo, filename)
+        cached = is_model_cached(repo, quant)
         markers = []
         if (repo, quant) == current_reranker:
             markers.append("active")
@@ -741,27 +748,9 @@ def select_models_interactive(current_selection: dict | None = None) -> tuple[st
     return embedding_repo, embedding_quant, reranker_repo, reranker_quant
 
 
-def get_gguf_filename(repo: str, quant: str) -> str:
-    """Get GGUF filename based on repo and quantization"""
-    # Extract model name and provider
-    org = repo.split("/")[0]
-    model_name = repo.split("/")[1].replace("-GGUF", "")
-
-    # Provider-specific quantization naming
-    if org == "Qwen":
-        # Official Qwen: uppercase for Q variants, lowercase for f16
-        quant_str = "f16" if quant.upper() == "F16" else quant.upper()
-    else:
-        # Community repos (Mungert, etc.): all lowercase
-        quant_str = quant.lower()
-
-    # Pattern: ModelName-Quantization.gguf
-    return f"{model_name}-{quant_str}.gguf"
-
-
 def download_models(config, force_models=False, embedding_repo=None, embedding_quant=None,
                     reranker_repo=None, reranker_quant=None) -> bool:
-    """Download GGUF embedding and reranker models if not already cached
+    """Download embedding and reranker models (HF) if not already cached
 
     Args:
         config: Configuration object
@@ -812,18 +801,15 @@ def download_models(config, force_models=False, embedding_repo=None, embedding_q
 
         # Use defaults if no custom models provided
         if not embedding_repo:
-            embedding_repo = "Qwen/Qwen3-Embedding-0.6B-GGUF"
-            embedding_quant = "Q8_0"  # 0.6B only has Q8_0 and f16
+            embedding_repo = "Qwen/Qwen3-Embedding-0.6B"
+            embedding_quant = "fp16"
         if not reranker_repo:
-            reranker_repo = "Mungert/Qwen3-Reranker-0.6B-GGUF"
-            reranker_quant = "Q4_K_M"
+            reranker_repo = "Qwen/Qwen3-Reranker-0.6B"
+            reranker_quant = "fp16"
 
         # Check if models are already cached
-        embedding_filename = get_gguf_filename(embedding_repo, embedding_quant)
-        embedding_cached = is_gguf_cached(embedding_repo, embedding_filename)
-
-        reranker_filename = get_gguf_filename(reranker_repo, reranker_quant)
-        reranker_cached = is_gguf_cached(reranker_repo, reranker_filename)
+        embedding_cached = is_model_cached(embedding_repo, embedding_quant)
+        reranker_cached = is_model_cached(reranker_repo, reranker_quant)
 
         if embedding_cached and reranker_cached and not force_models:
             print("\n✓ Models already cached")
@@ -836,7 +822,7 @@ def download_models(config, force_models=False, embedding_repo=None, embedding_q
         if force_models:
             print("\nForce re-downloading models...")
         else:
-            print("\nDownloading GGUF models (this may take 5-10 minutes)...")
+            print("\nDownloading models (this may take a few minutes)...")
         print("Models will be cached in ~/.cache/huggingface/")
 
         # Download embedding model
@@ -844,17 +830,13 @@ def download_models(config, force_models=False, embedding_repo=None, embedding_q
             logger.info(f"Downloading embedding model: {embedding_repo} [{embedding_quant}]")
             print(f"\n  [1/2] {embedding_repo.split('/')[1]} [{embedding_quant}]")
             try:
-                downloaded_path = hf_hub_download(
-                    repo_id=embedding_repo,
-                    filename=embedding_filename,
-                    repo_type="model"
-                )
-                print(f"        ✓ Downloaded: {embedding_filename}")
-                print(f"        Path: {downloaded_path}")
+                from huggingface_hub import snapshot_download  # type: ignore
+
+                snapshot_path = snapshot_download(repo_id=embedding_repo, repo_type="model")
+                print(f"        ✓ Downloaded snapshot to: {snapshot_path}")
             except Exception as e:
                 logger.error(f"Failed to download embedding model: {e}")
                 print(f"        ✗ Failed: {e}")
-                print(f"        Tried to download: {embedding_filename}")
                 return False
         else:
             print(f"\n  [1/2] {embedding_repo.split('/')[1]} [{embedding_quant}]")
@@ -865,17 +847,13 @@ def download_models(config, force_models=False, embedding_repo=None, embedding_q
             logger.info(f"Downloading reranker model: {reranker_repo} [{reranker_quant}]")
             print(f"\n  [2/2] {reranker_repo.split('/')[1]} [{reranker_quant}]")
             try:
-                downloaded_path = hf_hub_download(
-                    repo_id=reranker_repo,
-                    filename=reranker_filename,
-                    repo_type="model"
-                )
-                print(f"        ✓ Downloaded: {reranker_filename}")
-                print(f"        Path: {downloaded_path}")
+                from huggingface_hub import snapshot_download  # type: ignore
+
+                snapshot_path = snapshot_download(repo_id=reranker_repo, repo_type="model")
+                print(f"        ✓ Downloaded snapshot to: {snapshot_path}")
             except Exception as e:
                 logger.error(f"Failed to download reranker model: {e}")
                 print(f"        ✗ Failed: {e}")
-                print(f"        Tried to download: {reranker_filename}")
                 return False
         else:
             print(f"\n  [2/2] {reranker_repo.split('/')[1]} [{reranker_quant}]")
@@ -887,27 +865,6 @@ def download_models(config, force_models=False, embedding_repo=None, embedding_q
     except Exception as e:
         logger.error(f"Model download failed: {e}")
         return False
-
-
-def is_gguf_cached(repo_id: str, filename: str) -> bool:
-    """Check if a GGUF model file is already cached locally"""
-    from pathlib import Path
-
-    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
-    # HuggingFace cache format: models--<org>--<name>
-    model_cache_name = f"models--{repo_id.replace('/', '--')}"
-    model_path = cache_dir / model_cache_name
-
-    if not model_path.exists():
-        return False
-
-    # Check if the specific GGUF file exists in snapshots
-    for snapshot_dir in model_path.glob("snapshots/*"):
-        gguf_file = snapshot_dir / filename
-        if gguf_file.exists():
-            return True
-
-    return False
 
 
 def validate_setup(config) -> bool:
@@ -928,17 +885,11 @@ def validate_setup(config) -> bool:
     if not Path(config.faiss_index_path).exists():
         issues.append(f"FAISS directory missing: {config.faiss_index_path}")
 
-    embedding_filename = get_gguf_filename(config.embedding_repo, config.embedding_quant)
-    if not is_gguf_cached(config.embedding_repo, embedding_filename):
-        issues.append(
-            f"Embedding model not cached: {config.embedding_repo} [{config.embedding_quant}]"
-        )
+    if not is_repo_snapshot_cached(config.embedding_repo):
+        issues.append(f"Embedding model not cached: {config.embedding_repo} [snapshot]")
 
-    reranker_filename = get_gguf_filename(config.reranker_repo, config.reranker_quant)
-    if not is_gguf_cached(config.reranker_repo, reranker_filename):
-        issues.append(
-            f"Reranker model not cached: {config.reranker_repo} [{config.reranker_quant}]"
-        )
+    if not is_repo_snapshot_cached(config.reranker_repo):
+        issues.append(f"Reranker model not cached: {config.reranker_repo} [snapshot]")
 
     if issues:
         print("\n✗ Setup validation failed:")

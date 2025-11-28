@@ -201,6 +201,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 1.  **Startup:** The MCP service loads its configuration and advertises available categories via `list_categories`.
 2.  **Generator Mode:** The assistant queries for relevant entries using `read_entries(query=...)`.
 3.  **Evaluator Mode:** The assistant writes new knowledge using `write_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
+4.  **Knowledge scope:** CHL stores manuals and experiences (shared heuristics), not domain- or product-specific content (e.g., no customer-specific page designs). Treat the KB as generic process/UX/code heuristics organized by category.
 
 ### 3.3. Review and Governance
 

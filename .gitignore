@@ -12,6 +12,7 @@ __pycache__/
 .venv-intel/
 .venv-mcp/
 .venv-cuda/
+.venv-apple-hf/
 ENV/
 env/
 .mypy_cache/

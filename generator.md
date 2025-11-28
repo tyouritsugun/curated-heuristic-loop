@@ -64,6 +64,7 @@ If top score <0.50, reformulate the SEARCH phrase.
 1. Call `read_entries(entity_type="experience", category_code=..., query="[SEARCH] ... [TASK] ...")` for each variant.
 2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the SEARCH phrase immediately instead of skimming everything.
 3. When you find strong hits, fetch the full text with `read_entries(..., ids=[...])` and note the IDs you intend to use.
+4. If you need the whole category context (manual + top experiences), call `load_knowhow(category_code=...)` to get a token-lean bundle (no timestamps/extra metadata). Use this when you need the general heuristics for a category, not when you need a specific experience.
 
 ### 5. Run a duplicate check before writing
 1. Before calling `write_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
@@ -86,3 +87,4 @@ If top score <0.50, reformulate the SEARCH phrase.
 - **Seek patterns, not answers**: manuals and experiences teach how to work; they will not contain the exact schema, spec, or code your user is asking for.
 - **Stay concise**: shorter, cleaner queries produce better rankings.
 - **Leave breadcrumbs**: record which IDs informed your work and any missing coverage you discovered.
+- **Scope of knowledge**: The KB contains manuals/experiences (shared heuristics), not domain- or customer-specific content. There is no product-specific spec; only general “how to design a page spec” patterns organized by category.
