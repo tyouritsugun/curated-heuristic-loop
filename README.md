@@ -154,12 +154,7 @@ source .venv-apple/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements_apple.txt
 
-# Decide and download models via the helper scripts:
-#   python3 scripts/check_api_env.py    # pick embedding/reranker (HF IDs, no -GGUF)
-#   python3 scripts/setup-gpu.py        # download the selected models into HF cache and write data/model_selection.json
-
-# Start API server (Metal accel via torch mps)
-python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
+# Continue with Step 3 to download models and initialize the database, then Step 4 to start the server.
 
 **Notes:**
 - Default model choice (via `scripts/check_api_env.py` → `scripts/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
@@ -167,31 +162,35 @@ python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 </details>
 
 <details>
-<summary><b>Option C: NVIDIA GPU Acceleration</b></summary>
+<summary><b>Option C: NVIDIA GPU Acceleration (CUDA, HF stack)</b></summary>
 
-**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration.
+**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration using HuggingFace Transformers + Torch CUDA.
 
-**Prerequisites:**
+**Prerequisites & VRAM sizing:**
 - NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer: GTX 1060+, RTX series, etc.)
 - CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.4` or `/usr/local/cuda-12.5`)
 - cuDNN libraries
 - CMake 3.18+
-- **Python 3.10 or 3.11** (CUDA wheels don't support Python 3.12 yet)
+- **Python 3.10 or 3.11** (Torch CUDA wheels are published for 3.10/3.11; 3.12 support may lag)
 - Install if needed:
   - Ubuntu 22.04: `sudo apt install python3.10 python3.10-venv`
   - Other: Add deadsnakes PPA: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update && sudo apt install python3.11 python3.11-venv`
+- VRAM guide for HF models:
+  - ≤10 GB: keep defaults (Embedding 0.6B + Reranker 0.6B)
+  - 12–16 GB: Embedding 4B + Reranker 0.6B (better recall, safe VRAM)
+  - ≥20 GB: Embedding 4B + Reranker 4B (highest quality)
 
 ```bash
-# Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
-# Use full path if you have conda/uv Python that conflicts:
-/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.11 if no PATH conflicts
-# Activate venv (only needed once per terminal session)
-source .venv-nvidia/bin/activate  # On Windows: .venv-nvidia\Scripts\activate
+# Create dedicated venv for API server (Python 3.10 or 3.11)
+/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.10
+source .venv-nvidia/bin/activate          # Windows: .venv-nvidia\Scripts\activate
 
-# Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
+# Install API server dependencies (HF + Torch CUDA)
 python -m pip install --upgrade pip
-PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124 \
   python -m pip install -r requirements_nvidia.txt
+
+# Continue with Step 3 to download models (HF, no GGUF) and initialize the database.
 ```
 
 **Troubleshooting:** If `python3.11 -m venv` fails with ensurepip errors and you have conda/uv installed, use the full system path `/usr/bin/python3.11` instead of just `python3.11` to avoid PATH conflicts.

@@ -59,7 +59,7 @@ def _build_help_prompt() -> str:
     import platform
 
     lines = []
-    lines.append("I'm trying to set up llama-cpp-python for the CHL (Curated Heuristic Loop) project, but I'm not sure which hardware option to choose.")
+    lines.append("I'm trying to set up the CHL (Curated Heuristic Loop) project with the correct hardware path (HF/Torch stack), but I'm not sure which option to choose.")
     lines.append("")
     lines.append("## My System Information")
     lines.append(f"- Operating System: {platform.system()} {platform.release()}")
@@ -313,4 +313,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
