@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-"""Environment diagnostics for CHL API server - Apple Metal backend (Phase B).
+"""Environment diagnostics for CHL API server - NVIDIA CUDA backend (HF stack).
 
-This script inspects Apple Silicon hardware, Metal toolchain readiness, and
-llama-cpp-python wheel compatibility before installing the API server
-environment. It must be run with the API server stopped.
+This script inspects NVIDIA GPU hardware and CUDA toolchain readiness for the
+HF Transformers stack (Torch CUDA). It must be run with the API server stopped.
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ def _extend_sys_path() -> None:
     import sys
     from pathlib import Path
 
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parents[2]
     root_str = str(project_root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
@@ -50,7 +49,7 @@ SUPPORT_PROMPT_PATH = DATA_DIR / "support_prompt.txt"
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Check Apple Metal environment and llama-cpp-python compatibility before API setup.",
+        description="Check NVIDIA CUDA environment and llama-cpp-python compatibility before API setup.",
     )
     parser.add_argument(
         "--api-url",
@@ -105,7 +104,7 @@ def _ensure_api_stopped(api_url: str, force: bool) -> None:
             This script is intended for pre-installation checks only.
 
             If you are sure it is safe to proceed, re-run with:
-              python scripts/check_api_env_apple.py --force
+              python scripts/setup/check_api_env_nvidia.py --force
             """
         ).strip()
         print(msg)
@@ -113,36 +112,37 @@ def _ensure_api_stopped(api_url: str, force: bool) -> None:
 
 
 def _detect_runtime_config() -> Dict[str, Any]:
-    """Detect and save runtime configuration for Metal backend."""
-    priority = ["metal", "cpu"]
-    backend_override = "metal"
+    # Force CUDA backend for NVIDIA-specific script
+    priority = ["cuda", "cpu"]
+    backend_override = "cuda"
     config, cached = gpu_installer.ensure_runtime_config(priority, backend_override, force_detect=True)
     logger.debug("Runtime config (cached=%s): %s", cached, config)
     return config
 
 
 def _recommend_models(backend: str, vram_gb: Optional[float]) -> Dict[str, str]:
-    """Recommend embedding/reranker models based on backend and VRAM."""
-    # Model identifiers mirror scripts/setup-gpu.py
-    EMB_SMALL = ("Qwen/Qwen3-Embedding-0.6B-GGUF", "Q8_0")
-    EMB_MED = ("Qwen/Qwen3-Embedding-4B-GGUF", "Q4_K_M")
-    RER_SMALL_Q4 = ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q4_K_M")
-    RER_SMALL_Q8 = ("Mungert/Qwen3-Reranker-0.6B-GGUF", "Q8_0")
-    RER_MED = ("Mungert/Qwen3-Reranker-4B-GGUF", "Q4_K_M")
+    """Recommend HF embedding/reranker models based on backend and VRAM."""
+    EMB_SMALL = ("Qwen/Qwen3-Embedding-0.6B", "fp16")
+    EMB_MED = ("Qwen/Qwen3-Embedding-4B", "fp16")
+    RER_SMALL = ("Qwen/Qwen3-Reranker-0.6B", "fp16")
+    RER_MED = ("Qwen/Qwen3-Reranker-4B", "fp16")
 
     if backend == "cpu" or vram_gb is None:
         emb_repo, emb_quant = EMB_SMALL
-        rer_repo, rer_quant = RER_SMALL_Q8
+        rer_repo, rer_quant = RER_SMALL
     else:
-        if vram_gb >= 6.0:
+        if vram_gb >= 20.0:
             emb_repo, emb_quant = EMB_MED
             rer_repo, rer_quant = RER_MED
-        elif vram_gb >= 2.0:
+        elif vram_gb >= 12.0:
+            emb_repo, emb_quant = EMB_MED
+            rer_repo, rer_quant = RER_SMALL  # save VRAM on reranker
+        elif vram_gb >= 8.0:
             emb_repo, emb_quant = EMB_SMALL
-            rer_repo, rer_quant = RER_SMALL_Q8
+            rer_repo, rer_quant = RER_MED
         else:
             emb_repo, emb_quant = EMB_SMALL
-            rer_repo, rer_quant = RER_SMALL_Q4
+            rer_repo, rer_quant = RER_SMALL
 
     return {
         "embedding_repo": emb_repo,
@@ -182,45 +182,27 @@ def main() -> None:
 
     _ensure_api_stopped(args.api_url, args.force)
 
-    print("Running CHL environment diagnostics (Apple Metal)...")
+    print("Running CHL environment diagnostics (NVIDIA CUDA)...")
     runtime_config = _detect_runtime_config()
     backend = runtime_config.get("backend", "cpu")
 
-    # Verify this is actually Metal backend
-    if backend != "metal":
-        print(f"\n✗ This script is for Apple Metal only, but detected backend: {backend}")
+    # Verify this is actually CUDA backend
+    if backend != "cuda":
+        print(f"\n✗ This script is for NVIDIA CUDA only, but detected backend: {backend}")
         print("  Please use the appropriate check_api_env script for your platform.")
         sys.exit(1)
 
     vram_info = gpu_installer.get_vram_info(runtime_config)
     prereq = gpu_installer.prerequisite_check(runtime_config)
+    # Torch CUDA path: wheel metadata/llama verification not needed
     suffix = gpu_installer.recommended_wheel_suffix(runtime_config)
 
-    wheel_meta: Optional[Dict[str, Any]] = None
-    wheel_error: Optional[str] = None
-
-    if suffix:
-        try:
-            wheel_meta = gpu_installer.get_wheel_metadata(backend, suffix)
-            runtime_config["wheel_metadata"] = wheel_meta
-        except gpu_installer.GPUInstallerError as exc:
-            wheel_error = str(exc)
-            runtime_config["wheel_metadata_error"] = wheel_error
-
-    verify_ok: Optional[bool] = None
     verify_log: Optional[str] = None
-    try:
-        verify_ok, verify_log = gpu_installer.verify_llama_install(runtime_config)
-    except Exception as exc:  # noqa: BLE001
-        verify_ok = False
-        verify_log = f"verify_llama_install() raised an unexpected error: {exc}"
 
-    # Decide overall success
+    # Decide overall success (prereqs only)
     prereq_status = prereq.get("status") if isinstance(prereq, dict) else "unknown"
     prereq_ok = prereq_status in {"ok", "warn"}
-    network_ok = wheel_meta is not None
-
-    overall_ok = prereq_ok and network_ok
+    overall_ok = prereq_ok
 
     if overall_ok:
         vram_gb = vram_info.get("vram_gb") if vram_info else None
@@ -231,9 +213,8 @@ def main() -> None:
         print(f"  - Detected backend: {backend}")
         if vram_info:
             print(f"  - VRAM/System memory: {vram_info['vram_gb']} GB (via {vram_info['method']})")
-        print(f"  - Recommended llama-cpp wheel suffix: {suffix}")
-        if wheel_meta:
-            print(f"  - Wheel URL: {wheel_meta.get('url', 'unknown')}")
+        if suffix:
+            print(f"  - Recommended CUDA wheel suffix: {suffix}")
         print("  - Recommended models:")
         print(f"      Embedding: {selection['embedding_repo']} [{selection['embedding_quant']}]")
         print(f"      Reranker:  {selection['reranker_repo']} [{selection['reranker_quant']}]")
@@ -254,16 +235,9 @@ def main() -> None:
             print("  - Issues:")
             for issue in issues:
                 print(f"      - {issue}")
-    if not network_ok:
-        print("  - Failed to fetch llama-cpp wheel metadata (network or index issue).")
-        if wheel_error:
-            print(f"    Details: {wheel_error}")
-
-    print(
-        "\nA detailed troubleshooting prompt has been written to "
-        f"{SUPPORT_PROMPT_PATH}. Copy its contents into ChatGPT/Claude and "
-        "follow the instructions to resolve the environment issues."
-    )
+    print("\nA detailed troubleshooting prompt has been written to "
+          f"{SUPPORT_PROMPT_PATH}. Copy its contents into ChatGPT/Claude and "
+          "follow the instructions to resolve the environment issues.")
 
     sys.exit(1)
 

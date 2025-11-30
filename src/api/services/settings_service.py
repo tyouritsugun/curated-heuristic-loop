@@ -636,8 +636,8 @@ class SettingsService:
 
     def _diagnose_models(self, settings: Optional[ModelSettings]) -> DiagnosticStatus:
         # Prefer explicit DB-backed settings, but fall back to Config defaults
-        # when available so that environments configured via scripts/check_api_env.py
-        # and scripts/setup-gpu.py are treated as "configured".
+        # when available so that environments configured via scripts/setup/check_api_env.py
+        # and scripts/setup/setup-gpu.py are treated as "configured".
         cfg = self._config
         effective_embedding_repo = settings.embedding_repo if settings and settings.embedding_repo else getattr(
             cfg, "embedding_repo", None
@@ -660,7 +660,7 @@ class SettingsService:
                 state="warn",
                 headline="Models not configured",
                 detail=(
-                    "Run scripts/check_api_env.py and scripts/setup-gpu.py to record model preferences, "
+                    "Run scripts/setup/check_api_env.py and scripts/setup/setup-gpu.py to record model preferences, "
                     "or set CHL_EMBEDDING_REPO/CHL_RERANKER_REPO in .env."
                 ),
                 validated_at=None,

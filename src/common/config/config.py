@@ -24,15 +24,15 @@ Core environment variables:
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
 
 Search & retrieval:
-- Backend is automatically determined from data/runtime_config.json (created by scripts/check_api_env.py)
+- Backend is automatically determined from data/runtime_config.json (created by scripts/setup/check_api_env.py)
   - cpu: Text search only via SQLite LIKE queries (no ML dependencies)
   - metal/cuda/rocm: Vector search with FAISS + embeddings (graceful fallback to text search)
-- CHL_BACKEND: Optional override for runtime backend (not recommended - use check_api_env.py instead)
+- CHL_BACKEND: Optional override for runtime backend (not recommended - use scripts/setup/check_api_env.py instead)
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
 Model selection (GGUF quantized):
-- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup-gpu.py`)
+- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup/setup-gpu.py`)
 - CHL_EMBEDDING_QUANT: Advanced override for embedding quantization (defaults via setup)
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)
@@ -325,17 +325,17 @@ class Config:
                         "Q4_K_S", "Q4_K_M", "Q5_0", "Q5_1", "Q5_K_S", "Q5_K_M",
                         "Q6_K", "Q8_0", "F16", "f16"]
 
-        if self.embedding_quant not in valid_quants:
-            raise ValueError(
-                f"Invalid CHL_EMBEDDING_QUANT='{self.embedding_quant}'. "
-                f"Must be one of: {', '.join(valid_quants)}"
-            )
+        def _validate_quant(repo: str, quant: str, label: str) -> None:
+            # For HF repos (non-GGUF), allow any quant string (fp16/bfloat16/etc.).
+            if not repo.endswith("-GGUF"):
+                return
+            if quant not in valid_quants:
+                raise ValueError(
+                    f"Invalid {label}='{quant}'. Must be one of: {', '.join(valid_quants)}"
+                )
 
-        if self.reranker_quant not in valid_quants:
-            raise ValueError(
-                f"Invalid CHL_RERANKER_QUANT='{self.reranker_quant}'. "
-                f"Must be one of: {', '.join(valid_quants)}"
-            )
+        _validate_quant(self.embedding_repo, self.embedding_quant, "CHL_EMBEDDING_QUANT")
+        _validate_quant(self.reranker_repo, self.reranker_quant, "CHL_RERANKER_QUANT")
 
         # Validate positive integers
         if self.search_timeout_ms <= 0:

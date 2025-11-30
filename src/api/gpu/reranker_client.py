@@ -1,154 +1,101 @@
-"""Reranker client for Qwen GGUF models."""
+"""Reranker client using HF Transformers (yes/no logits at last position)."""
 
 import logging
-import os
-import sys
-import threading
-from contextlib import contextmanager
-from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-import numpy as np
+import torch
+import torch.nn.functional as F
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def _suppress_llama_stderr():
-    """Temporarily suppress noisy C++ logs from llama.cpp on stderr."""
-    try:
-        fd = sys.stderr.fileno()
-    except OSError:
-        yield
-        return
-
-    old_fd = os.dup(fd)
-    try:
-        with open(os.devnull, "w") as devnull:
-            os.dup2(devnull.fileno(), fd)
-        try:
-            yield
-        finally:
-            os.dup2(old_fd, fd)
-    finally:
-        os.close(old_fd)
-
-
 class RerankerClient:
-    """Client for reranking documents using GGUF models."""
+    """Client for reranking documents using HF reranker models (yes/no classifier)."""
 
     def __init__(
         self,
         model_repo: str,
-        quantization: str,
-        n_ctx: int = 2048,
-        n_gpu_layers: int = 0,
+        quantization: str,  # unused for HF; kept for interface compatibility
+        n_ctx: int = 2048,  # unused; HF handles context
+        n_gpu_layers: int = 0,  # unused; HF handles device
+        rerank_instruction: str = (
+            "Judge relevance for the task and concepts; respond yes if the document helps."
+        ),
+        debug_logprobs: bool = False,
     ):
-        self.model_repo = model_repo
-        self.quantization = quantization
-        # llama-cpp is not thread-safe across Python threads; use a lock to
-        # serialize calls into the shared Llama instance.
-        self._lock = threading.Lock()
+        del quantization, n_ctx, n_gpu_layers  # Not used in HF backend
+        # Map GGUF-style ids to HF ids if needed
+        if model_repo.endswith("-GGUF"):
+            self.model_repo = model_repo.replace("-GGUF", "")
+        else:
+            self.model_repo = model_repo
+        self.rerank_instruction = rerank_instruction
+        self.debug_logprobs = debug_logprobs
 
         try:
-            from llama_cpp import Llama
+            logger.info("Loading HF reranker model: %s", self.model_repo)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_repo,
+                padding_side="left",
+            )
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_repo)
 
-            # Align llama.cpp logging behavior with the embedding client by
-            # suppressing verbose backend logs from the C++ layer.
-            import logging as _logging
+            if torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            elif torch.cuda.is_available():
+                self.device = torch.device("cuda")
+            else:
+                self.device = torch.device("cpu")
+            self.model.to(self.device)
+            self.model.eval()
 
-            _logging.getLogger("llama-cpp-python").setLevel(_logging.CRITICAL)
-
-            logger.info("Loading GGUF reranker model: %s [%s]", model_repo, quantization)
-
-            model_path = self._find_cached_gguf(model_repo, quantization)
-            with _suppress_llama_stderr():
-                self.model = Llama(
-                    model_path=str(model_path),
-                    embedding=True,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                    verbose=False,
-                )
+            # Include leading-space variants since the model is tokenized with spaces.
+            self.yes_token_ids = [
+                self.tokenizer.convert_tokens_to_ids(t)
+                for t in ["yes", "Yes", " yes", " Yes"]
+                if self.tokenizer.convert_tokens_to_ids(t) != self.tokenizer.unk_token_id
+            ]
+            self.no_token_ids = [
+                self.tokenizer.convert_tokens_to_ids(t)
+                for t in ["no", "No", " no", " No"]
+                if self.tokenizer.convert_tokens_to_ids(t) != self.tokenizer.unk_token_id
+            ]
 
             logger.info(
-                "GGUF reranker model loaded: %s [%s], path=%s",
-                model_repo,
-                quantization,
-                model_path,
+                "HF reranker loaded: %s on %s (yes ids=%s, no ids=%s)",
+                self.model_repo,
+                self.device,
+                self.yes_token_ids,
+                self.no_token_ids,
             )
-        except ImportError as exc:
-            raise RerankerClientError(
-                "llama-cpp-python not installed. Install ML extras with: uv sync --python 3.11 --extra ml"
-            ) from exc
         except Exception as exc:
             raise RerankerClientError(
-                f"Failed to load GGUF reranker model '{model_repo}': {exc}"
+                f"Failed to load HF reranker model '{self.model_repo}': {exc}"
             ) from exc
-
-    def _find_cached_gguf(self, repo_id: str, quantization: str) -> Path:
-        cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
-        model_cache_name = f"models--{repo_id.replace('/', '--')}"
-        model_path = cache_dir / model_cache_name
-
-        if not model_path.exists():
-            raise FileNotFoundError(
-                f"Model cache not found: {model_path}. "
-                "Run 'python scripts/setup-gpu.py --download-models' first."
-            )
-
-        model_name = repo_id.split("/")[1].replace("-GGUF", "")
-        org = repo_id.split("/")[0]
-
-        if org == "Qwen":
-            quant_str = "f16" if quantization.upper() == "F16" else quantization.upper()
-        else:
-            quant_str = quantization.lower()
-
-        filename = f"{model_name}-{quant_str}.gguf"
-
-        for snapshot_dir in model_path.glob("snapshots/*"):
-            gguf_file = snapshot_dir / filename
-            if gguf_file.exists():
-                return gguf_file
-
-        raise FileNotFoundError(
-            f"GGUF file not found: {filename} in {model_path}. "
-            "Run 'python scripts/setup-gpu.py --download-models' first."
-        )
 
     def rerank(
         self,
-        query: str,
+        query: Dict[str, str],
         documents: List[str],
         batch_size: Optional[int] = None,
     ) -> List[float]:
+        """
+        Point-wise rerank using chat template and logits at the last position.
+
+        Returns scores in [0,1] representing P(yes | instruction, query, document).
+        """
+        del batch_size  # Not used
+
         if not documents:
             return []
 
         try:
-            logger.debug("Reranking %s documents with GGUF reranker", len(documents))
-            query_text = f"{query}<|endoftext|>"
-
-            # Serialize access to llama-cpp and suppress noisy stderr logs
-            # around embedding calls for query and documents.
-            with self._lock, _suppress_llama_stderr():
-                query_result = self.model.create_embedding(query_text)
-            query_emb = np.array(query_result["data"][0]["embedding"], dtype=np.float32)
-            if query_emb.ndim == 2:
-                query_emb = query_emb.mean(axis=0)
-            query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-8)
-
+            logger.debug("Reranking %s documents with HF reranker", len(documents))
             scores: List[float] = []
             for doc in documents:
-                doc_text = f"{doc}<|endoftext|>"
-                with self._lock, _suppress_llama_stderr():
-                    doc_result = self.model.create_embedding(doc_text)
-                doc_emb = np.array(doc_result["data"][0]["embedding"], dtype=np.float32)
-                if doc_emb.ndim == 2:
-                    doc_emb = doc_emb.mean(axis=0)
-                doc_emb = doc_emb / (np.linalg.norm(doc_emb) + 1e-8)
-                score = float(np.dot(query_emb, doc_emb))
+                prompt = self._build_prompt(query=query, document=doc)
+                score = self._score_pair(prompt)
                 scores.append(score)
 
             logger.debug("Reranked %s documents", len(documents))
@@ -156,8 +103,57 @@ class RerankerClient:
         except Exception as exc:
             raise RerankerClientError(f"Reranking failed: {exc}") from exc
 
+    def _build_prompt(self, query: Dict[str, str], document: str) -> str:
+        """Build chat prompt with explicit search/task components."""
+        instruction = (self.rerank_instruction or "").strip()
+        search_text = (query.get("search") or "").strip()
+        task_text = (query.get("task") or "").strip()
+        doc_text = (document or "").strip()
+        max_chars = 4000
+        if len(doc_text) > max_chars:
+            doc_text = doc_text[:max_chars] + " ..."
+
+        prefix = (
+            "<|im_start|>system\n"
+            'Judge whether the Document helps complete the Task given the Search concepts. '
+            'Respond with a single token: "yes" or "no". Do not include <think>, punctuation, or explanations.<|im_end|>\n'
+            "<|im_start|>user\n"
+        )
+        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+
+        user_payload = (
+            f"<Instruct>: {instruction}\n"
+            f"<Search>: {search_text}\n"
+            f"<Task>: {task_text}\n"
+            f"<Document>: {doc_text}"
+        )
+
+        return prefix + user_payload + suffix
+
+    def _score_pair(self, prompt: str) -> float:
+        """Return P(yes) from logits at the last prompt position (no generation)."""
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            padding=False,
+            truncation=True,
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            logits = outputs.logits[:, -1, :]  # (1, vocab)
+
+        # Take max over yes/no variants
+        yes_logit = torch.max(logits[:, self.yes_token_ids], dim=1).values
+        no_logit = torch.max(logits[:, self.no_token_ids], dim=1).values
+
+        pair_logits = torch.stack([no_logit, yes_logit], dim=1)  # [1,2]
+        probs = F.softmax(pair_logits, dim=1)
+        return float(probs[:, 1].item())
+
     def get_model_version(self) -> str:
-        return f"{self.model_repo}:{self.quantization}"
+        return self.model_repo
 
 
 class RerankerClientError(Exception):

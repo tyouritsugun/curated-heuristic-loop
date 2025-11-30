@@ -25,7 +25,7 @@ from src.mcp.utils import create_error_response
 from src.mcp.handlers_entries import (
     list_categories,
     read_entries,
-    write_entry,
+    create_entry,
     update_entry,
     check_duplicates,
 )
@@ -166,10 +166,83 @@ def init_server() -> None:
     # Register tools
     mcp.tool()(list_categories)
     mcp.tool()(read_entries)
-    mcp.tool()(write_entry)
+    mcp.tool()(create_entry)
     mcp.tool()(update_entry)
     mcp.tool()(check_duplicates)
     mcp.tool()(get_guidelines)
+
+    # ------------------------------------------------------------------
+    # MCP Resources (official spec discovery endpoints)
+    # ------------------------------------------------------------------
+
+    @mcp.resource("chl://guidelines/generator")
+    def resource_generator_guidelines() -> str:
+        """Full generator workflow guidance markdown."""
+        path = Path(__file__).resolve().parents[2] / "generator.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return "# generator.md not found\n"
+
+    @mcp.resource("chl://guidelines/evaluator")
+    def resource_evaluator_guidelines() -> str:
+        """Full evaluator workflow guidance markdown."""
+        path = Path(__file__).resolve().parents[2] / "evaluator.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return "# evaluator.md not found\n"
+
+    @mcp.resource("chl://guidelines/evaluator_cpu")
+    def resource_evaluator_cpu_guidelines() -> str:
+        """Evaluator (CPU) guidance markdown with duplicate-check fallback notes."""
+        path = Path(__file__).resolve().parents[2] / "evaluator_cpu.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return "# evaluator_cpu.md not found\n"
+
+    @mcp.resource("chl://categories/index")
+    def resource_categories_index() -> str:
+        """Cached category index (same payload as list_categories)."""
+        try:
+            return json.dumps(list_categories(), ensure_ascii=False, indent=2)
+        except Exception as exc:  # pragma: no cover - defensive
+            return json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2)
+
+    @mcp.resource("chl://runtime/config")
+    def resource_runtime_config() -> str:
+        """Current runtime configuration detected by env check."""
+        path = Path(__file__).resolve().parents[2] / "data" / "runtime_config.json"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return json.dumps({"warning": "runtime_config.json not found"}, indent=2)
+
+    @mcp.resource("chl://entry/{entry_id}")
+    def resource_entry_by_id(entry_id: str) -> str:
+        """Fetch a single entry by ID (EXP-*/MNL-*), returns JSON."""
+        upper = entry_id.upper()
+        if upper.startswith("EXP-"):
+            entity_type = "experience"
+            fields = ["playbook", "section", "title"]
+        elif upper.startswith("MNL-"):
+            entity_type = "manual"
+            fields = ["content", "summary", "title"]
+        else:
+            raise MCPError("entry_id must start with EXP- or MNL-")
+
+        resp = read_entries(entity_type=entity_type, ids=[entry_id], fields=fields)
+        entries = resp.get("entries") or []
+        if not entries:
+            raise MCPError(f"Entry not found: {entry_id}")
+        return json.dumps(entries[0], ensure_ascii=False, indent=2)
+
+    @mcp.resource("chl://category/{category_code}/latest{?entity_type,limit}")
+    def resource_category_latest(category_code: str, entity_type: str = "experience", limit: int = 10) -> str:
+        """Latest entries in a category (previews unless fields requested)."""
+        entity_type = entity_type or "experience"
+        if entity_type not in {"experience", "manual"}:
+            raise MCPError("entity_type must be 'experience' or 'manual'")
+        limit_int = int(limit)
+        resp = read_entries(entity_type=entity_type, category_code=category_code, limit=limit_int)
+        return json.dumps(resp, ensure_ascii=False, indent=2)
 
     try:
         mcp.instructions = json.dumps(build_handshake_payload())

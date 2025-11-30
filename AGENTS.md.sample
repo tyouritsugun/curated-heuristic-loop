@@ -9,15 +9,18 @@ Copy/paste the parts below into your code assistant’s common instructions (Cla
 
 ## During Tasks
 - **Clarify task intent first**: When user mentions bugs/errors/problems, don't immediately rush to fix code. Ask yourself: Are they asking to fix, document, file a ticket, or investigate? If unclear, ask: "Would you like me to [fix this / write a bug ticket / investigate further]?"
-- Use categories: call `list_categories()` first; if the request includes one, honor it.
-- For retrieval, prefer a single good `read_entries(query=..., category_code=...)` call instead of guessing from memory.
-- When editing/adding guidance, run `check_duplicates(...)` before `write_entry(...)` to avoid collisions.
+- **Ground with KB before drafting**: Once intent is clear, call `read_entries(...)` to load the most relevant manual(s) or experience(s). If nothing useful appears, state the coverage gap before proceeding.
+- **Retrieval protocol (per category counts from `list_categories`)**:
+  - If category is known and total items < 20: call `read_entries(entity_type=..., category_code=..., fields=['playbook' or 'content'], limit=25)` to load everything directly.
+  - If category is known and total items ≥ 20: first load titles/previews (`fields` default), then fetch chosen IDs with `fields=['playbook' or 'content']` in a second call.
+  - If category is vague/cross-category: use query mode (`read_entries(query=...)`) to fan out, then drill down as above.
+- When editing/adding guidance, run `check_duplicates(...)` before `create_entry(...)` to avoid collisions.
 - Echo which provider is active (semantic vs keyword) if the response includes `search_mode` or vector availability.
 
 ## After Tasks (reflection & curation)
 - Prompt the user to summarize outcomes and decide whether to:
-  - Add an atomic experience (`write_entry(entity_type="experience", ...)`)
-  - Update a manual (`write_entry(entity_type="manual", ...)`)
+  - Add an atomic experience (`create_entry(entity_type="experience", ...)`)
+  - Add a manual (`create_entry(entity_type="manual", ...)`)
 - If writing, include `category_code`, concise title, and clean playbook/content; use `check_duplicates(...)` first.
 - Remind the user they can rebuild embeddings/FAISS via `/operations` or scripts if vectors are pending (GPU mode only).
 

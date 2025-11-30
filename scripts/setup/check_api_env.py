@@ -18,8 +18,9 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Platform-specific check scripts live alongside this launcher inside scripts/setup
+SCRIPTS_DIR = PROJECT_ROOT / "scripts" / "setup"
 DATA_DIR = PROJECT_ROOT / "data"
 HELP_PROMPT_PATH = DATA_DIR / "hardware_selection_help.txt"
 
@@ -59,7 +60,7 @@ def _build_help_prompt() -> str:
     import platform
 
     lines = []
-    lines.append("I'm trying to set up llama-cpp-python for the CHL (Curated Heuristic Loop) project, but I'm not sure which hardware option to choose.")
+    lines.append("I'm trying to set up the CHL (Curated Heuristic Loop) project with the correct hardware path (HF/Torch stack), but I'm not sure which option to choose.")
     lines.append("")
     lines.append("## My System Information")
     lines.append(f"- Operating System: {platform.system()} {platform.release()}")
@@ -193,7 +194,7 @@ def _build_help_prompt() -> str:
     lines.append("")
     lines.append("Then, instruct me to go back to the CHL environment diagnostics script:")
     lines.append("```bash")
-    lines.append("python3 scripts/check_api_env.py")
+    lines.append("python3 scripts/setup/check_api_env.py")
     lines.append("```")
     lines.append("")
     lines.append("And select the option you recommended. The script will handle all installation steps automatically.")
@@ -313,4 +314,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

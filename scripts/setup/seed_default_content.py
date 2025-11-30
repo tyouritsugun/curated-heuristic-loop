@@ -26,7 +26,7 @@ _SEED_HELPER = None
 
 
 def _get_seed_helper():
-    """Lazily load _seed_default_content from scripts/setup-gpu.py."""
+    """Lazily load _seed_default_content from scripts/setup/setup-gpu.py."""
     global _SEED_HELPER
     if _SEED_HELPER is not None:
         return _SEED_HELPER
@@ -44,7 +44,7 @@ def _get_seed_helper():
 
     helper = getattr(module, "_seed_default_content", None)
     if helper is None:
-        raise RuntimeError("scripts/setup-gpu.py is missing _seed_default_content")
+        raise RuntimeError("scripts/setup/setup-gpu.py is missing _seed_default_content")
 
     _SEED_HELPER = helper
     return helper

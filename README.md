@@ -23,14 +23,13 @@ The API and MCP servers communicate exclusively via HTTP (default: `http://local
 Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
 
 ```bash
-python3 scripts/check_api_env.py
+python3 scripts/setup/check_api_env.py
 ```
 
 This script checks:
 - GPU hardware detection (Metal/CUDA/CPU)
 - Driver and toolchain availability
 - VRAM capacity and model size recommendations (GPU modes only)
-- llama-cpp-python wheel compatibility (via the official wheel index)
 
 If checks pass:
 - **GPU mode**: Writes recommended model choices to `data/model_selection.json` and runtime configuration to `data/runtime_config.json`
@@ -138,7 +137,7 @@ python -m pip install -r requirements_cpu.txt
 <details>
 <summary><b>Option B: Apple Silicon (Metal GPU Acceleration)</b></summary>
 
-**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration.
+**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration (HF embeddings + HF reranker).
 
 **Prerequisites:**
 - macOS with Apple Silicon (M1, M2, M3, etc.)
@@ -151,40 +150,47 @@ python3.12 -m venv .venv-apple
 # Activate venv (only needed once per terminal session)
 source .venv-apple/bin/activate
 
-# Install API server dependencies with Metal-accelerated ML
+# Install API server dependencies (HF embeddings + HF reranker)
 python -m pip install --upgrade pip
-PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/metal \
-  python -m pip install -r requirements_apple.txt
-```
+python -m pip install -r requirements_apple.txt
+
+# Continue with Step 3 to download models and initialize the database, then Step 4 to start the server.
+
+**Notes:**
+- Default model choice (via `scripts/setup/check_api_env.py` → `scripts/setup/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
 
 </details>
 
 <details>
-<summary><b>Option C: NVIDIA GPU Acceleration</b></summary>
+<summary><b>Option C: NVIDIA GPU Acceleration (CUDA, HF stack)</b></summary>
 
-**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration.
+**Best for:** Linux/Windows with NVIDIA GPU (Pascal or newer), want semantic search with GPU acceleration using HuggingFace Transformers + Torch CUDA.
 
-**Prerequisites:**
+**Prerequisites & VRAM sizing:**
 - NVIDIA GPU with CUDA Compute Capability 6.0+ (Pascal or newer: GTX 1060+, RTX series, etc.)
 - CUDA Toolkit 12.x installed (e.g., `/usr/local/cuda-12.4` or `/usr/local/cuda-12.5`)
 - cuDNN libraries
 - CMake 3.18+
-- **Python 3.10 or 3.11** (CUDA wheels don't support Python 3.12 yet)
+- **Python 3.10 or 3.11** (Torch CUDA wheels are published for 3.10/3.11; 3.12 support may lag)
 - Install if needed:
   - Ubuntu 22.04: `sudo apt install python3.10 python3.10-venv`
   - Other: Add deadsnakes PPA: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update && sudo apt install python3.11 python3.11-venv`
+- VRAM guide for HF models:
+  - ≤10 GB: keep defaults (Embedding 0.6B + Reranker 0.6B)
+  - 12–16 GB: Embedding 4B + Reranker 0.6B (better recall, safe VRAM)
+  - ≥20 GB: Embedding 4B + Reranker 4B (highest quality)
 
 ```bash
-# Create dedicated venv for API server (Python 3.10 or 3.11, NOT 3.12)
-# Use full path if you have conda/uv Python that conflicts:
-/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.11 if no PATH conflicts
-# Activate venv (only needed once per terminal session)
-source .venv-nvidia/bin/activate  # On Windows: .venv-nvidia\Scripts\activate
+# Create dedicated venv for API server (Python 3.10 or 3.11)
+/usr/bin/python3.11 -m venv .venv-nvidia  # Or python3.10
+source .venv-nvidia/bin/activate          # Windows: .venv-nvidia\Scripts\activate
 
-# Install API server dependencies with CUDA-accelerated ML (abetlen wheels)
+# Install API server dependencies (HF + Torch CUDA)
 python -m pip install --upgrade pip
-PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124 \
   python -m pip install -r requirements_nvidia.txt
+
+# Continue with Step 3 to download models (HF, no GGUF) and initialize the database.
 ```
 
 **Troubleshooting:** If `python3.11 -m venv` fails with ensurepip errors and you have conda/uv installed, use the full system path `/usr/bin/python3.11` instead of just `python3.11` to avoid PATH conflicts.
@@ -258,7 +264,7 @@ cp .env.sample .env
 source .venv-cpu/bin/activate
 
 # Initialize database with default categories
-python scripts/setup-cpu.py
+python scripts/setup/setup-cpu.py
 ```
 
 This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sample DataPipe bug reporting guidance for the optional demo (see Step 7).
@@ -269,10 +275,10 @@ This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sam
 source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
 
 # Download models and initialize database using recommended/active models
-python scripts/setup-gpu.py
+python scripts/setup/setup-gpu.py
 
 # (Optional) Open interactive model selection menu
-python scripts/setup-gpu.py --select-models
+python scripts/setup/setup-gpu.py --select-models
 ```
 
 ### Step 4: Start API Server
@@ -378,17 +384,14 @@ If `uv` complains about permissions in `~/.cache/uv`, set `UV_CACHE_DIR` in `env
 
 **Configure agent instructions:**
 
-To keep assistants from forgetting to call MCP tools and to prompt for reflections, add the CHL agent instructions to your project's AGENTS.md:
+To keep assistants from forgetting to call MCP tools and to prompt for reflections, configure CHL instructions for your code assistant:
 
-**If you don't have AGENTS.md yet:**
-- Ask your code assistant: "Please read AGENTS.md.sample and create an AGENTS.md for my project"
-- Or copy from a coworker who already has good agent instructions set up
-- Or as a last resort: `cp AGENTS.md.sample AGENTS.md`
+- **Recommended approach:** Ask your code assistant: "Please copy AGENTS.md.sample to the appropriate location so you can read it automatically in this project"
+  - For example, Claude Code uses `.claude/instructions.md`, Cursor may use project-level configuration, etc.
+  - Different code assistants have different configuration systems - letting the assistant handle this ensures it uses the right approach for its platform
+  - The assistant will know where to copy and whether needs to rename it to following the convention.
 
-**If you already have AGENTS.md:**
-- Ask your code assistant: "Please merge the CHL instructions into my existing AGENTS.md, the instructions are `{copy of AGENTS.md.sample}`"
-
-These CHL instructions in the standard `AGENTS.md` ensure the assistant:
+These CHL instructions ensure the assistant:
 - Calls `list_categories()` and `get_guidelines()` at startup
 - Uses CHL MCP tools for retrieval instead of guessing
 - Prompts for reflection and curation at conversation end
@@ -419,9 +422,9 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 
 To switch between CPU and GPU modes:
 1. Stop the API server
-2. Run `python scripts/check_api_env.py` and select target mode (updates `runtime_config.json`)
+2. Run `python scripts/setup/check_api_env.py` and select target mode (updates `runtime_config.json`)
 3. Create new venv for target mode and install corresponding requirements file
-4. GPU mode only: Run `python scripts/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
+4. GPU mode only: Run `python scripts/setup/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
 5. Start API server (automatically uses backend from `runtime_config.json`)
 
 > **Note**: FAISS snapshots are not portable between modes. Switching requires rebuilding search index in the target mode.
@@ -434,8 +437,8 @@ After initial installation, use the web dashboards for most operations:
 - **Settings**: Use `/settings` dashboard for configuration, model selection, and JSON backup
 
 **CLI scripts** (activate API server venv first: `source .venv-cpu/bin/activate`):
-- `python scripts/rebuild_index.py` – rebuild search index if needed
-- `python scripts/search_health.py` – check search system health
+- `python scripts/ops/rebuild_index.py` – rebuild search index if needed
+- `python scripts/ops/search_health.py` – check search system health
 
 ## Managing Categories
 

@@ -12,9 +12,9 @@
 #   source .venv-nvidia/bin/activate
 #   python -m pip install --upgrade pip
 #
-#   # Use abetlen's CUDA wheel index for llama-cpp-python (cu124 for CUDA 12.x)
-#   PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124 \
-#     python -m pip install -r requirements_cuda.txt
+#   # Use the official PyTorch CUDA wheels (cu124 for CUDA 12.x)
+#   PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124 \
+#     python -m pip install -r requirements_nvidia.txt
 #
 # Starting the API server:
 #   python -m uvicorn src.api.server:app --host 127.0.0.1 --port 8000
@@ -50,12 +50,15 @@ tqdm>=4.65.0
 tenacity>=8.2.0
 markdown>=3.6
 
-# ML / GPU stack (CUDA-accelerated)
-# Note: faiss-cpu is sufficient - vector search is fast on CPU
-# GPU acceleration is needed for embedding/reranking models (via llama-cpp-python CUDA wheels)
-faiss-cpu>=1.7.4
-huggingface-hub>=0.20.0
+# ML / GPU stack (HF Transformers with CUDA)
+# Use the official PyTorch CUDA wheels:
+#   PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124 \
+#     python -m pip install -r requirements_nvidia.txt
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch>=2.3.0
+accelerate>=0.31.0
+transformers>=4.51.0
 sentence-transformers>=3.1.1
-# llama-cpp-python with CUDA support from abetlen's wheel index
-# Installed via PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cu124
-llama-cpp-python==0.3.16
+huggingface-hub>=0.20.0
+# FAISS on CPU is sufficient for search throughput; GPU FAISS optional
+faiss-cpu>=1.8.0

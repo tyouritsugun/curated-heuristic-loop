@@ -48,9 +48,11 @@ tqdm>=4.65.0
 tenacity>=8.2.0
 markdown>=3.6
 
-# ML / GPU stack (Metal-accelerated)
-faiss-cpu>=1.7.4
+# ML stack (HF-based embeddings/reranker)
+faiss-cpu>=1.8.0
 huggingface-hub>=0.20.0
 sentence-transformers>=3.1.1
-# llama-cpp-python with Metal support from abetlen's wheel index
-llama-cpp-python==0.3.16
+torch>=2.3.0
+transformers>=4.51.0
+accelerate>=0.31.0
+# (llama-cpp-python not required; HF-only stack)

@@ -34,37 +34,78 @@ def list_categories() -> Dict[str, Any]:
 
 def read_entries(
     entity_type: str,
-    category_code: str,
+    category_code: Optional[str] = None,
     query: Optional[str] = None,
     ids: Optional[List[str]] = None,
     limit: Optional[int] = None,
+    fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Retrieve experiences or manuals from a category by ids or semantic query.
+    Retrieve experiences or manuals.
 
-    Example:
-        read_entries(entity_type='experience', category_code='PGS', query='handoff checklist')
+    USAGE PATTERNS:
+
+    **1. Category-scoped (preferred when the shelf is clear):**
+    - Small category (<20): `read_entries(entity_type='experience', category_code='PGS', fields=['playbook'])`
+    - Large category (>=20): Load previews first (`read_entries(entity_type='experience', category_code='PGS')` for id/title/snippet), then fetch the selected IDs with fields=['playbook'] using the ID lookup call below.
+        - ID lookup (global): `read_entries(entity_type='experience', ids=['EXP-PGS-xxx', 'EXP-DSD-yyy'])` — no category_code needed (IDs carry the prefix).
+
+    **2. Global search (only when category is unclear or cross-category):**
+    - `read_entries(entity_type='experience', query='[SEARCH] ... [TASK] ...')`
+    - Omit category_code to search all categories.
+
+    Defaults: responses return previews unless you request body fields (e.g., fields=['playbook'] or ['content']); default limit is the server's read_details_limit (10). Listing everything with no category_code is blocked to avoid huge responses.
     """
     try:
         payload: Dict[str, Any] = {
             "entity_type": entity_type,
-            "category_code": category_code,
         }
+        if category_code is not None:
+            payload["category_code"] = category_code
         if query is not None:
             payload["query"] = query
         if ids is not None:
             payload["ids"] = ids
         if limit is not None:
             payload["limit"] = limit
+        if fields is not None:
+            payload["fields"] = fields
 
-        return request_api("POST", "/api/v1/entries/read", payload=payload)
+        response = request_api("POST", "/api/v1/entries/read", payload=payload)
+
+        # Optimize response for LLMs - keep only essential fields to save tokens
+        if "entries" in response:
+            filtered_entries = []
+            for entry in response["entries"]:
+                if entity_type == "experience":
+                    # Experiences: id, section, title, playbook (or playbook_preview if not full)
+                    filtered = {"id": entry.get("id"), "section": entry.get("section"), "title": entry.get("title")}
+                    if "playbook" in entry:
+                        filtered["playbook"] = entry["playbook"]
+                    elif "playbook_preview" in entry:
+                        filtered["playbook_preview"] = entry["playbook_preview"]
+                        filtered["playbook_truncated"] = entry.get("playbook_truncated", False)
+                    filtered_entries.append(filtered)
+                else:  # manual
+                    # Manuals: id, title, content (or content_preview if not full)
+                    filtered = {"id": entry.get("id"), "title": entry.get("title")}
+                    if "content" in entry:
+                        filtered["content"] = entry["content"]
+                    elif "content_preview" in entry:
+                        filtered["content_preview"] = entry["content_preview"]
+                        filtered["content_truncated"] = entry.get("content_truncated", False)
+                    filtered_entries.append(filtered)
+
+            response["entries"] = filtered_entries
+
+        return response
     except MCPError:
         raise
     except Exception as exc:  # pragma: no cover - defensive
         raise MCPError(f"Unexpected error: {exc}") from exc
 
 
-def write_entry(
+def create_entry(
     entity_type: str,
     category_code: str,
     data: Dict[str, Any],
@@ -137,6 +178,10 @@ def check_duplicates(
         content: Proposed playbook/content body
         limit: Maximum number of candidates to return (default: 1)
         threshold: Optional minimum similarity score (provider-specific)
+
+    Note: Duplicate detection requires vector search. In CPU-only mode the API
+    returns an empty list with a warning; callers should fall back to loading
+    entries with read_entries and manually checking for overlap.
     """
     try:
         payload: Dict[str, Any] = {
@@ -155,4 +200,4 @@ def check_duplicates(
         raise MCPError(f"Unexpected error: {exc}") from exc
 
 
-__all__ = ["list_categories", "read_entries", "write_entry", "update_entry", "check_duplicates"]
+__all__ = ["list_categories", "read_entries", "create_entry", "update_entry", "check_duplicates"]

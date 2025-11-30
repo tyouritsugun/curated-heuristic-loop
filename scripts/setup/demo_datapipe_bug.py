@@ -35,7 +35,7 @@ def main() -> None:
         f"[{now}] INFO  Stage: {pipeline_stage}",
         f"[{now}] ERROR {error_msg}",
         "Traceback (most recent call last):",
-        '  File "scripts/demo_datapipe_bug.py", line 53, in main',
+        '  File "scripts/setup/demo_datapipe_bug.py", line 53, in main',
         f'    with open("{input_file}", "r") as f:',
         f"FileNotFoundError: [Errno 2] No such file or directory: '{input_file}'",
     ]

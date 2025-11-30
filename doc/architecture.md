@@ -43,7 +43,7 @@ graph TB
 
     subgraph "Scripts (scripts/) - API Server Venv"
         REBUILD[rebuild_index.py]
-        SETUP[setup-gpu.py<br/>setup-cpu.py]
+        SETUP[setup/setup-gpu.py<br/>setup/setup-cpu.py]
     end
 
     CA -->|MCP Protocol| MCPCORE
@@ -87,7 +87,7 @@ The FastAPI server is the sole authority for all data persistence, search operat
 - **CPU Mode** (`backend="cpu"`): SQLite text search only, no ML dependencies
 - **GPU Modes** (`backend="metal"/"cuda"/"rocm"`): FAISS vector search with embeddings and reranking
 
-Backend is automatically detected from `data/runtime_config.json` (created by `scripts/check_api_env.py`). To switch backends, re-run diagnostics and restart the server.
+Backend is automatically detected from `data/runtime_config.json` (created by `scripts/setup/check_api_env.py`). To switch backends, re-run diagnostics and restart the server.
 
 **Key Modules:**
 
@@ -154,13 +154,13 @@ Prefer the API server for import/export/index operations; remaining scripts focu
 
 - `rebuild_index.py` - Rebuild FAISS/FTS index
 - `sync_embeddings.py` - Sync embeddings for all entries (GPU mode)
-- `search_health.py` - Check search system health (falls back to direct DB/FAISS inspection only if the API is unreachable)
+- `scripts/ops/search_health.py` - Check search system health (falls back to direct DB/FAISS inspection only if the API is unreachable)
 - `seed_default_content.py` - Load starter content
 
 **Setup Scripts (exception to HTTP-first rule):**
 
-- `setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
-- `setup-cpu.py` - Initialize database schema (direct DB access)
+- `setup/setup-gpu.py` - Download models, initialize GPU environment (direct API imports)
+- `setup/setup-cpu.py` - Initialize database schema (direct DB access)
 - `smoke_test_cuda.py` - Test NVIDIA CUDA GPU components (direct API imports)
 
 ## 3. Data Flow Patterns
@@ -208,7 +208,7 @@ sequenceDiagram
     participant DB as SQLite
 
     Dev->>LLM: Summarize with @evaluator.md
-    LLM->>MCP: write_entry(data)
+    LLM->>MCP: create_entry(data)
     MCP->>API: POST /api/v1/entries/write
     API->>REPO: Create entry
 
@@ -344,7 +344,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 - API server may import any `src/common.*` modules
 - MCP server may import only `src.common.{config,api_client,dto}`
 - API and MCP communicate only via HTTP
-- Setup scripts (`setup-gpu.py`, `smoke_test_cuda.py`) are exceptions
+- Setup scripts (`scripts/setup/setup-gpu.py`, `smoke_test_cuda.py`) are exceptions
 
 **Enforcement:**
 - Boundary tests enforce these rules via AST parsing (`tests/architecture/test_boundaries.py`)
@@ -379,7 +379,7 @@ Human-readable surface for team-based curation. The Operations export job genera
 **Implications:**
 
 - Backend determined from `data/runtime_config.json` at startup
-- Backend change requires: re-run `scripts/check_api_env.py` → restart server → rebuild index
+- Backend change requires: re-run `scripts/setup/check_api_env.py` → restart server → rebuild index
 - Template selection happens once at startup
 - No hot-swapping between CPU and GPU providers
 - No automatic fallback from GPU to CPU mode
@@ -394,7 +394,7 @@ The MCP server provides a simple, tool-based interface for AI assistants:
 
 - `list_categories()` - List all available category shelves
 - `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or manuals
-- `write_entry(entity_type, category_code, data)` - Create new entry
+- `create_entry(entity_type, category_code, data)` - Create new entry
 - `update_entry(entity_type, category_code, entry_id, updates)` - Update existing entry
 - `get_guidelines(guide_type)` - Return generator or evaluator workflow manual
 
@@ -475,7 +475,7 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 python -m venv .venv-cpu
 source .venv-cpu/bin/activate
 pip install -r requirements_cpu.txt
-python scripts/check_api_env.py  # Select CPU mode - creates runtime_config.json
+python scripts/setup/check_api_env.py  # Select CPU mode - creates runtime_config.json
 uvicorn src.api.server:app --host 127.0.0.1 --port 8000
 # Backend auto-detected from data/runtime_config.json
 ```
@@ -490,7 +490,7 @@ uv run python -m src.mcp.server
 **Scripts** run from API server venv:
 ```bash
 source .venv-cpu/bin/activate
-python scripts/rebuild_index.py  # example maintenance job (import/export run via /operations)
+python scripts/ops/rebuild_index.py  # example maintenance job (import/export run via /operations)
 ```
 
 ### 9.2. Concurrency Model
@@ -504,4 +504,3 @@ python scripts/rebuild_index.py  # example maintenance job (import/export run vi
 - FAISS file operations: Lock during rebuild/snapshot operations
 - Background worker coordination: Pause/drain/resume controls
 - SQLite transactions: WAL mode with retry logic for transient locks
-

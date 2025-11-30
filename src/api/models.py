@@ -12,6 +12,9 @@ class CategoryResponse(BaseModel):
     name: str
     description: Optional[str] = None
     created_at: Optional[str] = None
+    experience_count: Optional[int] = Field(None, description="Number of experiences in this category")
+    manual_count: Optional[int] = Field(None, description="Number of manuals in this category")
+    total_count: Optional[int] = Field(None, description="Total entries (experiences + manuals)")
 
 
 class ListCategoriesResponse(BaseModel):
@@ -23,14 +26,14 @@ class ListCategoriesResponse(BaseModel):
 class ReadEntriesRequest(BaseModel):
     """Request model for reading entries."""
     entity_type: str = Field(..., description="'experience' or 'manual'")
-    category_code: str
+    category_code: Optional[str] = Field(default=None, description="Category code to filter by (None for global search)")
     query: Optional[str] = None
     ids: Optional[List[str]] = None
     limit: Optional[int] = None
     # v1.1 additions (backward compatible)
-    fields: Optional[List[str]] = Field(None, description="Field filter: 'preview' for snippets, specific fields for allowlist")
-    snippet_len: Optional[int] = Field(None, ge=80, le=640, description="Snippet length if fields=['preview']")
-    session_id: Optional[str] = Field(None, description="Session ID for tracking (prefer X-CHL-Session header)")
+    fields: Optional[List[str]] = Field(default=None, description="Field filter: 'preview' for snippets, specific fields for allowlist")
+    snippet_len: Optional[int] = Field(default=None, ge=80, le=640, description="Snippet length if fields=['preview']")
+    session_id: Optional[str] = Field(default=None, description="Session ID for tracking (prefer X-CHL-Session header)")
 
 
 class WriteEntryRequest(BaseModel):

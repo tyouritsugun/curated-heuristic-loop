@@ -24,20 +24,20 @@ SERVER_VERSION = "1.1.0"
 TOOL_INDEX = [
     {
         "name": "list_categories",
-        "description": "List all available category shelves with code and name.",
+        "description": "List all available category shelves with entry counts. Returns experience_count, manual_count, and total_count for each category. Use these counts to decide loading strategy: <20 entries = load all at once, >=20 = load previews first.",
         "example": {},
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals by ids or semantic query.",
+        "description": "Fetch experiences or manuals. Category-first: small shelves (<20) load full bodies via fields=['playbook']; large shelves (>=20) load previews, then fetch chosen IDs with fields=['playbook'] (ID lookup works globally, no category_code needed). Use global search only when the category is unclear: omit category_code and pass query='[SEARCH] ... [TASK] ...'. Default responses are previews unless fields include full bodies.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
-            "query": "handoff checklist",
+            "comment": "Large shelf pattern: first call read_entries(category_code='PGS') for previews, then read_entries(ids=['EXP-PGS-xxx'], fields=['playbook']) for full bodies. Use query='[SEARCH] ... [TASK] ...' without category_code only when the shelf is ambiguous."
         },
     },
     {
-        "name": "write_entry",
+        "name": "create_entry",
         "description": "Create a new experience or manual in a category. Prefer calling check_duplicates first to inspect similar entries.",
         "example": {
             "entity_type": "experience",
@@ -66,7 +66,7 @@ TOOL_INDEX = [
     },
     {
         "name": "check_duplicates",
-        "description": "Check for potential duplicate entries before calling write_entry.",
+        "description": "Check for potential duplicate entries before calling create_entry. Unavailable in CPU mode; fall back to manual comparison via read_entries.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
@@ -221,7 +221,7 @@ def build_handshake_payload() -> Dict[str, Any]:
                 ),
                 "duplicate_check": {
                     "overview": (
-                        "Phase 3: write_entry automatically checks for duplicates with 750ms timeout. "
+                        "Phase 3: create_entry automatically checks for duplicates with 750ms timeout. "
                         "All writes proceed (no blocking), but response includes duplicates and recommendations."
                     ),
                     "decision_tree": {
@@ -236,11 +236,11 @@ def build_handshake_payload() -> Dict[str, Any]:
                         "warnings": "['duplicate_check_timeout=true'] if check timed out"
                     },
                     "workflow": (
-                        "Check response.duplicates after write_entry. If recommendation='review_first', "
+                        "Check response.duplicates after create_entry. If recommendation='review_first', "
                         "suggest user reviews duplicates before keeping the new entry. "
                         "If duplicates present without recommendation, inform user as FYI."
                     ),
-                    "performance": "Adds +50-750ms latency to write_entry; no opt-out in v1.1"
+                    "performance": "Adds +50-750ms latency to create_entry; no opt-out in v1.1"
                 },
                 "session_memory": {
                     "overview": (

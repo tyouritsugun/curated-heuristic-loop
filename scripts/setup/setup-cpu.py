@@ -5,13 +5,13 @@ This script initializes the database and prepares the environment for running
 the MCP server in CPU mode (no vector search, no ML dependencies).
 
 Usage:
-    python scripts/setup-cpu.py
+    python scripts/setup/setup-cpu.py
 
 This setup is appropriate for CPU-only machines without GPU acceleration.
 It skips all ML model downloads and FAISS initialization.
 
 Prerequisites:
-    Run scripts/check_api_env.py and select CPU mode first.
+    Run scripts/setup/check_api_env.py and select CPU mode first.
     This creates data/runtime_config.json with backend="cpu".
 
 Environment Variables:
@@ -26,7 +26,7 @@ What this script does:
 5. Print next steps
 
 Example:
-    python scripts/setup-cpu.py
+    python scripts/setup/setup-cpu.py
 """
 import os
 import sys
@@ -35,7 +35,7 @@ import logging
 from pathlib import Path
 
 # Ensure repo root is on sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 root_str = str(PROJECT_ROOT)
 if root_str not in sys.path:
     sys.path.insert(0, root_str)
@@ -59,8 +59,6 @@ logging.basicConfig(
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).parent.parent
 
 # Starter category shelves (code, name, description)
 DEFAULT_CATEGORIES = [
@@ -136,7 +134,7 @@ def check_runtime_config() -> bool:
     if not runtime_config_path.exists():
         print("✗ Runtime configuration not found")
         print("\nPlease run diagnostics first:")
-        print("  python scripts/check_api_env.py")
+        print("  python scripts/setup/check_api_env.py")
         print("  (Select option 1 for CPU-only mode)")
         print("\nThis creates data/runtime_config.json with backend='cpu'.")
         return False
@@ -149,7 +147,7 @@ def check_runtime_config() -> bool:
         if backend != "cpu":
             print(f"✗ Runtime config has backend='{backend}', expected 'cpu'")
             print("\nFor CPU-only mode, run diagnostics and select option 1:")
-            print("  python scripts/check_api_env.py")
+            print("  python scripts/setup/check_api_env.py")
             return False
 
         print(f"✓ CPU-only mode confirmed (backend='cpu' from {runtime_config_path})")
@@ -394,7 +392,7 @@ def print_next_steps():
     print("  3. Use the web UI to add experiences and guidelines\n")
 
     print("\nNote: CPU-only mode uses SQLite text search (keyword matching).")
-    print("For semantic search capabilities, see setup-gpu.py and doc/manual.md.\n")
+    print("For semantic search capabilities, see scripts/setup/setup-gpu.py and doc/manual.md.\n")
 
     print("For more information, see:")
     print("  - doc/manual.md (Section 9: CPU-Only Mode)")

@@ -2,7 +2,7 @@
 """Search stack health and statistics for CHL
 
 Usage:
-    python scripts/search_health.py
+    python scripts/ops/search_health.py
 
 Output (JSON):
 {
@@ -21,7 +21,7 @@ Output (JSON):
 }
 
 Preconditions:
-  - Run setup first: python scripts/setup-gpu.py (for GPU mode) or python scripts/setup-cpu.py (for CPU-only mode)
+  - Run setup first: python scripts/setup/setup-gpu.py (for GPU mode) or python scripts/setup/setup-cpu.py (for CPU-only mode)
   - For FAISS stats, ML extras must be installed and models downloaded
 """
 import json
