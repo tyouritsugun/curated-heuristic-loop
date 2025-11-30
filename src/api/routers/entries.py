@@ -330,7 +330,7 @@ def read_entries(
 
 
 @router.post("/write", response_model=WriteEntryResponse)
-def write_entry(
+def create_entry(
     request: WriteEntryRequest,
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),

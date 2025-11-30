@@ -57,7 +57,7 @@ def read_entries(
     - `read_entries(entity_type='experience', ids=['EXP-PGS-xxx', 'EXP-DSD-yyy'])`
     - No category_code needed (IDs contain category prefix)
 
-    Note: List all without category_code is blocked (too much data)
+    Defaults: responses return previews unless you request body fields (e.g., fields=['playbook'] or ['content']); default limit is the server's read_details_limit (10). List all without category_code is blocked (too much data)
     """
     try:
         payload: Dict[str, Any] = {

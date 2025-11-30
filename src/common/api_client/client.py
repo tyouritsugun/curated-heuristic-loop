@@ -307,17 +307,22 @@ class CHLAPIClient:
     def read_entries(
         self,
         entity_type: str,
-        category_code: str,
+        category_code: Optional[str] = None,
         ids: Optional[List[str]] = None,
         query: Optional[str] = None,
         limit: Optional[int] = None,
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Read entries (experiences or manuals)."""
+        """Read entries (experiences or manuals).
+
+        category_code is optional to enable global search. For category-scoped
+        calls, pass the code; for global search omit it and provide a query.
+        """
         payload: Dict[str, Any] = {
             "entity_type": entity_type,
-            "category_code": category_code,
         }
+        if category_code is not None:
+            payload["category_code"] = category_code
         if ids is not None:
             payload["ids"] = ids
         if query is not None:

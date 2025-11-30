@@ -38,6 +38,7 @@ credentials/
 data/
 src/storage/migrations/
 AGENTS.md
+AGENTS.md.local
 
 # Environment files
 .env

@@ -63,12 +63,12 @@ If top score <0.50, reformulate the SEARCH phrase.
 
 ### 4. Load experiences
 **Category-scoped (when category is clear):**
-1. Call `list_categories()` to check entry counts
-2. Small category (<20): `read_entries(entity_type="experience", category_code=..., fields=['playbook'])`
-3. Large category (>=20): Load previews, then fetch by IDs with fields=['playbook']
+1. Call `list_categories()` to check entry counts.
+2. Small category (<20): `read_entries(entity_type="experience", category_code=..., fields=['playbook'], limit=25)` to fetch full bodies (default limit is 10).
+3. Large category (>=20): Load previews first (`read_entries(entity_type="experience", category_code=...)`), then fetch the chosen IDs with `fields=['playbook']`.
 
 **Global search (vague or cross-category):**
-- `read_entries(entity_type="experience", query="[SEARCH] ... [TASK] ...")`
+- `read_entries(entity_type="experience", query="[SEARCH] ... [TASK] ...")` (returns previews by default)
 - Omit category_code to search all categories
 - If top score <0.50, reformulate SEARCH phrase
 

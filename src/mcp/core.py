@@ -29,7 +29,7 @@ TOOL_INDEX = [
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals. Three modes: (1) Category-scoped: small (<20) load all with fields=['playbook'], large (>=20) progressive loading. (2) Global search: omit category_code, use query='[SEARCH] ... [TASK] ...' for vague/cross-category questions. (3) ID lookup: works globally without category_code.",
+        "description": "Fetch experiences or manuals. Three modes: (1) Category-scoped: small (<20) load all with fields=['playbook'] and limit≥count; large (>=20) progressive loading. (2) Global search: omit category_code, use query='[SEARCH] ... [TASK] ...' for vague/cross-category questions. (3) ID lookup: works globally without category_code. Default responses are previews unless fields include full bodies.",
         "example": {
             "entity_type": "experience",
             "query": "[SEARCH] security patterns [TASK] I need security best practices across all areas",
@@ -66,7 +66,7 @@ TOOL_INDEX = [
     },
     {
         "name": "check_duplicates",
-        "description": "Check for potential duplicate entries before calling write_entry.",
+        "description": "Check for potential duplicate entries before calling create_entry.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
@@ -221,7 +221,7 @@ def build_handshake_payload() -> Dict[str, Any]:
                 ),
                 "duplicate_check": {
                     "overview": (
-                        "Phase 3: write_entry automatically checks for duplicates with 750ms timeout. "
+                        "Phase 3: create_entry automatically checks for duplicates with 750ms timeout. "
                         "All writes proceed (no blocking), but response includes duplicates and recommendations."
                     ),
                     "decision_tree": {
@@ -236,11 +236,11 @@ def build_handshake_payload() -> Dict[str, Any]:
                         "warnings": "['duplicate_check_timeout=true'] if check timed out"
                     },
                     "workflow": (
-                        "Check response.duplicates after write_entry. If recommendation='review_first', "
+                        "Check response.duplicates after create_entry. If recommendation='review_first', "
                         "suggest user reviews duplicates before keeping the new entry. "
                         "If duplicates present without recommendation, inform user as FYI."
                     ),
-                    "performance": "Adds +50-750ms latency to write_entry; no opt-out in v1.1"
+                    "performance": "Adds +50-750ms latency to create_entry; no opt-out in v1.1"
                 },
                 "session_memory": {
                     "overview": (

@@ -36,7 +36,7 @@ Structure your response so the user (and future readers) can scan it quickly:
 - **Library gaps**: Bullet candidate insights that the library is missing or outdated entries that need revision.
 
 ### 4. Update the CHL library via MCP tools
-**Duplicate detection note:** In CPU-only mode, similarity detection uses simple text matching. The `similar_entries` returned by `create_entry` may miss conceptually similar entries with different wording. Consider broader keyword searches before creating new entries.
+**Duplicate detection note:** In CPU-only mode, similarity detection uses simple text matching. The `duplicates` returned by `create_entry` may miss conceptually similar entries with different wording. Consider broader keyword searches before creating new entries.
 
 Decide how to capture each insight:
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
