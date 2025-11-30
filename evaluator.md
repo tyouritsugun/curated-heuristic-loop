@@ -22,13 +22,13 @@ Structure your response so the user (and future readers) can scan it quickly:
 
 ### 4. Update the CHL library via MCP tools
 Decide how to capture each insight:
-- **New atomic experience (`write_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
+- **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
 - **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and keep `context` empty for useful/harmful entries.
-- **Manual adjustments (`write_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the manual becomes too long, consider splitting it and note the recommendation for curators.
+- **Manual adjustments (`create_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the manual becomes too long, consider splitting it and note the recommendation for curators.
 
 Before writing:
 1. Reuse `read_entries("experience", category_code, ids=[...])` to ensure you are not duplicating an existing entry. Similarity scores from the server are hints, not hard rules—apply judgement.
-2. When proposing a new entry, call `check_duplicates` with the candidate title and full playbook/content (`limit=1`) before `write_entry`. If the top candidate has a high similarity score, prefer updating/merging that entry or explain explicitly why a new atomic entry is warranted.
+2. When proposing a new entry, call `check_duplicates` with the candidate title and full playbook/content (`limit=1`) before `create_entry`. If the top candidate has a high similarity score, prefer updating/merging that entry or explain explicitly why a new atomic entry is warranted.
 3. Keep new playbooks generic: avoid repository-specific filenames, user handles, or transient ticket numbers.
 
 When you call the MCP tools:

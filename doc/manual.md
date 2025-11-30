@@ -190,7 +190,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 
 ### 3.1. End-to-End Workflow
 
-1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`write_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
+1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`create_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
 2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/rebuild_index.py`. This process generates embeddings for all `pending` entries.
 3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using the API server's Operations dashboard (or `GET /api/v1/entries/export` for automation).
 4.  **Curate (Curator):** The curator reviews the submitted entries in Google Sheets, merging duplicates, editing for clarity, and approving the highest-quality insights.
@@ -200,7 +200,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 
 1.  **Startup:** The MCP service loads its configuration and advertises available categories via `list_categories`.
 2.  **Generator Mode:** The assistant queries for relevant entries using `read_entries(query=...)`.
-3.  **Evaluator Mode:** The assistant writes new knowledge using `write_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
+3.  **Evaluator Mode:** The assistant writes new knowledge using `create_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
 4.  **Knowledge scope:** CHL stores manuals and experiences (shared heuristics), not domain- or product-specific content (e.g., no customer-specific page designs). Treat the KB as generic process/UX/code heuristics organized by category.
 
 ### 3.3. Review and Governance

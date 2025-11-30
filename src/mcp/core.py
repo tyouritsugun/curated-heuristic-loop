@@ -29,16 +29,15 @@ TOOL_INDEX = [
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals. Strategy depends on category size (check list_categories first): Small category (<20 entries) - load all with fields=['playbook'] to get full content at once. Large category (>=20) - (1) list previews first (omit all params), (2) retrieve full content by IDs with fields=['playbook'], (3) search by query only if needed.",
+        "description": "Fetch experiences or manuals. Three modes: (1) Category-scoped: small (<20) load all with fields=['playbook'], large (>=20) progressive loading. (2) Global search: omit category_code, use query='[SEARCH] ... [TASK] ...' for vague/cross-category questions. (3) ID lookup: works globally without category_code.",
         "example": {
             "entity_type": "experience",
-            "category_code": "PGS",
-            "fields": ["playbook"],
-            "comment": "For small categories: load all with full content. For large: list previews → ids=['EXP-PGS-xxx'], fields=['playbook'] → get full content"
+            "query": "[SEARCH] security patterns [TASK] I need security best practices across all areas",
+            "comment": "Global search (no category_code). Category-scoped: category_code='PGS', fields=['playbook']. ID lookup: ids=['EXP-PGS-xxx']"
         },
     },
     {
-        "name": "write_entry",
+        "name": "create_entry",
         "description": "Create a new experience or manual in a category. Prefer calling check_duplicates first to inspect similar entries.",
         "example": {
             "entity_type": "experience",

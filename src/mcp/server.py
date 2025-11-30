@@ -25,7 +25,7 @@ from src.mcp.utils import create_error_response
 from src.mcp.handlers_entries import (
     list_categories,
     read_entries,
-    write_entry,
+    create_entry,
     update_entry,
     check_duplicates,
 )
@@ -166,7 +166,7 @@ def init_server() -> None:
     # Register tools
     mcp.tool()(list_categories)
     mcp.tool()(read_entries)
-    mcp.tool()(write_entry)
+    mcp.tool()(create_entry)
     mcp.tool()(update_entry)
     mcp.tool()(check_duplicates)
     mcp.tool()(get_guidelines)

@@ -84,9 +84,9 @@ def test_categories(client: CHLAPIClient) -> None:
         sys.exit(1)
 
 
-def test_write_entry(client: CHLAPIClient, category_code: str = "PGS") -> str:
-    """Test writing an experience entry."""
-    print(f"\n✍️  Testing write entry to category '{category_code}'...")
+def test_create_entry(client: CHLAPIClient, category_code: str = "PGS") -> str:
+    """Test creating an experience entry."""
+    print(f"\n✍️  Testing create entry to category '{category_code}'...")
 
     timestamp = int(time.time())
     payload = {
@@ -94,7 +94,7 @@ def test_write_entry(client: CHLAPIClient, category_code: str = "PGS") -> str:
         "playbook": (
             "This is a test entry created during CPU-mode smoke testing.\n"
             "It validates that:\n"
-            "1. The API server can write entries without GPU/ML dependencies\n"
+            "1. The API server can create entries without GPU/ML dependencies\n"
             "2. Database operations work correctly\n"
             "3. Text search will index this entry"
         ),
@@ -103,7 +103,7 @@ def test_write_entry(client: CHLAPIClient, category_code: str = "PGS") -> str:
 
     try:
         start = time.time()
-        response = client.write_entry(
+        response = client.create_entry(
             entity_type="experience",
             category_code=category_code,
             data=payload,
@@ -197,7 +197,7 @@ def main() -> int:
     # Run tests
     health_data = check_health(client)
     test_categories(client)
-    entry_id = test_write_entry(client)
+    entry_id = test_create_entry(client)
     test_text_search(client)
     test_read_by_id(client, entry_id)
 

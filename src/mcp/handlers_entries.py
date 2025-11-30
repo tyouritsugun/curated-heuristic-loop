@@ -34,48 +34,37 @@ def list_categories() -> Dict[str, Any]:
 
 def read_entries(
     entity_type: str,
-    category_code: str,
+    category_code: Optional[str] = None,
     query: Optional[str] = None,
     ids: Optional[List[str]] = None,
     limit: Optional[int] = None,
     fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Retrieve experiences or manuals from a category.
+    Retrieve experiences or manuals.
 
-    USAGE PATTERNS (choose based on category size from list_categories):
+    USAGE PATTERNS:
 
-    **If category is small (total_count < 20):**
-    1. LIST ALL WITH FULL CONTENT - Load everything at once
-       - Example: read_entries(entity_type='experience', category_code='PGS', fields=['playbook'])
-       - Returns: Full content for all entries (complete knowledge base in one call)
+    **1. Category-scoped (when category is clear):**
+    - Small category (<20): `read_entries(entity_type='experience', category_code='PGS', fields=['playbook'])`
+    - Large category (>=20): Load previews first, then fetch by IDs with fields=['playbook']
 
-    **If category is large (total_count >= 20):**
-    1. LIST PREVIEWS FIRST - Get titles/snippets + IDs
-       - Example: read_entries(entity_type='experience', category_code='PGS')
-       - Returns: Previews only (playbook_preview, truncated)
+    **2. Global search (cross-category or vague questions):**
+    - `read_entries(entity_type='experience', query='[SEARCH] ... [TASK] ...')`
+    - Omit category_code to search all categories
 
-    2. RETRIEVE FULL CONTENT BY IDS - Fetch details for relevant entries
-       - Example: read_entries(entity_type='experience', category_code='PGS',
-                               ids=['EXP-PGS-xxx', 'EXP-PGS-yyy'], fields=['playbook'])
-       - Returns: Full content for specified entries only
+    **3. ID lookup (works globally):**
+    - `read_entries(entity_type='experience', ids=['EXP-PGS-xxx', 'EXP-DSD-yyy'])`
+    - No category_code needed (IDs contain category prefix)
 
-    3. SEARCH BY QUERY (lowest priority) - Find specific patterns if needed
-       - Example: read_entries(entity_type='experience', category_code='PGS',
-                               query='[SEARCH] handoff checklist [TASK] I need handoff process')
-       - Returns: Semantically ranked results with previews
-
-    RECOMMENDED WORKFLOW:
-    1. If haven't yet, call list_categories() to see entry counts
-    2. If small category: Load all with full content in one call
-    3. If large category: Load previews → pick relevant IDs → fetch full content
-    4. Use search only when you need specific patterns
+    Note: List all without category_code is blocked (too much data)
     """
     try:
         payload: Dict[str, Any] = {
             "entity_type": entity_type,
-            "category_code": category_code,
         }
+        if category_code is not None:
+            payload["category_code"] = category_code
         if query is not None:
             payload["query"] = query
         if ids is not None:
@@ -119,7 +108,7 @@ def read_entries(
         raise MCPError(f"Unexpected error: {exc}") from exc
 
 
-def write_entry(
+def create_entry(
     entity_type: str,
     category_code: str,
     data: Dict[str, Any],
@@ -210,4 +199,4 @@ def check_duplicates(
         raise MCPError(f"Unexpected error: {exc}") from exc
 
 
-__all__ = ["list_categories", "read_entries", "write_entry", "update_entry", "check_duplicates"]
+__all__ = ["list_categories", "read_entries", "create_entry", "update_entry", "check_duplicates"]

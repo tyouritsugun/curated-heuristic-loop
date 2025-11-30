@@ -208,7 +208,7 @@ sequenceDiagram
     participant DB as SQLite
 
     Dev->>LLM: Summarize with @evaluator.md
-    LLM->>MCP: write_entry(data)
+    LLM->>MCP: create_entry(data)
     MCP->>API: POST /api/v1/entries/write
     API->>REPO: Create entry
 
@@ -394,7 +394,7 @@ The MCP server provides a simple, tool-based interface for AI assistants:
 
 - `list_categories()` - List all available category shelves
 - `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or manuals
-- `write_entry(entity_type, category_code, data)` - Create new entry
+- `create_entry(entity_type, category_code, data)` - Create new entry
 - `update_entry(entity_type, category_code, entry_id, updates)` - Update existing entry
 - `get_guidelines(guide_type)` - Return generator or evaluator workflow manual
 

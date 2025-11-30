@@ -76,14 +76,16 @@ def read_entries(
     X-CHL-Session header is provided.
     """
     try:
-        # Validate category exists
+        # Validate category exists (skip if None for global search)
         cat_repo = CategoryRepository(session)
-        category = cat_repo.get_by_code(request.category_code)
-        if not category:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Category '{request.category_code}' not found"
-            )
+        category = None
+        if request.category_code is not None:
+            category = cat_repo.get_by_code(request.category_code)
+            if not category:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Category '{request.category_code}' not found"
+                )
 
         limit = request.limit if request.limit is not None else (config.read_details_limit if config else 10)
 
@@ -159,9 +161,16 @@ def read_entries(
             else:
                 # ID lookup or list all
                 if request.ids:
+                    # ID lookup works globally (IDs contain category prefix)
                     entities = [exp_repo.get_by_id(i) for i in request.ids]
                     entities = [e for e in entities if e is not None]
                 else:
+                    # List all requires category_code
+                    if request.category_code is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="category_code required to list all entries (use query parameter for global search)"
+                        )
                     all_exps = exp_repo.get_by_category(request.category_code)
                     entities = all_exps[:limit]
 
@@ -256,9 +265,16 @@ def read_entries(
             else:
                 # ID lookup or list all
                 if request.ids:
+                    # ID lookup works globally (IDs contain category prefix)
                     entities = [man_repo.get_by_id(i) for i in request.ids]
                     entities = [e for e in entities if e is not None]
                 else:
+                    # List all requires category_code
+                    if request.category_code is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="category_code required to list all entries (use query parameter for global search)"
+                        )
                     all_mans = man_repo.get_by_category(request.category_code)
                     entities = all_mans[:limit]
 
@@ -300,7 +316,7 @@ def read_entries(
             store.add_viewed_ids(session_id, viewed_ids)
 
         meta = {
-            "category": {"code": category.code, "name": category.name},
+            "category": {"code": category.code, "name": category.name} if category else None,
             "search_mode": _runtime_search_mode(config, search_service),
         }
 

@@ -23,9 +23,10 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 1. Restate the user's ask in your own words and confirm any missing details.
 2. Capture the intended persona, output format, and success criteria in your scratchpad—this informs the queries you compose next.
 
-### 2. Pick a single shelf
-1. Run `list_categories` only if you need a refresher of the available shelves.
-2. Choose the one category that best matches the work. If you truly need two, finish one pass end-to-end before switching.
+### 2. Decide search scope
+1. **Clear category match**: If the task clearly fits one category (e.g., page spec → PGS, database → DSD), use category-scoped search.
+2. **Vague or cross-category**: If unclear which category or spans multiple domains, use global search (omit category_code).
+3. Run `list_categories` if you need to see available shelves and their sizes.
 
 ### 3. Craft two-phase queries
 
@@ -60,23 +61,24 @@ Search uses two phases:
 
 If top score <0.50, reformulate the SEARCH phrase.
 
-### 4. Load experiences (size-based strategy)
+### 4. Load experiences
+**Category-scoped (when category is clear):**
 1. Call `list_categories()` to check entry counts
-2. **Small category (<20 entries)**: Load all at once
-   - `read_entries(entity_type="experience", category_code=..., fields=['playbook'])`
-   - Gets complete knowledge base in one call
-3. **Large category (>=20 entries)**: Progressive loading
-   - Load previews: `read_entries(entity_type="experience", category_code=...)`
-   - Fetch full content by IDs: `read_entries(..., ids=['EXP-xxx'], fields=['playbook'])`
-   - Search if needed: `read_entries(..., query="[SEARCH] ... [TASK] ...")` (top score <0.50 → reformulate)
+2. Small category (<20): `read_entries(entity_type="experience", category_code=..., fields=['playbook'])`
+3. Large category (>=20): Load previews, then fetch by IDs with fields=['playbook']
 
-### 5. Run a duplicate check before writing
-1. Before calling `write_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
+**Global search (vague or cross-category):**
+- `read_entries(entity_type="experience", query="[SEARCH] ... [TASK] ...")`
+- Omit category_code to search all categories
+- If top score <0.50, reformulate SEARCH phrase
+
+### 5. Run a duplicate check before creating
+1. Before calling `create_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
    - `check_duplicates(entity_type=\"experience\", category_code=..., title=..., content=..., limit=1)`
 2. If the top candidate has a high similarity score (e.g., >0.85):
    - Prefer updating/merging the existing entry via `update_entry` when appropriate.
-   - If you still decide to write a new entry (because it captures a genuinely different pattern), explicitly explain why in your response.
-3. If no strong candidate is returned, proceed to `write_entry` as usual.
+   - If you still decide to create a new entry (because it captures a genuinely different pattern), explicitly explain why in your response.
+3. If no strong candidate is returned, proceed to `create_entry` as usual.
 
 ### 6. Layer manuals only when they change the plan
 - Use `entity_type=\"manual\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).

@@ -52,7 +52,7 @@ def main() -> int:
     print(f"[write_entry_smoke] Writing experience in category '{category_code}'...")
     start = time.time()
     try:
-        response = client.write_entry(
+        response = client.create_entry(
             entity_type="experience",
             category_code=category_code,
             data=payload,

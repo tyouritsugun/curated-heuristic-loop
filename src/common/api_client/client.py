@@ -336,14 +336,14 @@ class CHLAPIClient:
         except requests.HTTPError as exc:
             raise APIOperationError(f"Failed to read entries: {exc}") from exc
 
-    def write_entry(
+    def create_entry(
         self,
         entity_type: str,
         category_code: str,
         data: Dict[str, Any],
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Write a new entry."""
+        """Create a new entry."""
         payload = {
             "entity_type": entity_type,
             "category_code": category_code,
@@ -359,7 +359,7 @@ class CHLAPIClient:
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
-            raise APIOperationError(f"Failed to write entry: {exc}") from exc
+            raise APIOperationError(f"Failed to create entry: {exc}") from exc
 
     def update_entry(
         self,
