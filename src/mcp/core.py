@@ -29,11 +29,11 @@ TOOL_INDEX = [
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals. Three modes: (1) Category-scoped: small (<20) load all with fields=['playbook'] and limit≥count; large (>=20) progressive loading. (2) Global search: omit category_code, use query='[SEARCH] ... [TASK] ...' for vague/cross-category questions. (3) ID lookup: works globally without category_code. Default responses are previews unless fields include full bodies.",
+        "description": "Fetch experiences or manuals. Category-first: small shelves (<20) load full bodies via fields=['playbook']; large shelves (>=20) load previews, then fetch chosen IDs with fields=['playbook'] (ID lookup works globally, no category_code needed). Use global search only when the category is unclear: omit category_code and pass query='[SEARCH] ... [TASK] ...'. Default responses are previews unless fields include full bodies.",
         "example": {
             "entity_type": "experience",
-            "query": "[SEARCH] security patterns [TASK] I need security best practices across all areas",
-            "comment": "Global search (no category_code). Category-scoped: category_code='PGS', fields=['playbook']. ID lookup: ids=['EXP-PGS-xxx']"
+            "category_code": "PGS",
+            "comment": "Large shelf pattern: first call read_entries(category_code='PGS') for previews, then read_entries(ids=['EXP-PGS-xxx'], fields=['playbook']) for full bodies. Use query='[SEARCH] ... [TASK] ...' without category_code only when the shelf is ambiguous."
         },
     },
     {
