@@ -23,10 +23,10 @@ Before running the demo, complete the main installation steps in the README:
 3. Initialize database
 4. Start API server
 5. Install MCP server
-6. Configure agent instructions - add CHL instructions to your AGENTS.md:
-   - **No AGENTS.md yet?** Ask your code assistant to create one from AGENTS.md.sample, or copy from a coworker
-   - **Already have AGENTS.md?** Ask your code assistant to merge in the CHL instructions from AGENTS.md.sample
-   - Then add your AGENTS.md contents to your code assistant's common instructions
+6. Configure agent instructions - Ask your code assistant to set up CHL instructions:
+   - **Recommended approach:** Ask your code assistant: "Please copy AGENTS.md.sample to the appropriate location so you can read it automatically in this project" (e.g., for Claude Code, this would be `.claude/instructions.md`)
+   - Different code assistants have different configuration systems - letting the assistant handle this ensures it uses the right approach for its platform
+   - The assistant will know whether to copy to `.claude/`, update global settings, or use another method specific to its system
 
 The demo script `scripts/demo_datapipe_bug.py` is included in the repository and ready to run.
 
@@ -51,7 +51,7 @@ Run the demo script to simulate a DataPipe failure:
 source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
 
 # Run the buggy script
-python scripts/demo_datapipe_bug.py
+python3 scripts/setup/demo_datapipe_bug.py
 ```
 
 The script will:

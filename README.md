@@ -384,17 +384,14 @@ If `uv` complains about permissions in `~/.cache/uv`, set `UV_CACHE_DIR` in `env
 
 **Configure agent instructions:**
 
-To keep assistants from forgetting to call MCP tools and to prompt for reflections, add the CHL agent instructions to your project's AGENTS.md:
+To keep assistants from forgetting to call MCP tools and to prompt for reflections, configure CHL instructions for your code assistant:
 
-**If you don't have AGENTS.md yet:**
-- Ask your code assistant: "Please read AGENTS.md.sample and create an AGENTS.md for my project"
-- Or copy from a coworker who already has good agent instructions set up
-- Or as a last resort: `cp AGENTS.md.sample AGENTS.md`
+- **Recommended approach:** Ask your code assistant: "Please copy AGENTS.md.sample to the appropriate location so you can read it automatically in this project"
+  - For example, Claude Code uses `.claude/instructions.md`, Cursor may use project-level configuration, etc.
+  - Different code assistants have different configuration systems - letting the assistant handle this ensures it uses the right approach for its platform
+  - The assistant will know where to copy and whether needs to rename it to following the convention.
 
-**If you already have AGENTS.md:**
-- Ask your code assistant: "Please merge the CHL instructions into my existing AGENTS.md, the instructions are `{copy of AGENTS.md.sample}`"
-
-These CHL instructions in the standard `AGENTS.md` ensure the assistant:
+These CHL instructions ensure the assistant:
 - Calls `list_categories()` and `get_guidelines()` at startup
 - Uses CHL MCP tools for retrieval instead of guessing
 - Prompts for reflection and curation at conversation end

@@ -19,7 +19,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+# Platform-specific check scripts live alongside this launcher inside scripts/setup
+SCRIPTS_DIR = PROJECT_ROOT / "scripts" / "setup"
 DATA_DIR = PROJECT_ROOT / "data"
 HELP_PROMPT_PATH = DATA_DIR / "hardware_selection_help.txt"
 
