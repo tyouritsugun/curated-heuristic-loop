@@ -24,15 +24,15 @@ Core environment variables:
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
 
 Search & retrieval:
-- Backend is automatically determined from data/runtime_config.json (created by scripts/check_api_env.py)
+- Backend is automatically determined from data/runtime_config.json (created by scripts/setup/check_api_env.py)
   - cpu: Text search only via SQLite LIKE queries (no ML dependencies)
   - metal/cuda/rocm: Vector search with FAISS + embeddings (graceful fallback to text search)
-- CHL_BACKEND: Optional override for runtime backend (not recommended - use check_api_env.py instead)
+- CHL_BACKEND: Optional override for runtime backend (not recommended - use scripts/setup/check_api_env.py instead)
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
 
 Model selection (GGUF quantized):
-- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup-gpu.py`)
+- CHL_EMBEDDING_REPO: Advanced override for embedding repo (defaults to selection recorded by `scripts/setup/setup-gpu.py`)
 - CHL_EMBEDDING_QUANT: Advanced override for embedding quantization (defaults via setup)
 - CHL_RERANKER_REPO: Advanced override for reranker repo (defaults via setup)
 - CHL_RERANKER_QUANT: Advanced override for reranker quantization (defaults via setup)

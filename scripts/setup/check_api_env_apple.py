@@ -24,7 +24,7 @@ def _extend_sys_path() -> None:
     import sys
     from pathlib import Path
 
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parents[2]
     root_str = str(project_root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
@@ -106,7 +106,7 @@ def _ensure_api_stopped(api_url: str, force: bool) -> None:
             This script is intended for pre-installation checks only.
 
             If you are sure it is safe to proceed, re-run with:
-              python scripts/check_api_env_apple.py --force
+              python scripts/setup/check_api_env_apple.py --force
             """
         ).strip()
         print(msg)

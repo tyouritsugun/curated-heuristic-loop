@@ -23,7 +23,7 @@ The API and MCP servers communicate exclusively via HTTP (default: `http://local
 Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
 
 ```bash
-python3 scripts/check_api_env.py
+python3 scripts/setup/check_api_env.py
 ```
 
 This script checks:
@@ -157,7 +157,7 @@ python -m pip install -r requirements_apple.txt
 # Continue with Step 3 to download models and initialize the database, then Step 4 to start the server.
 
 **Notes:**
-- Default model choice (via `scripts/check_api_env.py` → `scripts/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
+- Default model choice (via `scripts/setup/check_api_env.py` → `scripts/setup/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
 
 </details>
 
@@ -264,7 +264,7 @@ cp .env.sample .env
 source .venv-cpu/bin/activate
 
 # Initialize database with default categories
-python scripts/setup-cpu.py
+python scripts/setup/setup-cpu.py
 ```
 
 This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sample DataPipe bug reporting guidance for the optional demo (see Step 7).
@@ -275,10 +275,10 @@ This seeds 12 default categories (TMG, PGS, etc.). The TMG category includes sam
 source .venv-apple/bin/activate  # Or .venv-nvidia, .venv-amd, .venv-intel
 
 # Download models and initialize database using recommended/active models
-python scripts/setup-gpu.py
+python scripts/setup/setup-gpu.py
 
 # (Optional) Open interactive model selection menu
-python scripts/setup-gpu.py --select-models
+python scripts/setup/setup-gpu.py --select-models
 ```
 
 ### Step 4: Start API Server
@@ -425,9 +425,9 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 
 To switch between CPU and GPU modes:
 1. Stop the API server
-2. Run `python scripts/check_api_env.py` and select target mode (updates `runtime_config.json`)
+2. Run `python scripts/setup/check_api_env.py` and select target mode (updates `runtime_config.json`)
 3. Create new venv for target mode and install corresponding requirements file
-4. GPU mode only: Run `python scripts/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
+4. GPU mode only: Run `python scripts/setup/setup-gpu.py --download-models` and rebuild embeddings via `/operations`
 5. Start API server (automatically uses backend from `runtime_config.json`)
 
 > **Note**: FAISS snapshots are not portable between modes. Switching requires rebuilding search index in the target mode.
@@ -440,8 +440,8 @@ After initial installation, use the web dashboards for most operations:
 - **Settings**: Use `/settings` dashboard for configuration, model selection, and JSON backup
 
 **CLI scripts** (activate API server venv first: `source .venv-cpu/bin/activate`):
-- `python scripts/rebuild_index.py` – rebuild search index if needed
-- `python scripts/search_health.py` – check search system health
+- `python scripts/ops/rebuild_index.py` – rebuild search index if needed
+- `python scripts/ops/search_health.py` – check search system health
 
 ## Managing Categories
 

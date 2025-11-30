@@ -93,7 +93,7 @@ flowchart LR
   2. Curators merge the submissions, apply duplicate guidance, and stage recommendations directly in Google Sheets.
   3. During the session, reviewers walk each tab, accept or merge clusters, edit titles/playbooks, and annotate merge targets.
   4. Approved entries populate the Published Sheet; rejected rows receive curator notes and stay local.
-  5. After publishing, teammates trigger the Import Spreadsheet operation (`/operations` UI or `POST /api/v1/operations/import-sheets`) to overwrite local entries and then rebuild/upload a FAISS snapshot (via `/operations` or `python scripts/rebuild_index.py`) so vector search reflects the curated data.
+  5. After publishing, teammates trigger the Import Spreadsheet operation (`/operations` UI or `POST /api/v1/operations/import-sheets`) to overwrite local entries and then rebuild/upload a FAISS snapshot (via `/operations` or `python scripts/ops/rebuild_index.py`) so vector search reflects the curated data.
 ```mermaid
 flowchart TD
     Exporter[API Export Job] --> ReviewSheet[Google Review Sheet]

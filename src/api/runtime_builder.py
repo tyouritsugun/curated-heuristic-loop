@@ -16,7 +16,7 @@ def build_mode_runtime(config: Config, db: Database, worker_control: WorkerContr
     """Build ModeRuntime based on backend configuration.
 
     The backend is automatically determined from runtime_config.json (created by
-    scripts/check_api_env.py). CPU backend uses text search only, GPU backends
+    scripts/setup/check_api_env.py). CPU backend uses text search only, GPU backends
     (metal/cuda/rocm) use vector search with graceful fallback to text search.
     """
     backend = getattr(config, "backend", "cpu")

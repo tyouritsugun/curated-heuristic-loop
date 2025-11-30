@@ -44,7 +44,7 @@ python scripts/publish_to_canonical.py --input merged.csv --sheet-id <PUBLISHED_
 
 # 6) Team imports new baseline (after publish)
 python scripts/import_from_sheets.py --sheet-id <PUBLISHED_SHEET_ID>
-python scripts/rebuild_index.py
+python scripts/ops/rebuild_index.py
 ```
 
 Solo developer: same steps, omit `--compare-pending`.

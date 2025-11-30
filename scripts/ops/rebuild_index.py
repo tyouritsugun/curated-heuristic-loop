@@ -2,7 +2,7 @@
 """Trigger FAISS index rebuild via the API operations endpoint.
 
 Usage:
-    python scripts/rebuild_index.py
+    python scripts/ops/rebuild_index.py
 
 This script now delegates rebuild work to `/api/v1/operations/rebuild-index`.
 The API server must be running and configured with GPU/FAISS support.

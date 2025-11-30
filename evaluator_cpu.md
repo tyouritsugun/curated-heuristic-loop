@@ -36,7 +36,7 @@ Structure your response so the user (and future readers) can scan it quickly:
 - **Library gaps**: Bullet candidate insights that the library is missing or outdated entries that need revision.
 
 ### 4. Update the CHL library via MCP tools
-**Duplicate detection note:** In CPU-only mode, similarity detection uses simple text matching. The `duplicates` returned by `create_entry` may miss conceptually similar entries with different wording. Consider broader keyword searches before creating new entries.
+**Duplicate detection note:** In CPU-only mode, semantic duplicate detection is unavailable. Skip `check_duplicates` and instead load likely overlaps with `read_entries` (category-scoped keyword queries and/or id lookups) and manually compare before deciding to create.
 
 Decide how to capture each insight:
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
@@ -44,7 +44,7 @@ Decide how to capture each insight:
 - **Manual adjustments (`create_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the manual becomes too long, consider splitting it and note the recommendation for curators.
 
 Before writing:
-1. Use multiple keyword searches with `read_entries` to check for duplicates. Try variations of key terms (e.g., search both "validation" and "validate").
+1. Manually check for duplicates: use multiple keyword `read_entries` calls in the target category (previews are fine) and scan titles/contents yourself; `check_duplicates` is not reliable/available in CPU mode.
 2. Keep new playbooks generic: avoid repository-specific filenames, user handles, or transient ticket numbers.
 3. Include important keywords in titles and summaries to improve future discoverability via keyword search.
 

@@ -2,7 +2,7 @@
 """Trigger embedding sync via the API operations endpoint.
 
 Usage:
-    python scripts/sync_embeddings.py [--retry-failed] [--max-count N]
+    python scripts/ops/sync_embeddings.py [--retry-failed] [--max-count N]
 
 This script now triggers `/api/v1/operations/sync-embeddings`. The actual
 sync (including FAISS updates) runs inside the API server.

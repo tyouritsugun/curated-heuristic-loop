@@ -245,7 +245,7 @@ def search_health(
     """
     Return search stack health information.
 
-    Mirrors the information previously produced by `scripts/search_health.py`:
+    Mirrors the information previously produced by `scripts/ops/search_health.py`:
     - Total counts for experiences/manuals
     - Embedding status summary
     - FAISS availability and basic stats (GPU mode only)

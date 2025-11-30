@@ -26,13 +26,13 @@ See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running C
 
 The setup scripts initialize your local environment. Choose the appropriate script based on your setup:
 
-- `setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
-- `setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
+- `setup/setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
+- `setup/setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
 
 **Command (GPU mode):**
 ```bash
 # In the API server venv you created with requirements_apple.txt or requirements_nvidia.txt
-python scripts/setup-gpu.py
+python scripts/setup/setup-gpu.py
 ```
 
 **What GPU setup does:**
@@ -46,7 +46,7 @@ python scripts/setup-gpu.py
 **Command (CPU-only mode):**
 ```bash
 # In the API server venv you created with requirements_cpu.txt
-python scripts/setup-cpu.py
+python scripts/setup/setup-cpu.py
 ```
 
 **What CPU-only setup does:**
@@ -191,7 +191,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 ### 3.1. End-to-End Workflow
 
 1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`create_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
-2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/rebuild_index.py`. This process generates embeddings for all `pending` entries.
+2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/ops/rebuild_index.py`. This process generates embeddings for all `pending` entries.
 3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using the API server's Operations dashboard (or `GET /api/v1/entries/export` for automation).
 4.  **Curate (Curator):** The curator reviews the submitted entries in Google Sheets, merging duplicates, editing for clarity, and approving the highest-quality insights.
 5.  **Distribute (Developer):** Developers sync their local databases from the Published Sheet using the API server import job (`/operations` dashboard or `POST /api/v1/operations/import-sheets`). This updates their local knowledge base with the latest curated heuristics.
@@ -228,11 +228,11 @@ For automation and scripting, activate the API server venv first, then use these
 ### 5.1. Search and Indexing
 -   **Rebuild Search Index:** Regenerates embeddings and the FAISS index from scratch.
     ```bash
-    python scripts/rebuild_index.py
+    python scripts/ops/rebuild_index.py
     ```
 -   **Check Search Health:** Inspects the status of the search index and embeddings.
     ```bash
-    python scripts/search_health.py
+    python scripts/ops/search_health.py
     ```
 
 ### 5.2. Data Synchronization
@@ -337,7 +337,7 @@ While `scripts/scripts_config.yaml` is preferred, the scripts and server can be 
 - `EXPORT_SPREADSHEET_ID` - Google Sheets ID for review/export
 - `IMPORT_SPREADSHEET_ID` - Google Sheets ID for published/import
 
-**Note:** The backend (cpu/metal/nvidia/amd) is automatically determined from `data/runtime_config.json` (created by `scripts/check_api_env.py`). No manual configuration needed.
+**Note:** The backend (cpu/metal/nvidia/amd) is automatically determined from `data/runtime_config.json` (created by `scripts/setup/check_api_env.py`). No manual configuration needed.
 
 For a complete list of configuration options, see [src/common/config/config.py](../src/common/config/config.py).
 
@@ -369,14 +369,14 @@ python -m pip install -r requirements_cpu.txt
 
 Run diagnostics to configure CPU mode:
 ```bash
-python scripts/check_api_env.py
+python scripts/setup/check_api_env.py
 # Select option 1 for CPU-only mode
 # This creates data/runtime_config.json with backend="cpu"
 ```
 
 Run setup (no ML model downloads):
 ```bash
-python scripts/setup-cpu.py
+python scripts/setup/setup-cpu.py
 ```
 
 Start the server:

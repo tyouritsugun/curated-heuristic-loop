@@ -5,10 +5,10 @@ This script initializes the database, downloads ML models (if not cached), and
 prepares the environment for running the MCP server.
 
 Usage:
-    python scripts/setup-gpu.py                      # Automatic setup using recommended/active models
-    python scripts/setup-gpu.py --download-models    # Ensure models are downloaded (non-interactive)
-    python scripts/setup-gpu.py --select-models      # Interactive menu to select model sizes
-    python scripts/setup-gpu.py --force-models       # Re-download models (advanced)
+    python scripts/setup/setup-gpu.py                      # Automatic setup using recommended/active models
+    python scripts/setup/setup-gpu.py --download-models    # Ensure models are downloaded (non-interactive)
+    python scripts/setup/setup-gpu.py --select-models      # Interactive menu to select model sizes
+    python scripts/setup/setup-gpu.py --force-models       # Re-download models (advanced)
 
 The setup script is fully automatic:
 - Auto-creates data/ directory if missing
@@ -33,10 +33,10 @@ What this script does:
 
 Example:
     # Simple automatic setup (recommended)
-    python scripts/setup-gpu.py
+    python scripts/setup/setup-gpu.py
 
     # Force re-download models (if corrupted)
-    python scripts/setup-gpu.py --force-models
+    python scripts/setup/setup-gpu.py --force-models
 """
 import os
 import sys
@@ -52,7 +52,7 @@ from pathlib import Path
 import sys
 
 # Ensure repo root is on sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 root_str = str(PROJECT_ROOT)
 if root_str not in sys.path:
     sys.path.insert(0, root_str)

@@ -32,7 +32,7 @@ The demo script `scripts/demo_datapipe_bug.py` is included in the repository and
 
 ## Sample Data
 
-The demo requires TMG (Ticket Management) category data with DataPipe bug reporting guidance. This data is automatically seeded when you run `python scripts/setup-cpu.py` or `python scripts/setup-gpu.py`.
+The demo requires TMG (Ticket Management) category data with DataPipe bug reporting guidance. This data is automatically seeded when you run `python scripts/setup/setup-cpu.py` or `python scripts/setup/setup-gpu.py`.
 
 **Verify the data is present:**
 1. Make sure that you set `IMPORT_SPREADSHEET_ID` in your `.env`, which value is same as in `.env.sample`. 

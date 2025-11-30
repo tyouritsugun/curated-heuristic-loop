@@ -181,6 +181,10 @@ def check_duplicates(
         content: Proposed playbook/content body
         limit: Maximum number of candidates to return (default: 1)
         threshold: Optional minimum similarity score (provider-specific)
+
+    Note: Duplicate detection requires vector search. In CPU-only mode the API
+    returns an empty list with a warning; callers should fall back to loading
+    entries with read_entries and manually checking for overlap.
     """
     try:
         payload: Dict[str, Any] = {

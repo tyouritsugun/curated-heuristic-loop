@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 DATA_DIR = PROJECT_ROOT / "data"
 HELP_PROMPT_PATH = DATA_DIR / "hardware_selection_help.txt"
@@ -193,7 +193,7 @@ def _build_help_prompt() -> str:
     lines.append("")
     lines.append("Then, instruct me to go back to the CHL environment diagnostics script:")
     lines.append("```bash")
-    lines.append("python3 scripts/check_api_env.py")
+    lines.append("python3 scripts/setup/check_api_env.py")
     lines.append("```")
     lines.append("")
     lines.append("And select the option you recommended. The script will handle all installation steps automatically.")

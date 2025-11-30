@@ -79,6 +79,7 @@ If top score <0.50, reformulate the SEARCH phrase.
    - Prefer updating/merging the existing entry via `update_entry` when appropriate.
    - If you still decide to create a new entry (because it captures a genuinely different pattern), explicitly explain why in your response.
 3. If no strong candidate is returned, proceed to `create_entry` as usual.
+4. **CPU mode:** if `read_entries` meta shows `search_mode='cpu'`, skip `check_duplicates`; instead load relevant entries in that category via keyword `read_entries` and manually compare before writing.
 
 ### 6. Layer manuals only when they change the plan
 - Use `entity_type=\"manual\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).

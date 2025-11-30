@@ -66,7 +66,7 @@ TOOL_INDEX = [
     },
     {
         "name": "check_duplicates",
-        "description": "Check for potential duplicate entries before calling create_entry.",
+        "description": "Check for potential duplicate entries before calling create_entry. Unavailable in CPU mode; fall back to manual comparison via read_entries.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
