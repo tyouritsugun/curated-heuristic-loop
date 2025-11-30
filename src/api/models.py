@@ -12,6 +12,9 @@ class CategoryResponse(BaseModel):
     name: str
     description: Optional[str] = None
     created_at: Optional[str] = None
+    experience_count: Optional[int] = Field(None, description="Number of experiences in this category")
+    manual_count: Optional[int] = Field(None, description="Number of manuals in this category")
+    total_count: Optional[int] = Field(None, description="Total entries (experiences + manuals)")
 
 
 class ListCategoriesResponse(BaseModel):

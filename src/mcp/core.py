@@ -24,16 +24,17 @@ SERVER_VERSION = "1.1.0"
 TOOL_INDEX = [
     {
         "name": "list_categories",
-        "description": "List all available category shelves with code and name.",
+        "description": "List all available category shelves with entry counts. Returns experience_count, manual_count, and total_count for each category. Use these counts to decide loading strategy: <20 entries = load all at once, >=20 = load previews first.",
         "example": {},
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals by ids or semantic query.",
+        "description": "Fetch experiences or manuals. Strategy depends on category size (check list_categories first): Small category (<20 entries) - load all with fields=['playbook'] to get full content at once. Large category (>=20) - (1) list previews first (omit all params), (2) retrieve full content by IDs with fields=['playbook'], (3) search by query only if needed.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
-            "query": "handoff checklist",
+            "fields": ["playbook"],
+            "comment": "For small categories: load all with full content. For large: list previews → ids=['EXP-PGS-xxx'], fields=['playbook'] → get full content"
         },
     },
     {

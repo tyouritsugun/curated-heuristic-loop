@@ -38,12 +38,38 @@ def read_entries(
     query: Optional[str] = None,
     ids: Optional[List[str]] = None,
     limit: Optional[int] = None,
+    fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Retrieve experiences or manuals from a category by ids or semantic query.
+    Retrieve experiences or manuals from a category.
 
-    Example:
-        read_entries(entity_type='experience', category_code='PGS', query='handoff checklist')
+    USAGE PATTERNS (choose based on category size from list_categories):
+
+    **If category is small (total_count < 20):**
+    1. LIST ALL WITH FULL CONTENT - Load everything at once
+       - Example: read_entries(entity_type='experience', category_code='PGS', fields=['playbook'])
+       - Returns: Full content for all entries (complete knowledge base in one call)
+
+    **If category is large (total_count >= 20):**
+    1. LIST PREVIEWS FIRST - Get titles/snippets + IDs
+       - Example: read_entries(entity_type='experience', category_code='PGS')
+       - Returns: Previews only (playbook_preview, truncated)
+
+    2. RETRIEVE FULL CONTENT BY IDS - Fetch details for relevant entries
+       - Example: read_entries(entity_type='experience', category_code='PGS',
+                               ids=['EXP-PGS-xxx', 'EXP-PGS-yyy'], fields=['playbook'])
+       - Returns: Full content for specified entries only
+
+    3. SEARCH BY QUERY (lowest priority) - Find specific patterns if needed
+       - Example: read_entries(entity_type='experience', category_code='PGS',
+                               query='[SEARCH] handoff checklist [TASK] I need handoff process')
+       - Returns: Semantically ranked results with previews
+
+    RECOMMENDED WORKFLOW:
+    1. If haven't yet, call list_categories() to see entry counts
+    2. If small category: Load all with full content in one call
+    3. If large category: Load previews → pick relevant IDs → fetch full content
+    4. Use search only when you need specific patterns
     """
     try:
         payload: Dict[str, Any] = {
@@ -56,8 +82,37 @@ def read_entries(
             payload["ids"] = ids
         if limit is not None:
             payload["limit"] = limit
+        if fields is not None:
+            payload["fields"] = fields
 
-        return request_api("POST", "/api/v1/entries/read", payload=payload)
+        response = request_api("POST", "/api/v1/entries/read", payload=payload)
+
+        # Optimize response for LLMs - keep only essential fields to save tokens
+        if "entries" in response:
+            filtered_entries = []
+            for entry in response["entries"]:
+                if entity_type == "experience":
+                    # Experiences: id, section, title, playbook (or playbook_preview if not full)
+                    filtered = {"id": entry.get("id"), "section": entry.get("section"), "title": entry.get("title")}
+                    if "playbook" in entry:
+                        filtered["playbook"] = entry["playbook"]
+                    elif "playbook_preview" in entry:
+                        filtered["playbook_preview"] = entry["playbook_preview"]
+                        filtered["playbook_truncated"] = entry.get("playbook_truncated", False)
+                    filtered_entries.append(filtered)
+                else:  # manual
+                    # Manuals: id, title, content (or content_preview if not full)
+                    filtered = {"id": entry.get("id"), "title": entry.get("title")}
+                    if "content" in entry:
+                        filtered["content"] = entry["content"]
+                    elif "content_preview" in entry:
+                        filtered["content_preview"] = entry["content_preview"]
+                        filtered["content_truncated"] = entry.get("content_truncated", False)
+                    filtered_entries.append(filtered)
+
+            response["entries"] = filtered_entries
+
+        return response
     except MCPError:
         raise
     except Exception as exc:  # pragma: no cover - defensive

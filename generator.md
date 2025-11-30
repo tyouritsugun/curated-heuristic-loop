@@ -60,11 +60,15 @@ Search uses two phases:
 
 If top score <0.50, reformulate the SEARCH phrase.
 
-### 4. Pull experiences first
-1. Call `read_entries(entity_type="experience", category_code=..., query="[SEARCH] ... [TASK] ...")` for each variant.
-2. Inspect the ranked list: if the top score is weak (<0.50) or irrelevant, adjust the SEARCH phrase immediately instead of skimming everything.
-3. When you find strong hits, fetch the full text with `read_entries(..., ids=[...])` and note the IDs you intend to use.
-4. If you need the whole category context (manual + top experiences), call `load_knowhow(category_code=...)` to get a token-lean bundle (no timestamps/extra metadata). Use this when you need the general heuristics for a category, not when you need a specific experience.
+### 4. Load experiences (size-based strategy)
+1. Call `list_categories()` to check entry counts
+2. **Small category (<20 entries)**: Load all at once
+   - `read_entries(entity_type="experience", category_code=..., fields=['playbook'])`
+   - Gets complete knowledge base in one call
+3. **Large category (>=20 entries)**: Progressive loading
+   - Load previews: `read_entries(entity_type="experience", category_code=...)`
+   - Fetch full content by IDs: `read_entries(..., ids=['EXP-xxx'], fields=['playbook'])`
+   - Search if needed: `read_entries(..., query="[SEARCH] ... [TASK] ...")` (top score <0.50 → reformulate)
 
 ### 5. Run a duplicate check before writing
 1. Before calling `write_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
