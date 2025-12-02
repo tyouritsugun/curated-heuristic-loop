@@ -1,4 +1,4 @@
-# Semi‑Auto Curation (Phase 1–2) – High‑Level Requirements
+# Semi‑Auto Curation (Phased Plan) – High‑Level Requirements
 
 Lean guide for developers to implement and run the duplicate/conflict detection pipeline. Keeps humans in the loop, minimizes surprises for team workflows.
 
@@ -85,6 +85,14 @@ Solo developer: same steps, omit `--compare-pending`.
 ## Scaling & Performance Guards
 - For large teams: support `--recent-days`, `--group-size`, and category scoping to bound pending-vs-pending checks.
 - Default to text provider; GPU/vector is optional but should work with same flags.
+
+---
+
+## Roadmap / Phases
+- **Phase 0 – Plumbing & Safety**: schema checks, merge/export/import scripts, `merge_audit.csv`, resume state, dry-run flags, bucketed duplicate finder (existing thresholds).
+- **Phase 1 – Sparse Similarity Graph**: compute/embed + LLM signals per category, blend, sparsify (top-k / tau_keep), dedup via tau_eq components, similarity clusters via Louvain/DBSCAN, borderline queue, drift guards.
+- **Phase 2 – Agentic Loop (optional pilot)**: worker + reviewer agents generate and validate actions; produce `agent_suggestions.jsonl` and `agent_reviews.jsonl`; feed curated queue to humans.
+- **Phase 3 – Polishing & Scale**: blocking before LLM for cost, richer UI for triage, metrics (precision/recall on labeled dup set), noise handling for huge categories.
 
 ---
 
