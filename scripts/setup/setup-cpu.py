@@ -60,8 +60,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-
 # Starter category shelves (code, name, description)
 DEFAULT_CATEGORIES = [
     ("FPD", "figma_page_design", "Capture heuristics for reviewing Figma designs and annotations."),

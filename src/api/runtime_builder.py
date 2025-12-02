@@ -8,7 +8,6 @@ from src.common.config.config import Config
 from src.common.storage.database import Database
 from src.common.interfaces.runtime import ModeRuntime
 from src.api.cpu.runtime import build_cpu_runtime
-from src.api.gpu.runtime import build_gpu_runtime
 from src.api.services.worker_control import WorkerControlService
 
 
@@ -23,4 +22,6 @@ def build_mode_runtime(config: Config, db: Database, worker_control: WorkerContr
     if backend == "cpu":
         return build_cpu_runtime(config, db, worker_control)
     # GPU backends (metal, cuda, rocm) all use the GPU runtime
+    from src.api.gpu.runtime import build_gpu_runtime  # Lazy import so CPU mode avoids torch deps
+
     return build_gpu_runtime(config, db, worker_control)
