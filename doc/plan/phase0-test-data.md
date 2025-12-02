@@ -5,9 +5,23 @@ Practical plan to build the Phase 0 test corpus and two parallel spreadsheets 
 ---
 
 ## Goals
-- Create a realistic, reusable dataset to exercise merge, dedup, similarity, and drift handling.
+- Create a realistic, reusable dataset to exercise merge, dedup, similarity, drift, and schema guards.
 - Two near-overlapping sheets to mimic two teammates: Team A sheet and Team B sheet.
-- Target volume: ~10 manuals + ~50 experiences total (per combined set). Inflate later if needed.
+- Target volume: ~10 manuals + **100–150 experiences** total (per combined set) so sparsification/top-k and community detection have enough density.
+- Include labeled ground truth so we can score precision/recall for Phase 0 runs.
+
+---
+
+## Test Scenarios (required coverage)
+- 5 drift triads (A≈B≈0.88, B≈C≈0.87, A≈C≈0.65) to validate drift guards.
+- 8 high-similarity pairs (≥0.92) that should merge.
+- 10 medium pairs (0.75–0.92) that are related but **keep separate**.
+- 6 borderline pairs (0.55–0.70) for the review queue.
+- 3 deliberate ID collisions (same `id`, different `author` across A/B sheets) to test suffixing.
+- 2 cross-section conflicts (same title, different section useful/harmful/contextual).
+- 2 near-duplicate manuals (≥0.85) to force a decision on manual similarity.
+- 1 regression pair (solution B breaks assumption in A) and 1 extension pair (B widens A's scope).
+- High-similarity clusters: at least 2 clusters with ≥4 items each where merging is obvious.
 
 ---
 
@@ -18,31 +32,34 @@ Practical plan to build the Phase 0 test corpus and two parallel spreadsheets 
 
 Guidelines:
 - Paraphrase; avoid long verbatim snippets. Keep each experience <300 words.
+- Paraphrase intentionally: keep the problem signature but vary parameter names, versions, paths, OS, and commands; swap success/failure modes to generate controlled near-duplicates.
 - Prefer official docs/blogs; use Stack Overflow only for common error phrasings, paraphrased.
 
 ---
 
 ## Dataset Shape
 - **Category**: `DEV_TOOLING` (Developer Tooling – Common Errors & Fixes).
-- **Manuals (~10)**: SOP/policy style (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage, venv rules, IDE workspace setup).
-- **Experiences (~50)**: atomic issue → fix. Mix Git/npm/yarn/pnpm/pip/Docker/Podman/VS Code/JetBrains/HTTP 4xx/5xx/K8s/DB connection errors.
-- Fields: `id`, `category_code`, `section (useful/harmful/contextual)`, `title`, `playbook`, `context (OS/tool/version)`, `source`, `author`, `sync_status` (int), `created_at/updated_at`.
-- Keep IDs stable within variant families to test collision handling.
+- **Manuals (~10)**: SOP/policy style (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage, venv rules, IDE workspace setup). Include 2 near-duplicates (≥0.85 similarity) to force a manual dedup decision.
+- **Experiences (100–150)**: atomic issue → fix. Mix Git/npm/yarn/pnpm/pip/Docker/Podman/VS Code/JetBrains/HTTP 4xx/5xx/K8s/DB connection errors. Ensure at least 20 seed experiences that branch into variants to satisfy the test scenarios above.
+- Fields: `id`, `category_code`, `section (useful/harmful/contextual)`, `title`, `playbook`, `context (OS/tool/version)`, `source`, `author`, `sync_status` (int), `created_at/updated_at`, `expected_action` (ground truth: `merge_with:<id>`, `keep_separate`, `needs_review`, `reject`).
+- Keep IDs stable within variant families; deliberately create 3 cross-team ID collisions to test suffixing.
 
 ---
 
 ## Split Strategy (Team A vs Team B)
 - Shared items: include both shared sites’ content (a few manuals/experiences) in **both** sheets.
 - Unique items: draw from each team’s unique site list. Aim ~60–70% overlap in themes, but different wording/details to trigger near-duplicates and drift.
-- Variants: for 8–10 experiences, create 2–3 paraphrased/parameter variants (package name/version/path/OS) and split them across sheets to create A≈B, B≈C cases.
+- Variants: for 10+ experiences, create 2–3 paraphrased/parameter variants (package name/version/path/OS) and split them across sheets to create A≈B, B≈C cases (drift triads) plus obvious merges.
+- Cross-section conflicts: duplicate a title with different `section` values (useful vs harmful) across sheets.
+- ID collisions: reuse 3 IDs across authors (Team A vs Team B) to exercise collision handling.
 
 ---
 
 ## Extraction & Curation Steps
 1) For each site, pick 1 manual-style item and 3–5 experience items (as available).
-2) Paraphrase and normalize into schema; add minimal context (OS, tool versions).
-3) Assign `sync_status` integers (use 0=PENDING for all test inserts).
-4) Save two CSVs: `team_a_export.csv`, `team_b_export.csv` (same columns as import service expects).
+2) Paraphrase and normalize into schema; add minimal context (OS, tool versions). Create controlled near-duplicates by varying package names, versions, paths, OS, and success/failure mode while keeping the core problem signature.
+3) Assign `sync_status` integers (use 0=PENDING for all test inserts). Populate `expected_action` per test scenario, including `merge_with:<id>` targets for high/medium pairs and `keep_separate` for drift/borderline cases.
+4) Save two CSVs: `team_a_export.csv`, `team_b_export.csv` (same columns as import service expects) plus one **deliberate schema-mismatch CSV** (wrong/extra column) to test preflight rejection.
 5) Load into two Google Sheets (or local CSVs) to be used by merge/dedup harness.
 
 ---
@@ -51,10 +68,22 @@ Guidelines:
 - Use the two sheets as stand-ins for two teammate exports.
 - Run: export (if needed) → merge → duplicate pass → clustering → review queue.
 - Verify: merge audit logs, resume state file, dedup accuracy, drift triads surfaced.
+- Compute metrics against `expected_action`: precision/recall for merge suggestions, count of detected drift triads, number of conflicts (regression/extension, section mismatch) surfaced.
+
+---
+
+## Validation Criteria (Phase 0 runs)
+- Preflight: schema mismatch file must fail fast with clear error; valid files load.
+- Drift triads: ≥5 detected and surfaced to reviewer.
+- High-sim pairs: all 8 flagged as merge candidates (recall ≥0.95 on ground truth merges).
+- Borderline queue: all 6 borderline pairs routed to review; none auto-merged.
+- ID collisions: all 3 collisions get suffix appended and logged in `merge_audit.csv`.
+- Manuals: near-duplicate manual pair is either merged or explicitly kept separate with rationale captured.
+- Metrics: report precision/recall against `expected_action` plus counts of regression/extension/section conflicts.
 
 ---
 
 ## Open Items
 - Confirm final sync_status mapping against live data (default=1 in schema, planned mapping 0/1/2).
-- Decide if manuals participate in similarity in Phase 1 (current stance: exclude).
-- If GPU unavailable, define CPU fallback (text overlap) for embeddings in this harness.
+- Decide if manuals participate in similarity in Phase 1 (current stance: exclude; Phase 0 still tests the near-duplicate pair).
+- GPU is required for production flow; CPU fallback (text-overlap) is allowed **only for Phase 0 harness smoke tests** when GPU is unavailable.

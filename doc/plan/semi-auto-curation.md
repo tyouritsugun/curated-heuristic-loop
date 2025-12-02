@@ -23,10 +23,12 @@ Lean guide for developers to implement and run the duplicate/conflict detection 
 - Stored as integer in DB (default=1 in schema). Adopt mapping in ADR and code comments: `0=PENDING`, `1=SYNCED`, `2=REJECTED` (verify/adjust if existing data differs).
 - CLI and sheets columns must carry the integer, not string labels.
 - Source of truth: `src/common/storage/schema.py` (Experience.sync_status, CategoryManual.sync_status). Document mapping in any script help text.
+- Action item: run a quick DB check before implementation to confirm the actual default value in the current dataset; update mapping/tests if it differs.
 
 ---
 
 ## Preconditions
+- **GPU mode required**: Semi-auto curation requires GPU-accelerated embeddings and reranking (Metal/CUDA). CPU-only mode is not supported for this workflow due to dependency on semantic similarity scoring.
 - Google Sheet ID + service account creds available.
 - Local DB consistent with latest import (or export before wiping).
 - CSV schema version matches tooling; reject/bail if columns missing.
@@ -71,17 +73,19 @@ Notes:
   - Scope anchors to non-pending by default; add `--compare-pending` flag for team mode.
   - Bucket matches (`high >=0.92`, `medium 0.75–0.92`, `low <0.75` defaults).
   - Emit conflicts (section mismatch, title-same/content-diff, regression, extension).
-  - Support resume: write state to `.curation_state.json` in the working dir (schema: {run_id, input_path, last_bucket, last_index, decisions[], version}; discard with `--reset-state` if checksum/input mismatches).
+  - Support resume: write state to `.curation_state.json` in the working dir (schema: {run_id, input_path, last_bucket, last_index, decisions[], version, timestamp, user, input_checksum}; discard with `--reset-state` if checksum/input mismatches).
+  - Interactive mode commands: `merge` (pick canonical, mark others `merge_with`, log), `update` (edit title/playbook/context inline), `keep` (mark `keep_separate` + note), `reject` (set sync_status=2 with reason), `split` (duplicate entry into parent+suffix for separate decisions), `diff` (unified diff of titles/playbooks), `quit` (save state and exit).
 - `score_atomicity`: deferred to Phase 2+; leave placeholder flag but no-op until spec is defined (definition TBD: measures whether an experience is single, minimal, non-compound).
-- Non-interactive outputs: `table|json|csv`; interactive mode must support merge/update/reject/keep/split/diff/quit.
-- Dry-run flag on any command that mutates files or sheets.
+- Non-interactive outputs: `table|json|csv`.
+- Dry-run flag on any command that mutates files or sheets; dry-run writes only sidecar files (suffix `.dryrun`) and prints planned changes.
 
 ---
 
 ## Data Safety & Audit
 - Preflight before merge: check required columns, count pending vs synced, fail loud on schema mismatch or BOM/encoding issues.
-- Save `merge_audit.csv` summarizing: files merged, baseline dedupes, pending collisions, schema warnings.
+- Save `merge_audit.csv` with columns: `run_id`, `timestamp`, `user`, `input_files`, `output_file`, `pending_count`, `synced_count`, `collisions_appended_ids`, `schema_warnings`, `notes`.
 - Interactive decisions append to `evaluation_log.csv` with timestamp, user, action, and was_correct (for later precision tracking).
+- `input_checksum` in `.curation_state.json`: SHA256 of normalized `merged.csv` contents (sorted rows, trimmed whitespace) to catch order/whitespace drift.
 - Import step must warn that local DB will be wiped; recommend taking an export backup first.
 
 ---
@@ -112,8 +116,9 @@ Notes:
 
 ## Scaling & Performance Guards
 - For large teams: support `--recent-days`, `--group-size`, and category scoping to bound pending-vs-pending checks.
-- Default to text provider; GPU/vector is optional but should work with same flags.
-- Scale expectations: target <=5 min for 1k pending items on GPU; provide CPU fallback warning and `--max-neighbors` to cap graph size. Define “large” as >5k pending or >10 exports in a batch.
+- Scale expectations: target <=5 min for 1k pending items on GPU; provide `--max-neighbors` to cap graph size. Define "large" as >5k pending or >10 exports in a batch.
+- GPU memory management: monitor VRAM usage during batch similarity scoring; allow chunking for large categories.
+- Noise handling definition: treat "noise" as low-similarity outliers or low-quality entries with sparse edges; Phase 4 should formalize thresholds and handling (drop, quarantine, or down-rank).
 
 ---
 
@@ -125,8 +130,8 @@ Notes:
 ---
 
 ## Roadmap / Phases
-- **Phase 0 – Test Data & Dual-Sheet Harness**: curate a reusable test set (dev-tooling category), two parallel spreadsheets to simulate two teammates; 10 manuals + 20 seed experiences inflated to ~100 variants; export/import glue to load these sheets.
-- **Phase 1 – Plumbing & Safety**: schema checks, merge/export/import scripts, `merge_audit.csv`, resume state, dry-run flags, bucketed duplicate finder (existing thresholds), pairwise similarity batch endpoint.
+- **Phase 0 – Test Data & Dual-Sheet Harness**: curate a reusable test set (dev-tooling category), two parallel spreadsheets to simulate two teammates; 10 manuals + 20 seed experiences inflated to ~100–150 variants; ground-truth labels + `expected_action`; build `POST /api/v1/similarity/batch` (pairs → scores) and define `merge_audit.csv` + `.curation_state.json` schemas.
+- **Phase 1 – Plumbing & Safety**: schema checks, merge/export/import scripts, resume state, dry-run flags, bucketed duplicate finder (existing thresholds), integrate pairwise batch API into CLI.
 - **Phase 2 – Sparse Similarity Graph**: compute/embed + LLM signals per category, blend, sparsify (top-k / tau_keep), dedup via tau_eq components, similarity clusters via Louvain/DBSCAN, borderline queue, drift guards.
 - **Phase 3 – Agentic Loop (optional pilot)**: worker + reviewer agents generate and validate actions; produce `agent_suggestions.jsonl` and `agent_reviews.jsonl`; feed curated queue to humans.
 - **Phase 4 – Polishing & Scale**: blocking before LLM for cost, richer UI for triage, metrics (precision/recall on labeled dup set), noise handling for huge categories.
@@ -135,10 +140,10 @@ Notes:
 
 ## Phase 0 Test Data & Dual-Sheet Setup
 - Category choice: **Developer Tooling – Common Errors & Fixes** (Git/npm/pip/Docker/VS Code/HTTP errors). Rich public examples, easy paraphrase, embedding-friendly.
-- Manuals: ~10 short SOP/policy docs (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage).
-- Experiences: collect ~20 atomic issue→fix items; inflate to ~100 by paraphrasing, swapping package names/versions/paths, varying OS/tool versions to create controlled near-duplicates.
+- Manuals: ~10 short SOP/policy docs (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage). Include 2 near-duplicates to force a manual decision.
+- Experiences: collect ~20 seed atomic issue→fix items; inflate to ~100–150 by paraphrasing, swapping package names/versions/paths, varying OS/tool versions, and crafting drift triads/borderline pairs.
 - Two-team harness: split the set into two similar-but-not-identical sheets (e.g., A/B variants), export to two Google Sheets to mimic two teammate exports; use them in merge/dedup/similarity pipelines.
-- Fields: `category_code`, `section`, `title`, `playbook`, `context`, `source`, `author`, `sync_status` (int). Keep IDs stable per variant family to test collision handling.
+- Fields: `category_code`, `section`, `title`, `playbook`, `context`, `source`, `author`, `sync_status` (int), `expected_action` (ground truth labels for scoring). Keep IDs stable per variant family to test collision handling.
 - Licensing: paraphrase/summarize public sources; avoid long verbatim stack traces; keep per-item text concise (<300 words).
 
 ---
@@ -146,10 +151,9 @@ Notes:
 ## Workflow Alignment & Open Decisions (resolve in Phase 0 ADR)
 - **Source of truth**: today Google Sheets is canonical via import_service (destructive import). Decide if CSV merge becomes a new bidirectional flow or remains a pre-publish staging step.
 - **Exports**: existing `operations_service.export_to_sheets` writes Sheets; JSON export endpoint exists. Define CSV export format (schema version) and how it feeds merge.
-- **Pairwise similarity API**: embedding search and rerank clients exist, but batch pairwise scoring does not. Add `POST /api/v1/similarity/batch` (pairs → scores) before Phase 1.
+- **Pairwise similarity API**: embedding search and rerank clients exist, but batch pairwise scoring does not. **Deliverable in Phase 0**: add `POST /api/v1/similarity/batch` (pairs → scores) and expose a CLI helper for test harness runs.
 - **Manual items**: CategoryManual rows share sync_status; either include them in duplicate detection or explicitly mark them out-of-scope for Phase 1 (current plan: exclude manuals from auto similarity; curate manually).
 - **Canonical sheet IDs**: clarify whether `<PUBLISHED_SHEET_ID>` equals existing `IMPORT_SPREADSHEET_ID` or a separate review sheet; document env vars in `.env.example`.
-- **GPU/CPU fallback**: embeddings require GPU path; define CPU fallback (text overlap or smaller model) and flag behavior when embeddings unavailable.
 
 ---
 
