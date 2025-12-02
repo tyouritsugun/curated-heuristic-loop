@@ -15,6 +15,7 @@ Lean guide for developers to implement and run the duplicate/conflict detection 
 - **Developers**: export their local DB.
 - **Curator**: runs merge, duplicate review, publish; owns decisions.
 - **Fallback**: if curator unavailable, next available teammate with sheet access steps in.
+- **Reuse-first**: export APIs, similarity search, and reranking already exist in the codebase (API server). Developers should scan and reuse those modules instead of re-implementing them; extend only where gaps remain.
 
 ---
 
