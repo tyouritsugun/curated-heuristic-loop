@@ -88,6 +88,44 @@ Solo developer: same steps, omit `--compare-pending`.
 
 ---
 
+## Duplicate Detection via Sparse Similarity Graph
+- Per category: iterate its experience items and compute both similarity signals (embedding score + LLM rerank) for candidate pairs. Note that manual items are excluded, as it should be curated manually.
+- Inputs: two similarity signals per pair (embedding, LLM rerank). Normalize to [0,1], set diagonal to 1.
+- Blend: `S = w_embed * S_embed + w_llm * S_llm` (start 0.7/0.3). Option: `max(S_embed, S_llm)` if either signal is decisive.
+- Sparsify (blocking after the fact): for each item keep top-k neighbors (k≈50 or 1 percent of n) or scores >= tau_keep (~0.70); set the rest to 0; symmetrize with max or mean.
+- Dedup (strict): keep edges with score >= tau_eq (~0.90); connected components on this subgraph are near-duplicate sets. Choose a canonical representative per component and mark the others as duplicates.
+- Similarity groups (looser): use the sparse graph with tau_cluster < tau_eq (start 0.75). Run Louvain/Leiden (community detection on weighted graphs) or DBSCAN/HDBSCAN with distance = 1 - score. Output = related-item clusters for curator review.
+- Borderline queue: collect edges with score in [tau_review_low, tau_review_high] (e.g., 0.55–0.70) to surface uncertain cases first.
+- Drift guard (A≈B, B≈C, A≠C):
+  - Build a maximum spanning tree (MST) inside each cluster using edge weight = similarity.
+  - Flag edges in the MST that fall below the relevant threshold (tau_eq for dedup, tau_cluster for grouping); cutting them prevents long weak chains.
+  - Triangle test: if A–B and B–C are high but A–C is lower by a gap (e.g., ≥0.15), add the trio to a “drift review” list.
+  - Review flow: surface drift triads first; suggest merge A+B, keep C separate, or split common atoms into one canonical experience plus variants.
+- Provenance: keep which signal (embed, LLM, both) produced each edge; store sparse edge list as (i, j, score) for reuse.
+- Future runs to save LLM cost: block before scoring (ANN/LSH or cheap hashes) to get candidate pairs; run LLM only inside blocks; build the sparse graph directly.
+
+---
+
+## Agentic Curation Loop (Worker + Reviewer)
+- Roles:
+  - Worker agent: consumes manuals, drift triads, and similarity clusters; proposes concrete actions per item (merge targets, keep separate, retitle/scope, split facets, canonical choice).
+  - Reviewer agent: tool-augmented checker that validates worker proposals (threshold sanity, consistency with provenance, MST/triangle drift checks), then produces a short rationale plus a pass/fail recommendation.
+- Flow:
+  1) Input packages: cluster bundle (nodes, edges, sims), drift list, and relevant manual snippets/checklists.
+  2) Worker outputs for each cluster: (a) dedup sets with canonical pick, (b) related-but-keep sets with reasons, (c) proposed edits (titles/scope notes), (d) uncertainties.
+  3) Reviewer runs validations via tools: recompute edge thresholds, confirm no A≈B≈C gaps were ignored, check provenance (embed vs LLM), ensure actions obey guardrails (e.g., don’t auto-merge below tau_eq). Reviewer emits accept/adjust/reject with minimal justification.
+  4) Human curator receives: reviewer-approved suggestions + flagged disagreements/uncertainties ordered by risk (drift first, low-margin scores next).
+- Guardrails:
+  - Worker must cite which signal(s) support each suggested merge/split.
+  - Reviewer fails any merge suggestion lacking an edge ≥ tau_eq or missing a direct edge in a proposed component.
+  - Any cluster containing drift gaps auto-goes to human if worker and reviewer disagree.
+- Outputs:
+  - `agent_suggestions.jsonl`: worker proposals.
+  - `agent_reviews.jsonl`: reviewer decisions + tool checks.
+  - Final UI should highlight reviewer-approved actions and a separate queue for “needs human judgment.”
+
+---
+
 ## Glossary
 - **Pending**: local-only entries awaiting review.
 - **Synced/Canonical**: approved entries; anchor set for dup detection.
