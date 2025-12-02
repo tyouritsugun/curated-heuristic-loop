@@ -74,7 +74,7 @@ Notes:
   - Bucket matches (`high >=0.92`, `medium 0.75–0.92`, `low <0.75` defaults).
   - Emit conflicts (section mismatch, title-same/content-diff, regression, extension).
   - Support resume: write state to `.curation_state.json` in the working dir (schema: {run_id, input_path, last_bucket, last_index, decisions[], version, timestamp, user, input_checksum}; discard with `--reset-state` if checksum/input mismatches).
-  - Interactive mode commands: `merge` (pick canonical, mark others `merge_with`, log), `update` (edit title/playbook/context inline), `keep` (mark `keep_separate` + note), `reject` (set sync_status=2 with reason), `split` (duplicate entry into parent+suffix for separate decisions), `diff` (unified diff of titles/playbooks), `quit` (save state and exit).
+  - Interactive mode commands: `merge` (pick canonical, mark others `merge_with`, log), `update` (edit title/playbook/context inline), `keep` (mark `keep_separate` + note), `reject` (set sync_status=2 with reason), `split` (duplicate entry into parent+suffix for separate decisions; suffix format `{original_id}_split_{YYYYMMDDHHMMSS}`), `diff` (unified diff of titles/playbooks), `quit` (save state and exit).
 - `score_atomicity`: deferred to Phase 2+; leave placeholder flag but no-op until spec is defined (definition TBD: measures whether an experience is single, minimal, non-compound).
 - Non-interactive outputs: `table|json|csv`.
 - Dry-run flag on any command that mutates files or sheets; dry-run writes only sidecar files (suffix `.dryrun`) and prints planned changes.
@@ -82,9 +82,9 @@ Notes:
 ---
 
 ## Data Safety & Audit
-- Preflight before merge: check required columns, count pending vs synced, fail loud on schema mismatch or BOM/encoding issues.
+- Preflight before merge: check required columns, count pending vs synced, fail loud on schema mismatch or BOM/encoding issues. Required columns: `id`, `category_code`, `section`, `title`, `playbook`, `context`, `source`, `author`, `sync_status`, `created_at`, `updated_at` (plus `expected_action` when present in labeled sets).
 - Save `merge_audit.csv` with columns: `run_id`, `timestamp`, `user`, `input_files`, `output_file`, `pending_count`, `synced_count`, `collisions_appended_ids`, `schema_warnings`, `notes`.
-- Interactive decisions append to `evaluation_log.csv` with timestamp, user, action, and was_correct (for later precision tracking).
+- Interactive decisions append to `evaluation_log.csv` with columns: `timestamp`, `user`, `entry_id`, `action` (merge/update/keep/reject/split), `target_id` (for merges), `was_correct` (nullable), `notes`.
 - `input_checksum` in `.curation_state.json`: SHA256 of normalized `merged.csv` contents (sorted rows, trimmed whitespace) to catch order/whitespace drift.
 - Import step must warn that local DB will be wiped; recommend taking an export backup first.
 
@@ -93,6 +93,7 @@ Notes:
 ## Outputs & Exit Criteria
 - `merged.csv` updated with statuses (`SYNCED`, `REJECTED`, `PENDING` remaining).
 - `evaluation_log.csv` and `tuning_report.txt` (optional) exist.
+  - `tuning_report.txt` (if emitted) should summarize: threshold distributions, embed vs LLM disagreement counts, cluster size histogram, borderline bucket volume, and drift triads surfaced.
 - Publish dry-run shows zero unexpected duplicates vs canonical.
 - Session “done” when no pending items remain or all remaining are intentionally left PENDING with notes.
 
@@ -116,7 +117,7 @@ Notes:
 
 ## Scaling & Performance Guards
 - For large teams: support `--recent-days`, `--group-size`, and category scoping to bound pending-vs-pending checks.
-- Scale expectations: target <=5 min for 1k pending items on GPU; provide `--max-neighbors` to cap graph size. Define "large" as >5k pending or >10 exports in a batch.
+- Scale expectations: target <=5 min for 1k pending items on GPU; provide `--max-neighbors` to cap graph size (default=50, aligned with sparse-graph top-k). Define "large" as >5k pending or >10 exports in a batch.
 - GPU memory management: monitor VRAM usage during batch similarity scoring; allow chunking for large categories.
 - Noise handling definition: treat "noise" as low-similarity outliers or low-quality entries with sparse edges; Phase 4 should formalize thresholds and handling (drop, quarantine, or down-rank).
 

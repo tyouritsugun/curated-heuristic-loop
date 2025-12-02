@@ -17,11 +17,13 @@ Practical plan to build the Phase 0 test corpus and two parallel spreadsheets 
 - 8 high-similarity pairs (≥0.92) that should merge.
 - 10 medium pairs (0.75–0.92) that are related but **keep separate**.
 - 6 borderline pairs (0.55–0.70) for the review queue.
+- Borderline coverage: include cases where embedding is high/LLM low, embedding low/LLM high, and both mid to stress the blend logic.
 - 3 deliberate ID collisions (same `id`, different `author` across A/B sheets) to test suffixing.
 - 2 cross-section conflicts (same title, different section useful/harmful/contextual).
 - 2 near-duplicate manuals (≥0.85) to force a decision on manual similarity.
-- 1 regression pair (solution B breaks assumption in A) and 1 extension pair (B widens A's scope).
+- 2–3 regression pairs (solution B breaks assumption in A) and 2–3 extension pairs (B widens A's scope) with explicit `expected_action` labels.
 - High-similarity clusters: at least 2 clusters with ≥4 items each where merging is obvious.
+- Expected clustering outcome: ~8–12 meaningful clusters (15–30 items each) plus ~30–40 singletons/outliers to validate community detection and noise handling.
 
 ---
 
@@ -44,6 +46,12 @@ Guidelines:
 - Fields: `id`, `category_code`, `section (useful/harmful/contextual)`, `title`, `playbook`, `context (OS/tool/version)`, `source`, `author`, `sync_status` (int), `created_at/updated_at`, `expected_action` (ground truth: `merge_with:<id>`, `keep_separate`, `needs_review`, `reject`).
 - Keep IDs stable within variant families; deliberately create 3 cross-team ID collisions to test suffixing.
 
+### Timestamp strategy (for `created_at`/`updated_at`)
+- 70% “recent” entries dated within the last 7 days.
+- 20% “medium-aged” entries dated 1–4 weeks ago.
+- 10% “old” entries dated >1 month ago.
+- Purpose: exercise `--recent-days` filters and ordering in review queues.
+
 ---
 
 ## Split Strategy (Team A vs Team B)
@@ -61,6 +69,7 @@ Guidelines:
 3) Assign `sync_status` integers (use 0=PENDING for all test inserts). Populate `expected_action` per test scenario, including `merge_with:<id>` targets for high/medium pairs and `keep_separate` for drift/borderline cases.
 4) Save two CSVs: `team_a_export.csv`, `team_b_export.csv` (same columns as import service expects) plus one **deliberate schema-mismatch CSV** (wrong/extra column) to test preflight rejection.
 5) Load into two Google Sheets (or local CSVs) to be used by merge/dedup harness.
+6) Scenario-to-site mapping (guide, adjust as needed): Git/GitHub/npm/yarn/pnpm → drift triads & high-sim merges; Docker/Podman → cross-section conflicts; VS Code/JetBrains → borderline pairs; HTTP/K8s/DB → regression/extension cases; manuals from policy-style sources for manual near-dupes.
 
 ---
 
@@ -80,6 +89,7 @@ Guidelines:
 - ID collisions: all 3 collisions get suffix appended and logged in `merge_audit.csv`.
 - Manuals: near-duplicate manual pair is either merged or explicitly kept separate with rationale captured.
 - Metrics: report precision/recall against `expected_action` plus counts of regression/extension/section conflicts.
+- Regression/extension: at least 2–3 labeled regression pairs and 2–3 labeled extension pairs are surfaced with correct `expected_action` handling.
 
 ---
 
