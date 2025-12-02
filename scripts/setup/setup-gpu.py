@@ -129,6 +129,7 @@ DEFAULT_CATEGORIES = [
     ("PPT", "playwright_page_test", "Playwright page test strategies."),
     ("EET", "e2e_test", "End-to-end testing guidance."),
     ("PRQ", "pull_request", "Pull request authoring and review heuristics."),
+    ("DVT", "dev_tooling_common_errors", "Common developer tooling errors and fixes (Git, package managers, Docker, IDEs)."),
 ]
 
 # Sample seed data (inserted only if tables are empty)
