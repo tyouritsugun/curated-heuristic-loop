@@ -67,16 +67,16 @@ Guidelines:
 1) For each site, pick 1 manual-style item and 3–5 experience items (as available).
 2) Paraphrase and normalize into schema; add minimal context (OS, tool versions). Create controlled near-duplicates by varying package names, versions, paths, OS, and success/failure mode while keeping the core problem signature.
 3) Assign `sync_status` integers (use 0=PENDING for all test inserts). Populate `expected_action` per test scenario, including `merge_with:<id>` targets for high/medium pairs and `keep_separate` for drift/borderline cases.
-4) Save two CSVs: `team_a_export.csv`, `team_b_export.csv` (same columns as import service expects) plus one **deliberate schema-mismatch CSV** (wrong/extra column) to test preflight rejection.
-5) Load into two Google Sheets (or local CSVs) to be used by merge/dedup harness.
+4) Load into two Google Sheets (3 worksheets each: Categories, Experiences, Manuals) to simulate Team A and Team B exports. Also create one **deliberate schema-mismatch CSV** (wrong/extra column) to test preflight rejection.
+5) Export structure: `data/curation/members/team_a/` and `data/curation/members/team_b/`, each containing `categories.csv`, `experiences.csv`, `manuals.csv`.
 6) Scenario-to-site mapping (guide, adjust as needed): Git/GitHub/npm/yarn/pnpm → drift triads & high-sim merges; Docker/Podman → cross-section conflicts; VS Code/JetBrains → borderline pairs; HTTP/K8s/DB → regression/extension cases; manuals from policy-style sources for manual near-dupes.
 
 ---
 
 ## Test Harness Flow
-- Use the two sheets as stand-ins for two teammate exports.
-- Run: export (if needed) → merge → duplicate pass → clustering → review queue.
+- Use the two sheets as stand-ins for two teammate exports (Team A and Team B).
 - Verify: merge audit logs, resume state file, dedup accuracy, drift triads surfaced.
+- Run: `export_from_sheets.py` (to `data/curation/members/team_a/` and `team_b/`) → `merge_exports.py` (to `data/curation/merged/`) → duplicate pass → clustering → review queue.
 - Compute metrics against `expected_action`: precision/recall for merge suggestions, count of detected drift triads, number of conflicts (regression/extension, section mismatch) surfaced.
 
 ---

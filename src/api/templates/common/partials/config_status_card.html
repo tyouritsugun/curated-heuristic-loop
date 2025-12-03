@@ -94,6 +94,16 @@
           <small class="muted">Set EXPORT_SPREADSHEET_ID in .env file</small>
         </div>
       {% endif %}
+
+      <div class="section-header" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color, #e0e0e0);">
+        <button type="button" class="section-title-button" style="width: 100%; cursor: pointer;" onclick="(function(){const a=document.createElement('a');a.href='/api/v1/entries/export-csv';a.download='';a.style.display='none';document.body.appendChild(a);a.click();document.body.removeChild(a);})()">
+          Export CSV
+        </button>
+      </div>
+      <div class="status-row">
+        <span class="status-chip ok">Team Curation</span>
+        <small class="muted">Downloads {username}.zip for merge workflow</small>
+      </div>
     </div>
   </div>
 

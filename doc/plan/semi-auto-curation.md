@@ -35,33 +35,85 @@ Lean guide for developers to implement and run the duplicate/conflict detection 
 
 ---
 
-## Quickstart (team mode; scripts to be built as CLI wrappers over existing services)
+## Quickstart (team mode)
+
+### Export Phase (Each Team Member - Web UI)
 ```
-# 1) Exports (each dev)
-python scripts/export_to_sheets.py --output alice_export.csv
+1. Each team member opens CHL web UI → Operations page
+2. Click "Export CSV" button (below "Export to Google Sheet")
+3. Browser downloads {username}.export.zip containing:
+   {username}/
+     ├── categories.csv
+     ├── experiences.csv
+     └── manuals.csv
+4. Send zip file to team curator (email/Slack/shared folder)
+```
 
-# 2) Merge
-python scripts/merge_exports.py --inputs team_exports/*.csv --output merged.csv
+### Curation Phase (Team Curator - Command Line)
+```bash
+# 1) Collect exports
+# Place all member zip files in data/curation/members/
+# Unzip: alice.export.zip, bob.export.zip, etc.
+unzip alice.export.zip -d data/curation/members/
+unzip bob.export.zip -d data/curation/members/
 
-# 3) Duplicate pass (pending vs synced + cross-team)
-python scripts/find_pending_dups.py --input merged.csv --compare-pending --format table
+# 2) Merge all member exports
+python scripts/curation/merge_exports.py \
+  --inputs data/curation/members/alice data/curation/members/bob \
+  --output data/curation/merged
 
-# 4) Interactive decisions (start with high bucket)
-python scripts/find_pending_dups.py --input merged.csv --bucket high --interactive
+# 3) Initialize curation database (same schema as main chl.db)
+python scripts/curation/init_curation_db.py --db-path data/curation/chl_curation.db
 
-# 5) Publish approved
-python scripts/publish_to_canonical.py --input merged.csv --sheet-id <PUBLISHED_SHEET_ID>
+# 4) Import merged data to curation database
+python scripts/curation/import_to_curation_db.py \
+  --input data/curation/merged \
+  --db-path data/curation/chl_curation.db
 
-# 6) Team imports new baseline (after publish)
+# 5) Build embeddings and FAISS index on curation DB
+python scripts/curation/build_curation_index.py --db-path data/curation/chl_curation.db
+
+# 6) Run duplicate detection (using curation DB embeddings)
+python scripts/curation/find_pending_dups.py \
+  --db-path data/curation/chl_curation.db \
+  --compare-pending \
+  --format table
+
+# 7) Interactive review (start with high similarity bucket)
+python scripts/curation/find_pending_dups.py \
+  --db-path data/curation/chl_curation.db \
+  --bucket high \
+  --interactive
+
+# 8) Export approved data from curation DB
+python scripts/curation/export_curated.py \
+  --db-path data/curation/chl_curation.db \
+  --output data/curation/approved
+
+# 9) Publish to canonical Google Sheet
+python scripts/curation/publish_to_canonical.py \
+  --input data/curation/approved \
+  --sheet-id <PUBLISHED_SHEET_ID>
+```
+
+### Sync Phase (All Team Members - Web UI or CLI)
+```bash
+# Option A: Web UI
+# Navigate to Operations → Import from Google Sheet → Click "Import"
+
+# Option B: Command line
 python scripts/import_from_sheets.py --sheet-id <PUBLISHED_SHEET_ID>
 python scripts/ops/rebuild_index.py
 ```
 
-**Solo mode** (local-only or single export): same steps, but either import a baseline first or pass `--compare-pending` so pending items can dedup against each other when no synced anchors exist.
+**Solo mode** (local-only or single export): export → import to curation DB → run with `--compare-pending` so pending items can dedup against each other → approve → import to main DB.
 
 Notes:
-- The scripts above are planned CLI wrappers around existing API capabilities (`OperationsService` export/import, GPU embedding/rerank). They need to be created or wired before use.
-- Existing endpoints today: `POST /api/v1/entries/export` (JSON), import service wipes DB then ingests sheets. Decide if CSV export/merge is additive or replaces the sheets-as-source-of-truth pattern (see ADR todo).
+- **Export format**: Web UI "Export CSV" button creates `{username}.export.zip` where username comes from `getpass.getuser()` (OS username). Zip contains a folder `{username}/` with 3 CSVs (categories.csv, experiences.csv, manuals.csv).
+- **Curation database**: `chl_curation.db` is a temporary database with identical schema to `chl.db`, used for similarity computation and dedup workflow. It isolates the curation work from team members' local databases.
+- **Merge behavior**: The merge script reads all member directories, merges each entity type separately (categories usually identical, experiences/manuals with ID collision handling), and outputs to `data/curation/merged/` with the same 3-file structure.
+- **Embeddings required**: Curation workflow requires GPU mode for embedding and similarity computation (reuses existing embedding service, FAISS manager, and reranker).
+- The scripts above are planned CLI wrappers around existing API capabilities (`get_author()`, `ImportService`, GPU embedding/rerank, `SheetsClient`). They need to be created.
 
 ---
 

@@ -814,3 +814,130 @@ def export_entries(
     except Exception as e:
         logger.exception("Error exporting entries")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export-csv")
+def export_entries_csv(
+    session: Session = Depends(get_db_session),
+):
+    """Export all entries as CSV files in a zip archive for team curation workflow.
+
+    Returns a zip file named {username}.export.zip containing:
+    - {username}/categories.csv
+    - {username}/experiences.csv
+    - {username}/manuals.csv
+    """
+    import csv
+    import io
+    import tempfile
+    import zipfile
+    from pathlib import Path
+    from fastapi.responses import StreamingResponse
+    from src.common.storage.repository import get_author
+    from src.common.storage.schema import Experience, CategoryManual, Category
+
+    try:
+        # Get username from system
+        username = get_author() or "unknown"
+
+        # Fetch all data
+        experiences = session.query(Experience).all()
+        manuals = session.query(CategoryManual).all()
+        categories = session.query(Category).all()
+
+        # Create in-memory zip file
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Export categories
+            if categories:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "code", "name", "description", "created_at"
+                ])
+                writer.writeheader()
+                for cat in categories:
+                    writer.writerow({
+                        "code": cat.code,
+                        "name": cat.name,
+                        "description": cat.description or "",
+                        "created_at": cat.created_at.isoformat() if cat.created_at else "",
+                    })
+                zip_file.writestr(f"{username}/categories.csv", csv_buffer.getvalue())
+
+            # Export experiences
+            if experiences:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "id", "category_code", "section", "title", "playbook", "context",
+                    "source", "sync_status", "author", "embedding_status",
+                    "created_at", "updated_at", "synced_at", "exported_at"
+                ])
+                writer.writeheader()
+                for exp in experiences:
+                    writer.writerow({
+                        "id": exp.id,
+                        "category_code": exp.category_code,
+                        "section": exp.section,
+                        "title": exp.title,
+                        "playbook": exp.playbook,
+                        "context": exp.context or "",
+                        "source": exp.source or "",
+                        "sync_status": exp.sync_status,
+                        "author": exp.author or "",
+                        "embedding_status": exp.embedding_status or "",
+                        "created_at": exp.created_at.isoformat() if exp.created_at else "",
+                        "updated_at": exp.updated_at.isoformat() if exp.updated_at else "",
+                        "synced_at": exp.synced_at.isoformat() if exp.synced_at else "",
+                        "exported_at": exp.exported_at.isoformat() if exp.exported_at else "",
+                    })
+                zip_file.writestr(f"{username}/experiences.csv", csv_buffer.getvalue())
+
+            # Export manuals
+            if manuals:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "id", "category_code", "title", "content", "summary",
+                    "source", "sync_status", "author", "embedding_status",
+                    "created_at", "updated_at", "synced_at", "exported_at"
+                ])
+                writer.writeheader()
+                for man in manuals:
+                    writer.writerow({
+                        "id": man.id,
+                        "category_code": man.category_code,
+                        "title": man.title,
+                        "content": man.content,
+                        "summary": man.summary or "",
+                        "source": man.source or "",
+                        "sync_status": man.sync_status,
+                        "author": man.author or "",
+                        "embedding_status": man.embedding_status or "",
+                        "created_at": man.created_at.isoformat() if man.created_at else "",
+                        "updated_at": man.updated_at.isoformat() if man.updated_at else "",
+                        "synced_at": man.synced_at.isoformat() if man.synced_at else "",
+                        "exported_at": man.exported_at.isoformat() if man.exported_at else "",
+                    })
+                zip_file.writestr(f"{username}/manuals.csv", csv_buffer.getvalue())
+
+        # Prepare zip for download
+        zip_buffer.seek(0)
+        filename = f"{username}.zip"
+
+        logger.info(
+            "CSV export created for user=%s: %d categories, %d experiences, %d manuals",
+            username,
+            len(categories),
+            len(experiences),
+            len(manuals),
+        )
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+
+    except Exception as e:
+        logger.exception("Error exporting entries to CSV")
+        raise HTTPException(status_code=500, detail=str(e))
