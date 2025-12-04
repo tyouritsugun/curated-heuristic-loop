@@ -22,6 +22,8 @@ Alice and Bob have each been using CHL locally for 2 weeks. They've accumulated 
 4. Publish the approved knowledge base
 5. Have the team sync to the new baseline
 
+**Important Team Convention**: Category codes (3-letter abbreviations like "DVT", "PGS", "ADG") must be unique and agreed upon by the entire team. All team members should use the same category codes with identical names and descriptions. The merge script uses category codes as unique keys - if conflicts are detected (same code, different name/description), the merge will fail and the team must align on category definitions first.
+
 ---
 
 ## Phase 1: Export (Alice & Bob)
@@ -105,8 +107,9 @@ python scripts/curation/merge_exports.py \
   --output data/curation/merged
 
 # Output:
-# ✓ Merged 2 member exports
-# ✓ Categories: 1 unique (DEV_TOOLING)
+# ✓ Merged 2 member exports (alice, bob)
+# ✓ Categories: 1 unique (DVT - dev_tooling_common_errors)
+#   - Validated: all members use same code/name/description
 # ✓ Experiences: 100 total (52 from alice, 48 from bob)
 #   - 3 ID collisions detected and resolved (suffix appended)
 #   - Collision log: data/curation/merge_audit.csv

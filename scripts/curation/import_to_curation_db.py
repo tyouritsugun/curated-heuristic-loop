@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""
+Import merged CSVs into curation database.
+
+This script reads the merged CSV files (categories.csv, experiences.csv,
+manuals.csv) and imports them into the curation database. All entries are
+marked with embedding_status='pending' for later processing.
+
+Usage:
+    python scripts/curation/import_to_curation_db.py \\
+        --input data/curation/merged \\
+        --db-path data/curation/chl_curation.db
+"""
+
+import argparse
+import csv
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Add project root to sys.path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.common.storage.schema import Category, Experience, CategoryManual
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Import merged CSVs into curation database"
+    )
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Input directory containing merged CSVs (e.g., data/curation/merged)",
+    )
+    parser.add_argument(
+        "--db-path",
+        default="data/curation/chl_curation.db",
+        help="Path to curation database (default: data/curation/chl_curation.db)",
+    )
+    return parser.parse_args()
+
+
+def read_csv(file_path: Path):
+    """Read CSV file and return list of dicts."""
+    if not file_path.exists():
+        return []
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        return list(reader)
+
+
+def parse_datetime(dt_str: str):
+    """Parse ISO datetime string, return None if empty."""
+    if not dt_str:
+        return None
+    try:
+        return datetime.fromisoformat(dt_str)
+    except (ValueError, AttributeError):
+        return None
+
+
+def main():
+    args = parse_args()
+
+    input_dir = Path(args.input)
+    db_path = Path(args.db_path)
+
+    # Validate inputs
+    if not input_dir.exists():
+        print(f"❌ Error: Input directory does not exist: {input_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    if not db_path.exists():
+        print(f"❌ Error: Database does not exist: {db_path}", file=sys.stderr)
+        print("   Run init_curation_db.py first")
+        sys.exit(1)
+
+    # Read CSVs
+    print(f"Reading merged CSVs from: {input_dir}")
+    print()
+
+    categories_data = read_csv(input_dir / "categories.csv")
+    experiences_data = read_csv(input_dir / "experiences.csv")
+    manuals_data = read_csv(input_dir / "manuals.csv")
+
+    print(f"  Categories: {len(categories_data)} rows")
+    print(f"  Experiences: {len(experiences_data)} rows")
+    print(f"  Manuals: {len(manuals_data)} rows")
+    print()
+
+    # Create database session
+    engine = create_engine(f"sqlite:///{db_path}")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    try:
+        # Import categories
+        print("Importing categories...")
+        for row in categories_data:
+            category = Category(
+                code=row["code"],
+                name=row["name"],
+                description=row.get("description") or None,
+                created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+            )
+            session.add(category)
+
+        session.commit()
+        print(f"✓ Imported {len(categories_data)} categories")
+        print()
+
+        # Import experiences
+        print("Importing experiences...")
+        for row in experiences_data:
+            experience = Experience(
+                id=row["id"],
+                category_code=row["category_code"],
+                section=row["section"],
+                title=row["title"],
+                playbook=row["playbook"],
+                context=row.get("context") or None,
+                source=row.get("source") or "local",
+                sync_status=int(row.get("sync_status") or 1),
+                author=row.get("author") or None,
+                embedding_status="pending",  # Always mark as pending for curation
+                created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+                updated_at=parse_datetime(row.get("updated_at")) or datetime.now(timezone.utc),
+                synced_at=parse_datetime(row.get("synced_at")),
+                exported_at=parse_datetime(row.get("exported_at")),
+            )
+            session.add(experience)
+
+        session.commit()
+        print(f"✓ Imported {len(experiences_data)} experiences")
+        print(f"  All marked as embedding_status='pending'")
+        print()
+
+        # Import manuals
+        print("Importing manuals...")
+        for row in manuals_data:
+            manual = CategoryManual(
+                id=row["id"],
+                category_code=row["category_code"],
+                title=row["title"],
+                content=row["content"],
+                summary=row.get("summary") or None,
+                source=row.get("source") or "local",
+                sync_status=int(row.get("sync_status") or 1),
+                author=row.get("author") or None,
+                embedding_status="pending",  # Always mark as pending for curation
+                created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+                updated_at=parse_datetime(row.get("updated_at")) or datetime.now(timezone.utc),
+                synced_at=parse_datetime(row.get("synced_at")),
+                exported_at=parse_datetime(row.get("exported_at")),
+            )
+            session.add(manual)
+
+        session.commit()
+        print(f"✓ Imported {len(manuals_data)} manuals")
+        print(f"  All marked as embedding_status='pending'")
+        print()
+
+        print("✅ Import complete!")
+        print()
+        print("Next step: Build embeddings and FAISS index")
+        print(f"  python scripts/curation/build_curation_index.py --db-path {db_path}")
+
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Error during import: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        session.close()
+
+
+if __name__ == "__main__":
+    main()
