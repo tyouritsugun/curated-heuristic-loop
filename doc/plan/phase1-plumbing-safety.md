@@ -59,7 +59,7 @@ Solo mode: same flow but usually only one member directory; duplicate finder def
 - Fail fast if any required column missing or extra unknown columns appear (except whitelisted optional ones). Print per-file column diff.
 - Enforce category code uniqueness and identical name/description across members; abort on conflict.
 - ID collisions: experiences/manuals keep the original ID, append `_{author}` on collision, log to `merge_audit.csv`.
-- Curation-only columns (to add in schema or via sidecar table): `merge_with` (string, nullable) and `curation_notes` (text, nullable) to store merge decisions; required before `find_pending_dups` mutates data.
+- Curation-only columns (to add in curation DB schema or via a `curation_decisions` sidecar table; production schema unchanged): `merge_with` (string, nullable) and `curation_notes` (text, nullable) to store merge decisions; required before `find_pending_dups` mutates data.
 - All imported rows set `embedding_status=pending`; timestamps normalized to UTC.
 
 ---
@@ -71,7 +71,7 @@ Solo mode: same flow but usually only one member directory; duplicate finder def
 - Buckets (default thresholds): high ≥0.92, medium 0.75–0.92, low <0.75. Allow CLI overrides.
 - Output formats: `table` (stdout), `json`, `csv`. Include columns: `pending_id, anchor_id, score, category, title_snippet, section_mismatch, id_collision_flag`.
 - Interactive mode commands (persist to `evaluation_log.csv` and state file):
-  - `merge <pending_id> <anchor_id>`: mark pending as duplicate of anchor (sets `sync_status=1` and records `merge_with=anchor_id` plus optional `curation_notes`).
+  - `merge <pending_id> <anchor_id>`: mark pending as duplicate of anchor (sets pending entry `sync_status=2` and records `merge_with=anchor_id` plus optional `curation_notes`; anchor keeps its current status).
   - `keep <pending_id>`: keep separate; record note.
   - `reject <pending_id> <reason>`: set `sync_status=2`.
   - `update <pending_id>`: open editor or prompt for title/playbook/context edits; mark `embedding_status=pending` for re-embed later.
@@ -111,7 +111,7 @@ Solo mode: same flow but usually only one member directory; duplicate finder def
 ---
 
 ## Open Questions / Decisions to lock before code freeze
-- `sync_status` mapping (locked for Phase 1): `0=PENDING`, `1=SYNCED`, `2=REJECTED`. Curation imports set `sync_status=1`; rejected dupes set to 2.
+- `sync_status` mapping (locked for Phase 1): `0=PENDING` (local/not yet published), `1=SYNCED` (from canonical sheet or previously approved), `2=REJECTED` (curator decision). Curation imports preserve the source `sync_status` from member exports; curator marks rejected duplicates as 2. Export filters out `sync_status=2` by default.
 - Manuals in Phase 1 duplicate detection: keep out by default; add `--include-manuals` later (Phase 2) after we validate experience flow.
 - Rerank hook: do we wire the existing LLM reranker now, or leave a stub with a feature flag?
 - Canonical sheet ID: use `PUBLISHED_SPREADSHEET_ID` from `.env.sample` (distinct from `IMPORT_SPREADSHEET_ID`).
