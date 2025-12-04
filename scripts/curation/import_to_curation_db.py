@@ -55,11 +55,15 @@ def read_csv(file_path: Path):
 
 
 def parse_datetime(dt_str: str):
-    """Parse ISO datetime string, return None if empty."""
+    """Parse ISO datetime string, return None if empty. Normalizes to UTC if naive."""
     if not dt_str:
         return None
     try:
-        return datetime.fromisoformat(dt_str)
+        dt = datetime.fromisoformat(dt_str)
+        # If datetime is naive (no timezone info), assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except (ValueError, AttributeError):
         return None
 

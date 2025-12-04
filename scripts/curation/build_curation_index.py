@@ -163,6 +163,10 @@ def main():
                 content = f"{exp.title}\n\n{exp.playbook}"
 
                 try:
+                    # Mark as processing
+                    exp.embedding_status = "processing"
+                    session.flush()
+
                     # Generate embedding
                     embedding_vector = embedding_client.encode_single(content)
 
@@ -175,8 +179,8 @@ def main():
                         model_version=config.embedding_model,
                     )
 
-                    # Update status
-                    exp.embedding_status = "synced"
+                    # Update status to embedded (not "synced")
+                    exp.embedding_status = "embedded"
 
                 except Exception as e:
                     print(f"\n❌ Error processing experience {exp.id}: {e}")
@@ -197,6 +201,10 @@ def main():
                 content = f"{manual.title}\n\n{manual.content}"
 
                 try:
+                    # Mark as processing
+                    manual.embedding_status = "processing"
+                    session.flush()
+
                     # Generate embedding
                     embedding_vector = embedding_client.encode_single(content)
 
@@ -209,8 +217,8 @@ def main():
                         model_version=config.embedding_model,
                     )
 
-                    # Update status
-                    manual.embedding_status = "synced"
+                    # Update status to embedded (not "synced")
+                    manual.embedding_status = "embedded"
 
                 except Exception as e:
                     print(f"\n❌ Error processing manual {manual.id}: {e}")
@@ -227,13 +235,26 @@ def main():
         # Build FAISS index
         print("Building FAISS index...")
         from src.api.gpu.faiss_manager import FAISSIndexManager
+        from src.common.storage.schema import FAISSMetadata
         import numpy as np
+        import shutil
 
         # Determine index path
         index_dir = db_path.parent / "faiss_index"
+
+        # Clear existing index files and metadata to avoid duplication
+        if index_dir.exists():
+            print("  Removing existing index files...")
+            shutil.rmtree(index_dir)
+
         index_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize FAISS manager
+        # Clear FAISS metadata table
+        print("  Clearing faiss_metadata table...")
+        session.query(FAISSMetadata).delete()
+        session.commit()
+
+        # Initialize FAISS manager with fresh index
         dimension = len(embedding_client.encode_single("test"))
         faiss_manager = FAISSIndexManager(
             index_dir=str(index_dir),

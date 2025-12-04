@@ -61,10 +61,16 @@ def write_csv(file_path: Path, rows: List[Dict], fieldnames: List[str]):
     """Write list of dicts to CSV file."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Normalize rows: ensure all fieldnames exist (fill missing with empty string)
+    normalized_rows = []
+    for row in rows:
+        normalized_row = {field: row.get(field, "") for field in fieldnames}
+        normalized_rows.append(normalized_row)
+
     with open(file_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(normalized_rows)
 
 
 def merge_categories(member_data: Dict[str, List[Dict]]) -> Tuple[List[Dict], List[str]]:
