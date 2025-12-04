@@ -170,7 +170,10 @@ def main():
                     # Generate embedding
                     embedding_vector = embedding_client.encode_single(content)
 
-                    # Save embedding
+                    # Delete any existing embedding to avoid duplicates on re-embed
+                    emb_repo.delete_by_entity(exp.id, "experience")
+
+                    # Save new embedding
                     emb_repo.create(
                         entity_id=exp.id,
                         entity_type="experience",
@@ -208,7 +211,10 @@ def main():
                     # Generate embedding
                     embedding_vector = embedding_client.encode_single(content)
 
-                    # Save embedding
+                    # Delete any existing embedding to avoid duplicates on re-embed
+                    emb_repo.delete_by_entity(manual.id, "manual")
+
+                    # Save new embedding
                     emb_repo.create(
                         entity_id=manual.id,
                         entity_type="manual",
