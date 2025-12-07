@@ -29,6 +29,10 @@ Lean guide for developers to implement and run the duplicate/conflict detection 
 
 ## Preconditions
 - **GPU mode required**: Semi-auto curation requires GPU-accelerated embeddings and reranking (Metal/CUDA). CPU-only mode is not supported for this workflow due to dependency on semantic similarity scoring.
+- **Virtual environment**: Use the appropriate virtual environment for your hardware:
+  - **Apple Silicon**: `.venv-apple` created with `requirements_apple.txt`
+  - **NVIDIA GPU**: `.venv-nvidia` created with `requirements_nvidia.txt`
+  - Activate with `source .venv-apple/bin/activate` or `source .venv-nvidia/bin/activate`
 - Google Sheet ID + service account creds available.
 - Local DB consistent with latest import (or export before wiping).
 - CSV schema version matches tooling; reject/bail if columns missing.
@@ -51,6 +55,10 @@ Lean guide for developers to implement and run the duplicate/conflict detection 
 
 ### Curation Phase (Team Curator - Command Line)
 ```bash
+# Before running scripts, activate the appropriate virtual environment:
+# For Apple Silicon: source .venv-apple/bin/activate
+# For NVIDIA GPU: source .venv-nvidia/bin/activate
+
 # 1) Collect exports
 # Place all member zip files in data/curation/members/
 # Unzip: alice.export.zip, bob.export.zip, etc.
@@ -71,6 +79,7 @@ python scripts/curation/import_to_curation_db.py \
   --db-path data/curation/chl_curation.db
 
 # 5) Build embeddings and FAISS index on curation DB
+# Note: This step requires GPU mode (Metal/CUDA)
 python scripts/curation/build_curation_index.py --db-path data/curation/chl_curation.db
 
 # 6) Run duplicate detection (using curation DB embeddings)

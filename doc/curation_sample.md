@@ -2,6 +2,41 @@
 
 A step-by-step guide showing how Alice, Bob, and their team leader Carlos use CHL's semi-automatic curation workflow to merge, deduplicate, and publish their collective knowledge.
 
+### Virtual Environment Setup
+
+The scrpits are using same envoriments as API server which requires a dedicated virtual environment based on your hardware platform:
+
+<details>
+<summary><b>Choose Your Platform:</b></summary>
+
+- **CPU-Only Mode:** Use `.venv-cpu` virtual environment with `requirements_cpu.txt`
+- **Apple Silicon (Metal):** Use `.venv-apple` virtual environment with `requirements_apple.txt`
+- **NVIDIA GPU:** Use `.venv-nvidia` virtual environment with `requirements_nvidia.txt`
+
+**Activate the appropriate virtual environment before running any curation scripts:**
+
+For CPU mode:
+```bash
+source .venv-cpu/bin/activate  # Linux/macOS
+# Windows: .venv-cpu\Scripts\activate
+```
+
+For Apple Silicon:
+```bash
+source .venv-apple/bin/activate  # Linux/macOS
+# Windows: .venv-apple\Scripts\activate
+```
+
+For NVIDIA GPU:
+```bash
+source .venv-nvidia/bin/activate  # Linux/macOS
+# Windows: .venv-nvidia\Scripts\activate
+```
+
+**Important:** The semi-auto curation pipeline (Phase 1-4) requires GPU mode (Apple Silicon or NVIDIA) for semantic similarity computation. CPU-only mode does not support the embedding and similarity search operations needed for duplicate detection, however, it is possible for the cpu-only user to export the local database to share with the team.
+</details>
+
+
 ---
 
 ## Cast of Characters
