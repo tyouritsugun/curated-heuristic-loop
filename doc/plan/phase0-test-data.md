@@ -4,6 +4,33 @@ Practical plan to build the Phase 0 test corpus and two parallel spreadsheets 
 
 ---
 
+## Compatibility and Trustworthiness Considerations
+
+When merging data from individual team member exports, we must assume that database fields that may help filter or locate records easily are **untrustworthy** and should not be used for assumptions during the merge process. Specifically:
+
+**Problem: Untrustworthy sync_status from Individual Local Databases**
+Team members export data from their individual local databases with `sync_status` values (0=PENDING, 1=SYNCED, 2=REJECTED) that may not be comparable across members:
+- Alice's `sync_status=1` may come from an outdated canonical baseline
+- Bob's `sync_status=1` may come from a newer canonical baseline
+- Same `sync_status` values represent different points in time/versions
+- No verification that the `sync_status` actually reflects the current canonical state
+- Creates false confidence in data consistency during merge
+
+**Root Cause**
+The curation workflow assumes that individual member's database field values are meaningful and consistent, but:
+1. Team members may load data at different times from canonical sheet
+2. Local modifications may happen without proper sync operations
+3. Same field values mean different things in different contexts
+4. No way to validate whether a member's local data status is current
+
+**Solution: Ignore Trust-Issues During Merge**
+- Do not make assumptions based on `sync_status` or similar fields from individual exports
+- All data from member exports needs to be merged and curated equally
+- Let the curation workflow set authoritative values only after proper review and merge decisions
+- Reset all imported entries to appropriate default states (e.g., `sync_status=0` for PENDING) for curation
+
+---
+
 ## Goals
 - Create a realistic, reusable dataset to exercise merge, dedup, similarity, drift, and schema guards.
 - Two near-overlapping sheets to mimic two teammates: Team A sheet and Team B sheet.
@@ -43,7 +70,7 @@ Guidelines:
 - **Category**: `DEV_TOOLING` (Developer Tooling – Common Errors & Fixes).
 - **Manuals (~10)**: SOP/policy style (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage, venv rules, IDE workspace setup). Include 2 near-duplicates (≥0.85 similarity) to force a manual dedup decision.
 - **Experiences (100–150)**: atomic issue → fix. Mix Git/npm/yarn/pnpm/pip/Docker/Podman/VS Code/JetBrains/HTTP 4xx/5xx/K8s/DB connection errors. Ensure at least 20 seed experiences that branch into variants to satisfy the test scenarios above.
-- Fields: `id`, `category_code`, `section (useful/harmful/contextual)`, `title`, `playbook`, `context (OS/tool/version)`, `source`, `author`, `sync_status` (int), `created_at/updated_at`, `expected_action` (ground truth: `merge_with:<id>`, `keep_separate`, `needs_review`, `reject`).
+- Fields: `id`, `category_code`, `section (useful/harmful/contextual)`, `title`, `playbook`, `context (OS/tool/version)`, `source`, `author`, `sync_status` (int) - note: sync_status values are not trusted during merge and are reset during curation import, `created_at/updated_at`, `expected_action` (ground truth: `merge_with:<id>`, `keep_separate`, `needs_review`, `reject`).
 - Keep IDs stable within variant families; deliberately create 3 cross-team ID collisions to test suffixing.
 
 ### Timestamp strategy (for `created_at`/`updated_at`)
@@ -66,7 +93,7 @@ Guidelines:
 ## Extraction & Curation Steps
 1) For each site, pick 1 manual-style item and 3–5 experience items (as available).
 2) Paraphrase and normalize into schema; add minimal context (OS, tool versions). Create controlled near-duplicates by varying package names, versions, paths, OS, and success/failure mode while keeping the core problem signature.
-3) Assign `sync_status` integers (use 0=PENDING for all test inserts). Populate `expected_action` per test scenario, including `merge_with:<id>` targets for high/medium pairs and `keep_separate` for drift/borderline cases.
+3) Assign `sync_status` integers (use 0=PENDING for all test inserts) - these values are for test data completeness but will be reset during curation import since they are not trusted from individual exports. Populate `expected_action` per test scenario, including `merge_with:<id>` targets for high/medium pairs and `keep_separate` for drift/borderline cases.
 4) Load into two Google Sheets (3 worksheets each: Categories, Experiences, Manuals) to simulate Team A and Team B exports. Also create one **deliberate schema-mismatch CSV** (wrong/extra column) to test preflight rejection.
 5) Export structure: `data/curation/members/team_a/` and `data/curation/members/team_b/`, each containing `categories.csv`, `experiences.csv`, `manuals.csv`.
 6) Scenario-to-site mapping (guide, adjust as needed): Git/GitHub/npm/yarn/pnpm → drift triads & high-sim merges; Docker/Podman → cross-section conflicts; VS Code/JetBrains → borderline pairs; HTTP/K8s/DB → regression/extension cases; manuals from policy-style sources for manual near-dupes.
