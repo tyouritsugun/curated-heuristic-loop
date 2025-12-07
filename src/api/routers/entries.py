@@ -870,7 +870,7 @@ def export_entries_csv(
                 csv_buffer = io.StringIO()
                 writer = csv.DictWriter(csv_buffer, fieldnames=[
                     "id", "category_code", "section", "title", "playbook", "context",
-                    "source", "sync_status", "author", "embedding_status",
+                    "source", "author", "embedding_status",
                     "created_at", "updated_at", "synced_at", "exported_at"
                 ])
                 writer.writeheader()
@@ -883,7 +883,6 @@ def export_entries_csv(
                         "playbook": exp.playbook,
                         "context": exp.context or "",
                         "source": exp.source or "",
-                        "sync_status": exp.sync_status,
                         "author": exp.author or "",
                         "embedding_status": exp.embedding_status or "",
                         "created_at": exp.created_at.isoformat() if exp.created_at else "",
@@ -898,7 +897,7 @@ def export_entries_csv(
                 csv_buffer = io.StringIO()
                 writer = csv.DictWriter(csv_buffer, fieldnames=[
                     "id", "category_code", "title", "content", "summary",
-                    "source", "sync_status", "author", "embedding_status",
+                    "source", "author", "embedding_status",
                     "created_at", "updated_at", "synced_at", "exported_at"
                 ])
                 writer.writeheader()
@@ -910,7 +909,6 @@ def export_entries_csv(
                         "content": man.content,
                         "summary": man.summary or "",
                         "source": man.source or "",
-                        "sync_status": man.sync_status,
                         "author": man.author or "",
                         "embedding_status": man.embedding_status or "",
                         "created_at": man.created_at.isoformat() if man.created_at else "",

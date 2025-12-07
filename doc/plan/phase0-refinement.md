@@ -52,9 +52,9 @@ The curation workflow assumes that individual member's `sync_status` values are 
 
 #### Migration Path
 1. Update Phase 0 test data generation to not rely on `sync_status` from members
-2. Modify export scripts to stop including `sync_status` in member exports  
+2. Modify export scripts to stop including `sync_status` in member exports
 3. Update curation scripts to handle `sync_status` reset during import
-4. Ensure existing data can be migrated appropriately
+4. **Note**: No backward compatibility support will be provided. All member exports must follow the new schema without `sync_status`. Any existing exports with `sync_status` will need to be regenerated.
 
 #### Benefits
 - Eliminates trust issues between team member exports
@@ -62,6 +62,13 @@ The curation workflow assumes that individual member's `sync_status` values are 
 - Makes the curation process the authoritative source of truth for `sync_status`
 - Simplifies validation and reduces potential for merge conflicts
 - Maintains data integrity throughout the curation pipeline
+
+#### Important Note on Backward Compatibility
+**No backward compatibility support will be provided** for the old schema that includes `sync_status` in member exports. This is a clean break approach where:
+- All existing member export CSVs with `sync_status` will be invalid
+- All team members must regenerate their exports following the new schema
+- The curation pipeline will only accept exports without the `sync_status` field
+- Any attempt to use old exports will result in schema validation failure
 
 #### Expected Outcome
 - All member exports contribute equally to curation regardless of their local `sync_status`

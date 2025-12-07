@@ -11,9 +11,13 @@ This script:
 6. Logs merge audit trail to data/curation/merge_audit.csv
 
 Usage:
+    # With explicit paths:
     python scripts/curation/merge_exports.py \\
         --inputs data/curation/members/alice data/curation/members/bob \\
         --output data/curation/merged
+
+    # With defaults from scripts_config.yaml:
+    python scripts/curation/merge_exports.py
 """
 
 import argparse
@@ -23,23 +27,69 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
+# Add project root to sys.path for config loading
+project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
+sys.path.insert(0, str(project_root.parent))  # This gives us the project root
+
+from scripts._config_loader import load_scripts_config
+
 
 def parse_args():
+    # Load config to get defaults
+    try:
+        config, _ = load_scripts_config()
+        curation_config = config.get("curation", {})
+        default_members_dir = curation_config.get("members_dir", "data/curation/members")
+        default_output_dir = curation_config.get("merged_output_dir", "data/curation/merged")
+    except Exception:
+        # Fallback to hard-coded defaults if config loading fails
+        default_members_dir = "data/curation/members"
+        default_output_dir = "data/curation/merged"
+
     parser = argparse.ArgumentParser(
         description="Merge member CSV exports for team curation workflow"
     )
     parser.add_argument(
         "--inputs",
-        nargs="+",
-        required=True,
-        help="List of member directories (e.g., data/curation/members/alice data/curation/members/bob)",
+        nargs="*",
+        help="List of member directories (default: scan default members directory)",
+        default=None,
     )
     parser.add_argument(
         "--output",
-        required=True,
-        help="Output directory for merged CSVs (e.g., data/curation/merged)",
+        help=f"Output directory for merged CSVs (default: {default_output_dir})",
+        default=default_output_dir,
     )
-    return parser.parse_args()
+
+    args = parser.parse_args()
+
+    # If no inputs specified, scan the default members directory for subdirectories
+    # that contain the expected CSV files (valid member export directories)
+    if args.inputs is None:
+        members_path = Path(default_members_dir)
+        if members_path.exists():
+            valid_members = []
+            for sub in members_path.iterdir():
+                if sub.is_dir():
+                    # Check if this subdirectory has the expected CSV files (lowercase or capitalized)
+                    csv_files = ["categories.csv", "experiences.csv", "manuals.csv"]
+                    alt_csv_files = ["Categories.csv", "Experiences.csv", "Manuals.csv"]
+
+                    # Check if all lowercase files exist OR all capitalized files exist
+                    lowercase_exist = all((sub / csv_file).exists() for csv_file in csv_files)
+                    capitalized_exist = all((sub / csv_file).exists() for csv_file in alt_csv_files)
+
+                    if lowercase_exist or capitalized_exist:
+                        valid_members.append(str(sub))
+
+            if valid_members:
+                args.inputs = valid_members
+            else:
+                parser.error(f"No valid member directories found in {default_members_dir} (directories must contain categories.csv, experiences.csv, and manuals.csv). Please specify --inputs explicitly.")
+        else:
+            parser.error(f"Default members directory {default_members_dir} does not exist. Please specify --inputs explicitly.")
+
+    return args
 
 
 def read_csv(file_path: Path) -> List[Dict]:
@@ -333,7 +383,7 @@ def main():
             merged_experiences,
             [
                 "id", "category_code", "section", "title", "playbook", "context",
-                "source", "sync_status", "author", "embedding_status",
+                "source", "author", "embedding_status",
                 "created_at", "updated_at", "synced_at", "exported_at",
             ],
         )
@@ -344,7 +394,7 @@ def main():
             merged_manuals,
             [
                 "id", "category_code", "title", "content", "summary",
-                "source", "sync_status", "author", "embedding_status",
+                "source", "author", "embedding_status",
                 "created_at", "updated_at", "synced_at", "exported_at",
             ],
         )

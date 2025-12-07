@@ -7,6 +7,10 @@ schema as the main CHL database. This database is used for the merge/dedup
 workflow.
 
 Usage:
+    # With default path from scripts_config.yaml:
+    python scripts/curation/init_curation_db.py
+
+    # With explicit path:
     python scripts/curation/init_curation_db.py --db-path data/curation/chl_curation.db
 """
 
@@ -15,20 +19,30 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
+sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
 
 from sqlalchemy import create_engine
 from src.common.storage.schema import Base
+from scripts._config_loader import load_scripts_config
 
 def parse_args():
+    # Load config to get defaults
+    try:
+        config, _ = load_scripts_config()
+        curation_config = config.get("curation", {})
+        default_db_path = curation_config.get("curation_db_path", "data/curation/chl_curation.db")
+    except Exception:
+        # Fallback to hard-coded default if config loading fails
+        default_db_path = "data/curation/chl_curation.db"
+
     parser = argparse.ArgumentParser(
         description="Initialize curation database with CHL schema"
     )
     parser.add_argument(
         "--db-path",
-        default="data/curation/chl_curation.db",
-        help="Path to curation database (default: data/curation/chl_curation.db)",
+        default=default_db_path,
+        help=f"Path to curation database (default: {default_db_path})",
     )
     parser.add_argument(
         "--force",

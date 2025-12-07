@@ -9,6 +9,10 @@ IMPORTANT: The API server must be stopped before running this script to avoid
            conflicts with the GPU/embedding models.
 
 Usage:
+    # With default path from scripts_config.yaml:
+    python scripts/curation/build_curation_index.py
+
+    # With explicit path:
     python scripts/curation/build_curation_index.py \\
         --db-path data/curation/chl_curation.db
 """
@@ -20,8 +24,10 @@ import time
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
+sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
+
+from scripts._config_loader import load_scripts_config
 
 
 def check_api_server_running(port=8000):
@@ -37,13 +43,22 @@ def check_api_server_running(port=8000):
 
 
 def parse_args():
+    # Load config to get defaults
+    try:
+        config, _ = load_scripts_config()
+        curation_config = config.get("curation", {})
+        default_db_path = curation_config.get("curation_db_path", "data/curation/chl_curation.db")
+    except Exception:
+        # Fallback to hard-coded default if config loading fails
+        default_db_path = "data/curation/chl_curation.db"
+
     parser = argparse.ArgumentParser(
         description="Build embeddings and FAISS index for curation database"
     )
     parser.add_argument(
         "--db-path",
-        default="data/curation/chl_curation.db",
-        help="Path to curation database (default: data/curation/chl_curation.db)",
+        default=default_db_path,
+        help=f"Path to curation database (default: {default_db_path})",
     )
     parser.add_argument(
         "--skip-server-check",

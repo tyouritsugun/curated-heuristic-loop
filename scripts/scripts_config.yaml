@@ -9,6 +9,19 @@ data_path: ../data
 # Optional override for the SQLite database filename (relative to data_path).
 database_filename: chl.db
 
+curation:
+  # Default paths for curation workflow
+  members_dir: data/curation/members
+  merged_output_dir: data/curation/merged
+  curation_db_path: data/curation/chl_curation.db
+  approved_output_dir: data/curation/approved
+  # State file for resume functionality
+  state_file: data/curation/.curation_state.json
+  # Other potential curation paths
+  faiss_index_dir: data/curation/faiss_index
+  audit_log_path: data/curation/merge_audit.csv
+  evaluation_log_path: data/curation/evaluation_log.csv
+
 export:
   worksheets:
     categories: Categories

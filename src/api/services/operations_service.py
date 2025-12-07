@@ -586,7 +586,7 @@ class OperationsService:
         )
 
         # Export Experiences
-        experiences_headers = ["id", "category_code", "section", "title", "playbook", "context", "updated_at", "author", "source", "sync_status"]
+        experiences_headers = ["id", "category_code", "section", "title", "playbook", "context", "updated_at", "author", "source"]
         experiences_rows = [
             [
                 exp.id,
@@ -598,7 +598,6 @@ class OperationsService:
                 exp.updated_at.isoformat() if exp.updated_at else "",
                 exp.author or "",
                 exp.source or "",
-                str(exp.sync_status) if exp.sync_status is not None else "",
             ]
             for exp in experiences
         ]

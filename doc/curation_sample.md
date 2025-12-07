@@ -32,7 +32,8 @@ Alice and Bob have each been using CHL locally for 2 weeks. They've accumulated 
 
 ```bash
 # 1. Alice starts her CHL instance (GPU mode recommended for later phases)
-cd ~/chl
+# Navigate to the project root directory where curated-heuristic-loop exists
+cd ~/Documents/program/curated-heuristic-loop
 source .venv-nvidia/bin/activate
 python -m src.api.server
 
@@ -75,7 +76,7 @@ bob/
 
 ```bash
 # Carlos creates curation workspace
-cd ~/chl
+cd ~/Documents/program/curated-heuristic-loop
 mkdir -p data/curation/members
 cd data/curation/members
 
@@ -99,12 +100,11 @@ unzip bob.export.zip
 ### Step 2: Merge Exports
 
 ```bash
-cd ~/chl
+# Navigate to the project root directory where curated-heuristic-loop exists
+cd ~/Documents/program/curated-heuristic-loop
 
-# Merge all member exports into one dataset
-python scripts/curation/merge_exports.py \
-  --inputs data/curation/members/alice data/curation/members/bob \
-  --output data/curation/merged
+# Merge all member exports into one dataset (uses defaults from scripts_config.yaml)
+python scripts/curation/merge_exports.py
 
 # Output:
 # ✓ Merged 2 member exports (alice, bob)
@@ -132,8 +132,8 @@ mer-20250203-143022,2025-02-03T14:30:22Z,carlos,"alice,bob",merged,100,0,"EXP-DV
 ### Step 3: Initialize Curation Database
 
 ```bash
-# Create a fresh curation database (same schema as chl.db)
-python scripts/curation/init_curation_db.py --db-path data/curation/chl_curation.db
+# Create a fresh curation database (uses defaults from scripts_config.yaml)
+python scripts/curation/init_curation_db.py
 
 # Output:
 # ✓ Database initialized at: data/curation/chl_curation.db
@@ -144,10 +144,8 @@ python scripts/curation/init_curation_db.py --db-path data/curation/chl_curation
 ### Step 4: Import Merged Data
 
 ```bash
-# Import merged CSVs into curation database
-python scripts/curation/import_to_curation_db.py \
-  --input data/curation/merged \
-  --db-path data/curation/chl_curation.db
+# Import merged CSVs into curation database (uses defaults from scripts_config.yaml)
+python scripts/curation/import_to_curation_db.py
 
 # Output:
 # ✓ Imported 1 categories
@@ -159,10 +157,9 @@ python scripts/curation/import_to_curation_db.py \
 ### Step 5: Build Embeddings & Index
 
 ```bash
-# Build embeddings and FAISS index on curation database
+# Build embeddings and FAISS index on curation database (uses defaults from scripts_config.yaml)
 # This requires GPU mode
-python scripts/curation/build_curation_index.py \
-  --db-path data/curation/chl_curation.db
+python scripts/curation/build_curation_index.py
 
 # Output:
 # Loading embedding model...
@@ -285,7 +282,7 @@ Carlos decides to merge, choosing A as canonical:
 > merge A
 
 Merged: EXP-DVT-GIT-001 (canonical) ← EXP-DVT-GIT-001_bob
-Action: EXP-DVT-GIT-001_bob marked as sync_status=REJECTED, merge_with=EXP-DVT-GIT-001
+Action: EXP-DVT-GIT-001_bob marked as rejected, merge_with=EXP-DVT-GIT-001
 
 Would you like to edit the canonical entry's playbook to include Bob's strategy? (y/n)
 > y
@@ -457,7 +454,7 @@ Bob follows the same steps as Alice.
 
 - Alice, Bob, and Carlos now all have the **same** knowledge base
 - Everyone has 94 experiences (duplicates removed)
-- New experiences they create locally will be marked `sync_status=0` (PENDING)
+- New experiences they create locally start with default status until curation process
 - Next curation cycle: they export again → Carlos merges new PENDING items → repeat
 
 ---
@@ -514,7 +511,7 @@ data/curation/
 
 ## Next Cycle
 
-Two weeks later, Alice and Bob have each added 20 new experiences (marked `sync_status=0` PENDING). They export again, Carlos merges only the new PENDING items against the canonical baseline (now SYNCED), and the cycle repeats.
+Two weeks later, Alice and Bob have each added 20 new experiences. They export again, Carlos merges only the new pending items against the canonical baseline (now established), and the cycle repeats.
 
 This workflow ensures:
 - ✅ No duplicate knowledge

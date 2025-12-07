@@ -7,6 +7,10 @@ manuals.csv) and imports them into the curation database. All entries are
 marked with embedding_status='pending' for later processing.
 
 Usage:
+    # With default paths from scripts_config.yaml:
+    python scripts/curation/import_to_curation_db.py
+
+    # With explicit paths:
     python scripts/curation/import_to_curation_db.py \\
         --input data/curation/merged \\
         --db-path data/curation/chl_curation.db
@@ -19,27 +23,39 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
+sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.common.storage.schema import Category, Experience, CategoryManual
+from scripts._config_loader import load_scripts_config
 
 
 def parse_args():
+    # Load config to get defaults
+    try:
+        config, _ = load_scripts_config()
+        curation_config = config.get("curation", {})
+        default_input_dir = curation_config.get("merged_output_dir", "data/curation/merged")
+        default_db_path = curation_config.get("curation_db_path", "data/curation/chl_curation.db")
+    except Exception:
+        # Fallback to hard-coded defaults if config loading fails
+        default_input_dir = "data/curation/merged"
+        default_db_path = "data/curation/chl_curation.db"
+
     parser = argparse.ArgumentParser(
         description="Import merged CSVs into curation database"
     )
     parser.add_argument(
         "--input",
-        required=True,
-        help="Input directory containing merged CSVs (e.g., data/curation/merged)",
+        help=f"Input directory containing merged CSVs (default: {default_input_dir})",
+        default=default_input_dir,
     )
     parser.add_argument(
         "--db-path",
-        default="data/curation/chl_curation.db",
-        help="Path to curation database (default: data/curation/chl_curation.db)",
+        default=default_db_path,
+        help=f"Path to curation database (default: {default_db_path})",
     )
     return parser.parse_args()
 
@@ -129,7 +145,7 @@ def main():
                 playbook=row["playbook"],
                 context=row.get("context") or None,
                 source=row.get("source") or "local",
-                sync_status=int(row.get("sync_status") or 1),
+                sync_status=0,  # Always set to 0 (PENDING) for curation regardless of source value
                 author=row.get("author") or None,
                 embedding_status="pending",  # Always mark as pending for curation
                 created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
@@ -154,7 +170,7 @@ def main():
                 content=row["content"],
                 summary=row.get("summary") or None,
                 source=row.get("source") or "local",
-                sync_status=int(row.get("sync_status") or 1),
+                sync_status=0,  # Always set to 0 (PENDING) for curation regardless of source value
                 author=row.get("author") or None,
                 embedding_status="pending",  # Always mark as pending for curation
                 created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
