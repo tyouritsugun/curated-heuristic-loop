@@ -132,10 +132,12 @@ Notes:
 - Keep author, timestamps, and source file for every pending entry in `merged.csv`.
 - `find_pending_dups` must:
   - Scope anchors to non-pending by default; add `--compare-pending` flag for team mode.
-  - Bucket matches (`high >=0.92`, `medium 0.75–0.92`, `low <0.75` defaults).
+  - Bucket matches iteratively: process `high >=0.92` first, then `medium 0.75–0.92`, with recomputation after each phase to account for merges.
   - Emit conflicts (section mismatch, title-same/content-diff, regression, extension).
   - Support resume: write state to `.curation_state.json` in the working dir (schema: {run_id, input_path, last_bucket, last_index, decisions[], version, timestamp, user, input_checksum}; discard with `--reset-state` if checksum/input mismatches).
   - Interactive mode commands: `merge` (pick canonical, mark others `merge_with`, log), `update` (edit title/playbook/context inline), `keep` (mark `keep_separate` + note), `reject` (set sync_status=2 with reason), `split` (duplicate entry into parent+suffix for separate decisions; suffix format `{original_id}_split_{YYYYMMDDHHMMSS}`), `diff` (unified diff of titles/playbooks), `quit` (save state and exit).
+  - Support iterative workflow: after completing high-similarity merges, rebuild index and recompute similarities to identify new high-similarity pairs that may emerge from medium merges.
+  - **Important**: When duplicates are confirmed via `merge` command, the duplicate entries are marked as `sync_status=2` (REJECTED) and will be excluded from the final export, effectively "removing" them from the canonical knowledge base.
 - `score_atomicity`: deferred to Phase 2+; leave placeholder flag but no-op until spec is defined (definition TBD: measures whether an experience is single, minimal, non-compound).
 - Non-interactive outputs: `table|json|csv`.
 - Dry-run flag on any command that mutates files or sheets; dry-run writes only sidecar files (suffix `.dryrun`) and prints planned changes.

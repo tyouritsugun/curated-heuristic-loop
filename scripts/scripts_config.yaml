@@ -21,6 +21,10 @@ curation:
   faiss_index_dir: data/curation/faiss_index
   audit_log_path: data/curation/merge_audit.csv
   evaluation_log_path: data/curation/evaluation_log.csv
+  # Similarity thresholds for duplicate detection
+  high_threshold: 0.92
+  medium_threshold: 0.75
+  low_threshold: 0.55
 
 export:
   worksheets:

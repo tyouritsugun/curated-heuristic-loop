@@ -65,18 +65,20 @@ Alice and Bob have each been using CHL locally for 2 weeks. They've accumulated 
 
 ### Alice's Steps
 
+1. Follow the API server setup and startup instructions in [README.md Step 4](README.md#step-4-start-api-server) to start CHL instance (GPU mode recommended for later phases)
+2. Navigate to the Operations page in the web UI
+3. Click the "Export CSV" button
+4. Browser downloads: alice.export.zip (2.3 MB)
+5. Sends file to Carlos
+
+Example commands from README.md:
 ```bash
-# 1. Alice starts her CHL instance (GPU mode recommended for later phases)
 # Navigate to the project root directory where curated-heuristic-loop exists
-cd ~/Documents/program/curated-heuristic-loop
-source .venv-nvidia/bin/activate
+cd ~/your/project/curated-heuristic-loop
+source .venv-nvidia/bin/activate #or .venv-apple ...
 python -m src.api.server
 
-# 2. Opens browser: http://localhost:8000
-# 3. Navigates to: Operations page
-# 4. Clicks: "Export CSV" button
-# 5. Browser downloads: alice.export.zip (2.3 MB)
-# 6. Sends file to Carlos via Slack
+# Then open browser: http://localhost:8000
 ```
 
 **What's in `alice.export.zip`?**
@@ -89,11 +91,12 @@ alice/
 
 ### Bob's Steps
 
-```bash
-# Bob follows the same steps
-# Downloads: bob.export.zip (1.8 MB)
-# Sends to Carlos
-```
+Bob follows the same export process as Alice (see [README.md Step 4](README.md#step-4-start-api-server)):
+1. Start his CHL instance
+2. Navigate to the Operations page in the web UI
+3. Click the "Export CSV" button
+4. Downloads: bob.export.zip (1.8 MB)
+5. Sends to Carlos
 
 **What's in `bob.export.zip`?**
 ```
@@ -111,7 +114,7 @@ bob/
 
 ```bash
 # Carlos creates curation workspace
-cd ~/Documents/program/curated-heuristic-loop
+cd ~/your/project/curated-heuristic-loop
 mkdir -p data/curation/members
 cd data/curation/members
 
@@ -136,7 +139,7 @@ unzip bob.export.zip
 
 ```bash
 # Navigate to the project root directory where curated-heuristic-loop exists
-cd ~/Documents/program/curated-heuristic-loop
+cd ~/your/project/curated-heuristic-loop
 
 # Merge all member exports into one dataset (uses defaults from scripts_config.yaml)
 python scripts/curation/merge_exports.py
@@ -216,10 +219,16 @@ python scripts/curation/build_curation_index.py
 
 ```bash
 # Run duplicate detection in table format (non-interactive preview)
+# Uses default curation database path from scripts_config.yaml
 python scripts/curation/find_pending_dups.py \
-  --db-path data/curation/chl_curation.db \
   --compare-pending \
   --format table
+
+# Alternative (explicit path):
+# python scripts/curation/find_pending_dups.py \
+#   --db-path data/curation/chl_curation.db \
+#   --compare-pending \
+#   --format table
 
 # Output:
 # Analyzing 100 pending experiences...
@@ -230,7 +239,6 @@ python scripts/curation/find_pending_dups.py \
 # === Duplicate Detection Summary ===
 # High-similarity pairs (≥0.92): 8 pairs → suggest merge
 # Medium-similarity pairs (0.75-0.92): 12 pairs → related, keep separate
-# Borderline pairs (0.55-0.75): 6 pairs → needs review
 # Drift triads detected: 2 triads (A≈B≈0.88, B≈C≈0.87, A≈C≈0.65)
 #
 # Top 8 High-Similarity Pairs:
@@ -247,23 +255,83 @@ python scripts/curation/find_pending_dups.py \
 # Recommendation: Start interactive review with --bucket high
 ```
 
-### Step 7: Interactive Review (High Similarity)
+### Step 7: Iterative Curation Process (High Similarity First)
+
+The curation process follows an iterative approach where high-similarity items are processed first, followed by medium-similarity items, with recomputation after each phase.
+
+**Step 7a: Process High Similarity Items**
 
 ```bash
-# Review high-similarity pairs interactively
+# Review high-similarity pairs interactively until none remain
+# Uses default curation database path from scripts_config.yaml
 python scripts/curation/find_pending_dups.py \
-  --db-path data/curation/chl_curation.db \
   --bucket high \
   --interactive
 
-# Carlos is dropped into interactive mode:
+# Alternative (explicit path):
+# python scripts/curation/find_pending_dups.py \
+#   --db-path data/curation/chl_curation.db \
+#   --bucket high \
+#   --interactive
+
+# Carlos continues until no more high-similarity pairs exist
 ```
 
-**Interactive Session:**
+**Step 7b: Process Medium Similarity Items**
+
+After completing all high-similarity merges, process medium-similarity items:
+
+```bash
+# Review medium-similarity pairs interactively
+# Uses default curation database path from scripts_config.yaml
+python scripts/curation/find_pending_dups.py \
+  --bucket medium \
+  --interactive
+
+# Alternative (explicit path):
+# python scripts/curation/find_pending_dups.py \
+#   --db-path data/curation/chl_curation.db \
+#   --bucket medium \
+#   --interactive
+
+# Carlos continues until no more medium-similarity pairs exist
+```
+
+**Step 7c: Recompute Similarities (Iterative Step)**
+
+After completing both high and medium similarity reviews, the similarity landscape may have changed due to merges. Carlos recomputes the entire similarity matrix to see if any new high-similarity pairs emerged from previous medium merges:
+
+```bash
+# Re-run duplicate detection to check for new high similarities
+# Uses default curation database path from scripts_config.yaml
+python scripts/curation/find_pending_dups.py \
+  --compare-pending \
+  --format table
+
+# Alternative (explicit path):
+# python scripts/curation/find_pending_dups.py \
+#   --db-path data/curation/chl_curation.db \
+#   --compare-pending \
+#   --format table
+
+# If new high-similarity pairs exist, return to Step 7a
+# Continue this cycle until no more high or medium similarities exist
+```
+
+**Iterative Loop Logic:**
+1. Process ALL high-similarity items until none remain
+2. Process ALL medium-similarity items until none remain
+3. Recompute and check for any new high-similarity items
+4. If new high similarities found, return to step 1
+5. If no high similarities but medium found, return to step 2
+6. If neither exist, curation convergence is reached
+
+**Example Interactive Session (High Similarity):**
 
 ```
 === Interactive Duplicate Review ===
 Session: rev-20250203-144530
+Bucket: high
 State file: .curation_state.json
 Progress: 0/8 high-similarity pairs reviewed
 
@@ -286,57 +354,21 @@ Pair 1/8 | Score: 0.94 (embed: 0.92, LLM: 0.96)
 >
 ```
 
-Carlos types `diff` to see detailed differences:
-
-```
-> diff
-
-=== Unified Diff ===
-Title:
-- [A] Git merge conflict in package.json
-+ [B] Resolving package.json merge conflicts
-
-Playbook:
-- [A] When merging feature branches, package.json conflicts arise.
--     Accept both changes and run `npm install` to verify.
-+ [B] During git merge, package.json often has conflicts in dependencies.
-+     Use `git checkout --ours package.json && npm install` to resolve.
-
-Context:
-- [A] Git 2.39, macOS
-+ [B] Git 2.40, Ubuntu 22.04
-
-Analysis: Core problem is identical (package.json merge conflicts).
-Different solutions (manual merge vs --ours strategy).
-Recommendation: MERGE - combine both strategies into one canonical entry.
-```
-
-Carlos decides to merge, choosing A as canonical:
-
-```
-> merge A
-
-Merged: EXP-DVT-GIT-001 (canonical) ← EXP-DVT-GIT-001_bob
-Action: EXP-DVT-GIT-001_bob marked as rejected, merge_with=EXP-DVT-GIT-001
-
-Would you like to edit the canonical entry's playbook to include Bob's strategy? (y/n)
-> y
-
-[Editor opens with combined playbook]
-# Carlos merges both approaches into one comprehensive playbook
-
-✓ Canonical entry updated
-✓ Decision logged to evaluation_log.csv
-
-Progress: 1/8 pairs reviewed
-─────────────────────────────────────────────────────────────────
-Pair 2/8 | Score: 0.93 (embed: 0.91, LLM: 0.95)
-...
-```
-
-Carlos continues reviewing all 8 high-similarity pairs:
+Carlos continues processing all high-similarity items:
 - 6 pairs merged (chose canonical, marked duplicates as REJECTED)
 - 2 pairs kept separate (different enough in context/solution)
+
+**Post-Merge Validation:**
+After completing high-similarity processing, Carlos rebuilds the embeddings and FAISS index to reflect the merged items:
+
+```bash
+# Rebuild index after merges to reflect new canonical items
+# Uses default curation database path from scripts_config.yaml
+python scripts/curation/build_curation_index.py
+
+# Alternative (explicit path):
+# python scripts/curation/build_curation_index.py --db-path data/curation/chl_curation.db
+```
 
 ### Step 8: Review Drift Triads
 
@@ -362,37 +394,26 @@ Recommendation: Merge A+B (similar root cause), keep C separate (different phase
 ✓ C kept separate
 ```
 
-After reviewing all high-similarity and drift cases:
+### Step 9: Complete Iterative Curation Loop
+
+Continue the iterative process:
+
+1. Complete all high-similarity items
+2. Complete all medium-similarity items
+3. Rebuild embeddings and recompute similarities
+4. Check for new high-similarity items (may emerge from previous medium merges)
+5. If found, return to step 1; otherwise, curation is complete
 
 ```
-=== Review Session Complete ===
-High bucket: 8 pairs reviewed
-  - 6 merged
-  - 2 kept separate
-
-Drift triads: 2 reviewed
-  - 2 resolved (merged pairs, kept outliers separate)
-
-Next steps:
-  - Review medium bucket (optional, 12 pairs)
-  - Review borderline queue (6 pairs needing human judgment)
-  - Export approved data
+=== Iterative Curation Complete ===
+No more high or medium similarity pairs found after recomputation.
+Curation convergence reached after 3 cycles:
+  - Cycle 1: 6 high merges, 4 medium merges
+  - Cycle 2: 2 new high merges (from medium merges in Cycle 1), 1 medium merge
+  - Cycle 3: 0 high merges, 0 medium merges (converged)
 
 Save session? (y/n) > y
 ✓ Session saved to .curation_state.json
-```
-
-### Step 9: Review Borderline Cases (Optional)
-
-```bash
-# Carlos can optionally review borderline pairs (0.55-0.75 similarity)
-python scripts/curation/find_pending_dups.py \
-  --db-path data/curation/chl_curation.db \
-  --bucket borderline \
-  --interactive
-
-# These are uncertain cases where human judgment is critical
-# Carlos reviews and decides: keep separate or merge
 ```
 
 ---
@@ -403,10 +424,15 @@ python scripts/curation/find_pending_dups.py \
 
 ```bash
 # Export approved entries from curation DB
+# Uses default curation database path from scripts_config.yaml
 # This excludes REJECTED entries, includes only SYNCED/PENDING approved items
 python scripts/curation/export_curated.py \
-  --db-path data/curation/chl_curation.db \
   --output data/curation/approved
+
+# Alternative (explicit path):
+# python scripts/curation/export_curated.py \
+#   --db-path data/curation/chl_curation.db \
+#   --output data/curation/approved
 
 # Output:
 # ✓ Exporting approved entries...
@@ -553,3 +579,39 @@ This workflow ensures:
 - ✅ Team stays in sync
 - ✅ Quality maintained through human-in-the-loop review
 - ✅ Minimal disruption to individual workflows
+
+---
+
+## Configuration Settings
+
+### Curation Thresholds
+
+The duplicate detection uses configurable similarity thresholds that can be adjusted in `scripts/scripts_config.yaml`:
+
+- **High threshold** (default: 0.92): Items with similarity ≥ this value are considered very similar and candidates for merging
+- **Medium threshold** (default: 0.75): Items with similarity in this range are related but should typically be kept separate
+- **Low threshold** (default: 0.55): Items in this range are considered for manual review but not automatically grouped (for reference only)
+
+These values can be overridden via command-line flags or by modifying the config file:
+
+```yaml
+curation:
+  high_threshold: 0.92
+  medium_threshold: 0.75
+  low_threshold: 0.55
+```
+
+### Output to Spreadsheet
+
+For team collaboration, the curation results can be exported to a spreadsheet format where:
+- High-similarity pairs are highlighted in green with "MERGE RECOMMENDED" and assigned a unique group ID (e.g., "GRP-101") to group all items that should be merged together
+- Medium-similarity pairs are highlighted in yellow with "REVIEW NEEDED" and assigned similarity scores for sorting
+- Duplicates already resolved are marked in gray with "RESOLVED" and original group information
+- This allows users to filter by group ID to quickly identify all items that belong to the same merge group, or filter by recommendation status to focus on specific types of decisions
+
+The iterative curation workflow follows these steps:
+1. Focus on high-similarity items first (green) - process all until none remain
+2. Then process medium-similarity items (yellow) - review and decide
+3. After completing each phase, rebuild the similarity index to reflect merged items
+4. Return to step 1 to check for new high-similarity pairs that may have emerged
+5. Repeat until no more high or medium similarities remain

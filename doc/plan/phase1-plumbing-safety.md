@@ -36,9 +36,11 @@ Practical plan for the first shippable curation pipeline that real teammates can
 `python scripts/curation/import_to_curation_db.py --input data/curation/merged --db-path data/curation/chl_curation.db`
 4) Build embeddings + FAISS index on curation DB (GPU only)  
 `python scripts/curation/build_curation_index.py --db-path data/curation/chl_curation.db`
-5) Find duplicates (Phase 1 tool to implement)  
-`python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db --format table --bucket high`  
-   - Flags: `--bucket {high|medium|low|all}`, `--limit`, `--dry-run`, `--state-file data/curation/.curation_state.json` (default), `--reset-state`
+5) Find duplicates (Phase 1 tool to implement)
+`python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db --compare-pending --format table --bucket high`
+   - Flags: `--bucket {high|medium|all}`, `--limit`, `--dry-run`, `--state-file data/curation/.curation_state.json` (default), `--reset-state`, `--compare-pending`
+   - Iterative workflow: process high first, then medium, with recomputation after each phase to account for merged items
+   - **Note**: Uses `--compare-pending` by default to compare all imported items against each other (since original sync_status values are not trustworthy from individual exports)
 6) Interactive review loop (same script, `--interactive`) to mark merge/keep/reject/update; writes decisions to `evaluation_log.csv`.
 7) Export approved set from curation DB  
 `python scripts/curation/export_curated.py --db-path data/curation/chl_curation.db --output data/curation/approved`
@@ -47,7 +49,7 @@ Practical plan for the first shippable curation pipeline that real teammates can
 9) Team re-imports canonical baseline (outside Phase 1 scope but documented)  
 `python scripts/import_from_sheets.py --sheet-id <PUBLISHED_SHEET_ID>` then rebuild index.
 
-Solo mode: same flow but usually only one member directory; duplicate finder defaults to self-comparison, so pending items dedup against each other automatically.
+Solo mode: same flow but usually only one member directory; duplicate finder uses `--compare-pending` to compare items against each other for self-deduplication.
 
 ---
 
@@ -66,9 +68,9 @@ Solo mode: same flow but usually only one member directory; duplicate finder def
 
 ## Duplicate Finder (Phase 1 deliverable)
 - Inputs: curation DB, embeddings already present. Use FAISS similarity search per category.
-- Candidate generation: for each pending experience, fetch top‑K neighbors (default 50) from all other pending experiences (self‑comparison). Production mode (future) will compare pending vs synced baseline instead.
+- Candidate generation: for each pending experience, fetch top‑K neighbors (default 50) from all other pending experiences (self‑comparison). Original sync_status values are unreliable from individual exports, so all items are compared against each other.
 - Scoring: use cosine similarity from embeddings; optional rerank hook (LLM) is configurable but may be stubbed in Phase 1.
-- Buckets (default thresholds): high ≥0.92, medium 0.75–0.92, low <0.75. Allow CLI overrides.
+- Buckets (default thresholds): high ≥0.92, medium 0.75–0.92 (processed iteratively). Process high first, then medium, with recomputation after each phase. Allow CLI overrides.
 - Output formats: `table` (stdout), `json`, `csv`. Include columns: `pending_id, anchor_id, score, category, title_snippet, section_mismatch, id_collision_flag`.
 - Interactive mode commands (persist to `evaluation_log.csv` and state file):
   - `merge <pending_id> <anchor_id>`: mark pending as duplicate of anchor (sets pending entry `sync_status=2` and records `merge_with=anchor_id` plus optional `curation_notes`; anchor keeps its current status).
@@ -105,7 +107,7 @@ Solo mode: same flow but usually only one member directory; duplicate finder def
 - Schema failure: remove a required column → preflight must abort with clear message.
 - Category conflict: same code, different name → merge aborts.
 - ID collision handling: verify suffixing and audit log entries.
-- Duplicate finder: confirm bucket counts match thresholds; resume after quit; dry‑run writes sidecars only.
+- Duplicate finder: confirm high/medium bucket counts match thresholds; verify iterative workflow (process high, then medium, with recomputation); resume after quit; dry‑run writes sidecars only.
 - GPU guard: running build/index on CPU backend must exit with error message.
 
 ---
