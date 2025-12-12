@@ -156,6 +156,13 @@ def _format_duration(start: Optional[datetime], end: Optional[datetime]) -> Opti
     if not start:
         return None
     end = end or datetime.now(timezone.utc)
+
+    # Ensure both datetimes have timezone info to avoid mixing offset-naive and offset-aware
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+
     total_seconds = max((end - start).total_seconds(), 0)
     if total_seconds < 1:
         return "<1s"

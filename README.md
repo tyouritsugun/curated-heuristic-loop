@@ -281,6 +281,9 @@ python scripts/setup/setup-gpu.py
 python scripts/setup/setup-gpu.py --select-models
 ```
 
+**Note for Users with Restricted Internet Access:**
+This system requires access to Hugging Face to download and load the embedding models needed for semantic search and curation workflows. Without access to Hugging Face, the system will use the local cache, if exists. if no exists, it will fall back to basic text search only, and advanced curation features that require semantic similarity (as described in doc/curation_sample.md) will not be available, although the Export Excel would be possible.
+
 ### Step 4: Start API Server
 
 **If continuing from Step 3 in the same terminal session:**

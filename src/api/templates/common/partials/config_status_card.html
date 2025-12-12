@@ -20,15 +20,27 @@
       {% set import_summary = ((job_summaries or {}).get('import') or {}) %}
       {% set import_active = import_summary.get('is_active', False) %}
       <div class="section-header">
-        <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-          <button type="submit" class="section-title-button" {% if import_active %}disabled{% endif %}>
-            {% if import_active %}
-              Import Spreadsheet (Importing...)
-            {% else %}
-              Import Spreadsheet
-            {% endif %}
-          </button>
-        </form>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding-right: 0.5rem; width: 50%;">
+              <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                <button type="submit" class="section-title-button" style="width: 90%;" {% if import_active %}disabled{% endif %}>
+                  {% if import_active %}
+                    Import Spreadsheet (Importing...)
+                  {% else %}
+                    Import Spreadsheet
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+            <td style="padding-left: 0.5rem; width: 50%;">
+              <form id="import-excel-form" action="/ui/operations/import-excel-upload" method="post" enctype="multipart/form-data" style="margin: 0; display: none;">
+                <input type="file" name="excel_file" id="excel_file" accept=".xlsx,.xls" onchange="handleExcelFileSelect(this)" />
+              </form>
+              <button type="button" class="section-title-button" style="width: 100%;" onclick="triggerExcelFileSelect()">Import Excel</button>
+            </td>
+          </tr>
+        </table>
       </div>
       {% if config_status.import_sheet_id %}
         {% set summary = import_summary %}
@@ -60,15 +72,24 @@
       {% set export_summary = ((job_summaries or {}).get('export') or {}) %}
       {% set export_active = export_summary.get('is_active', False) %}
       <div class="section-header">
-        <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-          <button type="submit" class="section-title-button" {% if export_active %}disabled{% endif %}>
-            {% if export_active %}
-              Export Spreadsheet (Exporting...)
-            {% else %}
-              Export Spreadsheet
-            {% endif %}
-          </button>
-        </form>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding-right: 0.5rem; width: 50%;">
+              <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                <button type="submit" class="section-title-button" style="width: 90%;" {% if export_active %}disabled{% endif %}>
+                  {% if export_active %}
+                    Export Spreadsheet (Exporting...)
+                  {% else %}
+                    Export Spreadsheet
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+            <td style="padding-left: 0.5rem; width: 50%;">
+              <button type="button" class="section-title-button" style="width: 100%;" onclick="triggerExcelExportAndDownload()">Export Excel</button>
+            </td>
+          </tr>
+        </table>
       </div>
       {% if config_status.export_sheet_id %}
         {% set summary = export_summary %}
@@ -112,4 +133,70 @@
       {% include "common/partials/flash.html" %}
     {% endwith %}
   {% endif %}
+
+  <script>
+    function triggerExcelFileSelect() {
+      document.getElementById('excel_file').click();
+    }
+
+    function handleExcelImport(event) {
+      event.preventDefault();
+      const form = document.getElementById('import-excel-form');
+      const fileInput = document.getElementById('excel_file');
+
+      // Submit the form normally (not via HTMX since it has file upload)
+      const formData = new FormData(form);
+
+      // Debug logging
+      console.log('Submitting Excel file:', fileInput.files[0] ? fileInput.files[0].name : 'No file');
+
+      fetch(form.action, {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(html => {
+        console.log('Received response from server, updating UI');
+        // Replace the config-status-card with the updated content
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newCard = doc.querySelector('#config-status-card');
+        if (newCard) {
+          document.getElementById('config-status-card').outerHTML = newCard.outerHTML;
+        } else {
+          console.error('Could not find config-status-card in response');
+        }
+      })
+      .catch(error => {
+        console.error('Error importing Excel:', error);
+        alert('Error importing Excel file: ' + error.message);
+      });
+    }
+
+    function handleExcelFileSelect(inputElement) {
+      if (inputElement.files.length > 0) {
+        // Pass a mock event to handleExcelImport to prevent default
+        const mockEvent = { preventDefault: function() {} };
+        handleExcelImport(mockEvent);
+      }
+    }
+
+    function triggerExcelExportAndDownload() {
+      // Create a temporary iframe to handle the file download without leaving the page
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = '/api/v1/entries/export-excel-download';
+      document.body.appendChild(iframe);
+
+      // Remove the iframe after a short delay
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }
+  </script>
 </section>

@@ -38,8 +38,9 @@ class RerankerClient:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_repo,
                 padding_side="left",
+                local_files_only=True,
             )
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_repo)
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_repo, local_files_only=True)
 
             if torch.backends.mps.is_available():
                 self.device = torch.device("mps")
