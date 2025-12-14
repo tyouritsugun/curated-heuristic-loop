@@ -145,9 +145,10 @@ class DuplicateFinder:
                     if anchor_id == pending_item.id:
                         continue
 
-                    # Calculate similarity score (distance to similarity)
-                    # FAISS returns distances, convert to similarity (0-1 scale, higher is more similar)
-                    similarity_score = max(0.0, min(1.0, 1.0 - dist))  # Convert distance to similarity
+                    # Calculate similarity score
+                    # IndexFlatIP returns inner product scores (already similarity, not distance)
+                    # For normalized vectors, scores are in [0, 1] where higher = more similar
+                    similarity_score = float(dist)  # Already a similarity score, no conversion needed
 
                     # If not comparing pending, filter out pending items
                     if not compare_pending:
