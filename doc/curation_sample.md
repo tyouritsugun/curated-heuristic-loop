@@ -773,21 +773,32 @@ This workflow ensures:
 
 ## Configuration Settings
 
-### Curation Thresholds
+### Phase 2 → 3 Contract (what Phase 3 expects)
 
-The duplicate detection uses configurable similarity thresholds that can be adjusted in `scripts/scripts_config.yaml`:
+- Graphs and communities are **per-category**; no cross-category edges.
+- Similarity scores use an embed + rerank blend (default 0.7 / 0.3). Rerank cache is optional; if empty, the pipeline falls back to embed-only.
+- Output files are fixed: `data/curation/similarity_graph.pkl` and `data/curation/communities.json` with keys `communities[]` and `metadata`.
+- Manuals stay out of communities; they are curated manually.
 
-- **High threshold** (default: 0.92): Items with similarity ≥ this value are considered very similar and candidates for merging
-- **Medium threshold** (default: 0.75): Items with similarity in this range are related but should typically be kept separate
-- **Low threshold** (default: 0.55): Items in this range are considered for manual review but not automatically grouped (for reference only)
+### Curation Thresholds (defaults in `scripts/scripts_config.yaml`)
 
-These values can be overridden via command-line flags or by modifying the config file:
+- `edge_keep` / `community_detect`: 0.72 (edges kept in sparse graph and fed to Louvain/Leiden)
+- `auto_dedup`: 0.98 (Phase 3 merge-without-review)
+- `high_bucket`: 0.92 (interactive high bucket)
+- `medium_bucket`: 0.75 (interactive medium bucket)
+- `low_bucket`: 0.55 (preview only)
+
+Override example:
 
 ```yaml
 curation:
-  high_threshold: 0.92
-  medium_threshold: 0.75
-  low_threshold: 0.55
+  thresholds:
+    edge_keep: 0.70
+    community_detect: 0.70
+    auto_dedup: 0.985
+    high_bucket: 0.93
+    medium_bucket: 0.76
+    low_bucket: 0.55
 ```
 
 ### Output to Spreadsheet

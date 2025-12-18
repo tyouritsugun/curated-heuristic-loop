@@ -74,7 +74,7 @@ Phase 2 produces community data files containing:
 
 ## Configuration
 
-### Graph Construction Parameters
+### Graph Construction & Threshold Parameters
 
 ```yaml
 # scripts/scripts_config.yaml
@@ -82,6 +82,7 @@ curation:
   # Sparse graph settings
   min_similarity_threshold: 0.72  # Ignore edges below this
   top_k_neighbors: 50             # Keep top-k neighbors per item
+  per_category: true              # Build graphs within each category only
 
   # Community detection
   algorithm: "louvain"  # Options: "louvain" or "leiden"
@@ -89,6 +90,19 @@ curation:
   # Community filtering
   min_community_size: 2   # Ignore singleton communities
   max_community_size: 50  # Flag large communities for special handling
+
+  # Similarity signals (Phase 2 -> Phase 3 continuity)
+  use_rerank: true
+  blend_weights: {embed: 0.7, rerank: 0.3}  # weighted blend; rerank cached to disk
+  rerank_cache_dir: "data/curation/rerank_cache"
+
+  # Threshold table (user-tunable)
+  thresholds:
+    edge_keep: 0.72        # keep edge in sparse graph
+    community_detect: 0.72 # same as edge_keep unless auto-tuned
+    auto_dedup: 0.98       # Phase 3 merge-without-review
+    high_bucket: 0.92      # Phase 1/interactive high bucket
+    medium_bucket: 0.75    # Phase 1/interactive medium bucket
 
   # Output paths
   community_data_file: "data/curation/communities.json"
@@ -108,16 +122,17 @@ curation:
 ### 1. Sparse Graph Construction
 
 **Process:**
-1. Query FAISS for top-k neighbors per item (k=50)
+1. For each category independently, query FAISS for top-k neighbors per item (k=50)
 2. Filter edges below min_similarity_threshold (0.72)
 3. Symmetrize using max of bidirectional scores
-4. Build NetworkX graph with weighted edges
+4. Blend scores: `w_embed * embed + w_rerank * rerank` when rerank available; fall back to embed-only when rerank missing; cache rerank scores in `rerank_cache_dir`
+5. Build NetworkX graph with weighted edges
 
 **Output:** NetworkX graph object saved to disk for Phase 3
 
 ### 2. Community Detection
 
-**Algorithm:** Louvain or Leiden (non-overlapping partition)
+**Algorithm:** Louvain or Leiden (non-overlapping partition), executed per-category
 
 **Why This Works:**
 - Naturally produces **non-overlapping partitions**
@@ -142,11 +157,11 @@ curation:
       "density": 0.92,
       "size": 3,
       "priority_score": 0.885,
-      "pairwise_scores": {
-        "EXP-DVT-001:EXP-DVT-002": 0.89,
-        "EXP-DVT-001:EXP-DVT-005": 0.85,
-        "EXP-DVT-002:EXP-DVT-005": 0.87
-      }
+      "edges": [
+        ["EXP-DVT-001", "EXP-DVT-002", 0.89],
+        ["EXP-DVT-001", "EXP-DVT-005", 0.85],
+        ["EXP-DVT-002", "EXP-DVT-005", 0.87]
+      ]
     }
   ],
   "metadata": {
@@ -172,10 +187,12 @@ curation:
 ### Validation Checklist
 
 - [ ] Communities are non-overlapping (each item in exactly one community)
+- [ ] Communities are per-category; no cross-category members
 - [ ] Priority ranking produces sensible ordering (high similarity communities first)
 - [ ] Graph construction filters edges correctly by threshold
 - [ ] Community data JSON exports correctly
 - [ ] NetworkX graph can be loaded in Phase 3
+- [ ] Rerank cache is optional; pipeline falls back gracefully when absent
 
 ---
 
@@ -212,6 +229,9 @@ pip install leidenalg igraph    # Leiden (better quality)
 
 # Already installed: scipy, numpy, faiss, networkx, sqlalchemy
 ```
+Notes:
+- Leiden requires igraph system libs; if unavailable, default to Louvain and warn.
+- Rerank cache directory is optional; if empty, edges fall back to embed-only scores.
 
 ---
 
@@ -243,10 +263,9 @@ Phase 2 is complete when:
 ---
 
 ## Open Questions
-
-1. **Community Algorithm:** Louvain (simpler) or Leiden (better quality)?
-2. **Threshold Tuning:** Should we provide auto-tuning for min_similarity_threshold?
-3. **Graph Persistence:** Store graph in NetworkX pickle or custom format?
+- **Community Algorithm:** default Louvain; allow Leiden when igraph available.
+- **Threshold Tuning:** keep manual for now; thresholds live in `scripts_config.yaml` and are user-adjustable.
+- **Graph Persistence:** use NetworkX pickle (`graph_file`) plus JSON export for Phase 3; revisit if size grows.
 
 ---
 

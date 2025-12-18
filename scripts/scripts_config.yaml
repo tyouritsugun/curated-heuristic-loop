@@ -21,10 +21,29 @@ curation:
   faiss_index_dir: data/curation/faiss_index
   audit_log_path: data/curation/merge_audit.csv
   evaluation_log_path: data/curation/evaluation_log.csv
-  # Similarity thresholds for duplicate detection
-  high_threshold: 0.92
-  medium_threshold: 0.75
-  low_threshold: 0.55
+  # Sparse graph (Phase 2)
+  min_similarity_threshold: 0.72   # edge_keep threshold
+  top_k_neighbors: 50
+  per_category: true
+  algorithm: louvain               # louvain (default) or leiden
+  min_community_size: 2
+  max_community_size: 50
+  graph_file: data/curation/similarity_graph.pkl
+  community_data_file: data/curation/communities.json
+  # Similarity signals (embed + rerank blend)
+  use_rerank: true
+  blend_weights:
+    embed: 0.7
+    rerank: 0.3
+  rerank_cache_dir: data/curation/rerank_cache
+  # Threshold table (tunable by users)
+  thresholds:
+    edge_keep: 0.72         # keep edge in sparse graph
+    community_detect: 0.72  # same as edge_keep unless tuned
+    auto_dedup: 0.98        # Phase 3 merge-without-review
+    high_bucket: 0.92       # Phase 1/interactive high bucket
+    medium_bucket: 0.75     # Phase 1/interactive medium bucket
+    low_bucket: 0.55        # informational/preview
 
 export:
   worksheets:

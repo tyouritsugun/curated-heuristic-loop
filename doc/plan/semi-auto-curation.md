@@ -206,6 +206,35 @@ Notes:
 
 ---
 
+## Phase 2 → 3 Contract & Thresholds
+- Graphs/communities are **per-category only**; no cross-category edges.
+- Similarity scores use a blended signal (default 0.7 embed / 0.3 rerank). Rerank scores are cached when available; pipeline falls back to embed-only if cache is empty.
+- Canonical file names: `data/curation/similarity_graph.pkl` and `data/curation/communities.json` (Phase 3 expects these paths and keys).
+- Thresholds live in `scripts/scripts_config.yaml` under `curation.thresholds`; CLI flags may override, but config is the audit source of truth.
+- Manuals are out of scope for Phase 2 communities; curate manuals manually.
+
+### Default threshold table (user-tunable)
+- `edge_keep` = 0.72 (also default `community_detect`)
+- `community_detect` = 0.72 (Louvain/Leiden min edge weight)
+- `auto_dedup` = 0.98 (Phase 3 merge-without-review)
+- `high_bucket` = 0.92 (interactive high bucket)
+- `medium_bucket` = 0.75 (interactive medium bucket)
+- `low_bucket` = 0.55 (informational/preview)
+
+Example override (config-first):
+```yaml
+curation:
+  thresholds:
+    edge_keep: 0.70
+    community_detect: 0.70
+    auto_dedup: 0.985
+    high_bucket: 0.93
+    medium_bucket: 0.76
+    low_bucket: 0.55
+```
+
+---
+
 ## Phase 0 Test Data & Dual-Sheet Setup
 - Category choice: **Developer Tooling – Common Errors & Fixes** (Git/npm/pip/Docker/VS Code/HTTP errors). Rich public examples, easy paraphrase, embedding-friendly.
 - Manuals: ~10 short SOP/policy docs (branching, SSH keys, node version policy, Docker build hygiene, lint/format standards, secrets handling, release checklist, incident triage). Include 2 near-duplicates to force a manual decision.
