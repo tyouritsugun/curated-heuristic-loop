@@ -12,9 +12,10 @@ Practical plan for the first shippable curation pipeline that real teammates can
 ---
 
 ## Scope (Phase 1) vs Later Phases
-- In scope: merge/import/init/build-index scripts (done), duplicate finder with bucketed similarity, interactive review loop, resume state, dry‑run flags, audit logs, publish/approve export.
+- In scope: merge/import/init/build-index scripts (done), duplicate finder with bucketed similarity, interactive review loop, resume state, dry-run flags, audit logs, publish/approve export.
 - Out of scope until Phase 2+: sparse similarity graph, clustering/communities, agent suggestions, advanced drift guards, score_atomicity.
 - Manuals: remain imported and embedded; duplicate detection for manuals stays manual/optional (only experiences participate in similarity buckets unless explicitly requested).
+- Note for Phase 2/3: Phase 2 now writes a reusable neighbors cache (`data/curation/neighbors.jsonl`) when building communities; Phase 1 tools continue to query FAISS directly (no cache dependency).
 
 ---
 

@@ -209,7 +209,7 @@ Notes:
 ## Phase 2 → 3 Contract & Thresholds
 - Graphs/communities are **per-category only**; no cross-category edges.
 - Similarity scores use a blended signal (default 0.7 embed / 0.3 rerank). Rerank scores are cached when available; pipeline falls back to embed-only if cache is empty.
-- Canonical file names: `data/curation/similarity_graph.pkl` and `data/curation/communities.json` (Phase 3 expects these paths and keys).
+- Canonical file names: `data/curation/neighbors.jsonl` (top-K cache), `data/curation/similarity_graph.pkl`, and `data/curation/communities.json` (Phase 3 expects these paths and keys).
 - Thresholds live in `scripts/scripts_config.yaml` under `curation.thresholds`; CLI flags may override, but config is the audit source of truth.
 - Manuals are out of scope for Phase 2 communities; curate manuals manually.
 

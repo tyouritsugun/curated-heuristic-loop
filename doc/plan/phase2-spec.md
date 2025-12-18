@@ -50,7 +50,7 @@ Phase 2 prepares data structures for LLM-powered curation (Phase 3) by:
 
 Phase 2 builds the graph structure that Phase 3 will process:
 
-1. **Sparse Graph Construction:** Query FAISS for top-k neighbors, filter by min similarity threshold
+1. **Sparse Graph Construction:** Query FAISS for top-k neighbors, filter by min similarity threshold (neighbors cached to jsonl for reuse)
 2. **Community Detection:** Apply Louvain or Leiden algorithm to find non-overlapping clusters
 3. **Community Ranking:** Score communities by similarity, density, and size
 4. **Export Community Data:** Output structured community information for Phase 3 LLM agent
@@ -81,7 +81,7 @@ Phase 2 produces community data files containing:
 curation:
   # Sparse graph settings
   min_similarity_threshold: 0.72  # Ignore edges below this
-  top_k_neighbors: 50             # Keep top-k neighbors per item
+  top_k_neighbors: 50             # Keep top-k neighbors per item (also persisted to neighbors cache)
   per_category: true              # Build graphs within each category only
 
   # Community detection
@@ -122,11 +122,11 @@ curation:
 ### 1. Sparse Graph Construction
 
 **Process:**
-1. For each category independently, query FAISS for top-k neighbors per item (k=50)
+1. For each category independently, query FAISS for top-k neighbors per item (k=50); persist neighbor list to `data/curation/neighbors.jsonl` with metadata (model, top_k, threshold, index mtime)
 2. Filter edges below min_similarity_threshold (0.72)
 3. Symmetrize using max of bidirectional scores
 4. Blend scores: `w_embed * embed + w_rerank * rerank` when rerank available; fall back to embed-only when rerank missing; cache rerank scores in `rerank_cache_dir`
-5. Build NetworkX graph with weighted edges
+5. Build NetworkX graph with weighted edges from cached neighbors (default) or fresh FAISS when cache invalidated
 
 **Output:** NetworkX graph object saved to disk for Phase 3
 
@@ -199,20 +199,22 @@ curation:
 ## CLI Interface
 
 ```bash
-# Build sparse graph and detect communities
+# Build sparse graph and detect communities (uses neighbors cache by default)
 python scripts/curation/build_communities.py \
   --db-path data/curation/chl_curation.db \
   --output data/curation/communities.json
 
-# View community summary
-python scripts/curation/build_communities.py \
-  --db-path data/curation/chl_curation.db \
-  --summary-only
+# Force rebuild neighbors from FAISS
+python scripts/curation/build_communities.py --refresh-neighbors
+
+# Enable rerank blend (off by default for speed)
+python scripts/curation/build_communities.py --with-rerank
+
+# View community summary only
+python scripts/curation/build_communities.py --summary-only
 
 # Adjust threshold for experimentation
-python scripts/curation/build_communities.py \
-  --db-path data/curation/chl_curation.db \
-  --min-threshold 0.75 \
+python scripts/curation/build_communities.py --min-threshold 0.75 \
   --output data/curation/communities_075.json
 ```
 

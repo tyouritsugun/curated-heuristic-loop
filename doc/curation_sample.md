@@ -777,7 +777,7 @@ This workflow ensures:
 
 - Graphs and communities are **per-category**; no cross-category edges.
 - Similarity scores use an embed + rerank blend (default 0.7 / 0.3). Rerank cache is optional; if empty, the pipeline falls back to embed-only.
-- Output files are fixed: `data/curation/similarity_graph.pkl` and `data/curation/communities.json` with keys `communities[]` and `metadata`.
+- Output files are fixed: `data/curation/neighbors.jsonl` (top-K cache), `data/curation/similarity_graph.pkl`, and `data/curation/communities.json` with keys `communities[]` and `metadata`.
 - Manuals stay out of communities; they are curated manually.
 
 ### Curation Thresholds (defaults in `scripts/scripts_config.yaml`)

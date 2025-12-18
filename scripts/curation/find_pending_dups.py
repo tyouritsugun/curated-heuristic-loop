@@ -91,6 +91,11 @@ def parse_args():
         help="Max number of top-K neighbors to search for each pending item (default: 50)",
     )
     parser.add_argument(
+        "--neighbors-file",
+        default="data/curation/neighbors.jsonl",
+        help="Path to write neighbors cache for Phase 2 (default on)",
+    )
+    parser.add_argument(
         "--compare-pending",
         action="store_true",
         help="Compare pending items against each other (for solo mode)",
@@ -209,6 +214,40 @@ def main():
             deduplicated_count = len(ResultFormatter.deduplicate_symmetric_pairs(results))
             count_msg = f"\n✅ Found {len(results)} potential duplicates ({deduplicated_count} unique pairs after deduplication)"
         print(count_msg)
+
+        # Emit neighbors cache for Phase 2 by default
+        try:
+            neighbors_path = Path(args.neighbors_file)
+            neighbors_path.parent.mkdir(parents=True, exist_ok=True)
+            neighbor_records = []
+            for r in results:
+                neighbor_records.append(
+                    {
+                        "src": r["pending_id"],
+                        "dst": r["anchor_id"],
+                        "embed_score": r["score"],
+                        "src_category": r.get("category"),
+                        "dst_category": r.get("category"),
+                    }
+                )
+            with neighbors_path.open("w", encoding="utf-8") as fh:
+                fh.write(
+                    json.dumps(
+                        {
+                            "type": "meta",
+                            "from": "find_pending_dups",
+                            "top_k": args.limit,
+                            "high_threshold": args.high_threshold,
+                            "medium_threshold": args.medium_threshold,
+                        }
+                    )
+                    + "\n"
+                )
+                for rec in neighbor_records:
+                    fh.write(json.dumps(rec) + "\n")
+            print(f"✓ Neighbors cache written to {neighbors_path}")
+        except Exception as exc:
+            print(f"⚠️  Failed to write neighbors cache: {exc}")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,8 @@ pydantic>=2.6.0
 tqdm>=4.65.0
 tenacity>=8.2.0
 markdown>=3.6
+networkx>=3.2.1
+python-louvain>=0.16
 
 # ML / GPU stack (HF Transformers with CUDA)
 # Use the official PyTorch CUDA wheels:
