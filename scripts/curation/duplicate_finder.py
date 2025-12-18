@@ -134,7 +134,8 @@ class DuplicateFinder:
                         break
 
                     # Get the entity_id from the FAISS metadata
-                    faiss_meta = session.query(FAISSMetadata).filter(FAISSMetadata.internal_id == idx).first()
+                    # Convert numpy.int64 to Python int for SQLAlchemy compatibility
+                    faiss_meta = session.query(FAISSMetadata).filter(FAISSMetadata.internal_id == int(idx)).first()
                     if not faiss_meta or faiss_meta.deleted:
                         continue
 

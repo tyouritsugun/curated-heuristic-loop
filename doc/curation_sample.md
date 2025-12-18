@@ -253,6 +253,15 @@ python scripts/curation/find_pending_dups.py \
 # └─────────────────────────┴─────────────────────────┴───────┴──────────────┘
 #
 # Recommendation: Start interactive review with --bucket high
+
+# Note on output structure:
+# - Each duplicate pair appears TWICE by default (A→B and B→A for symmetric pairs)
+# - Self-matches (diagonal) are automatically filtered out
+# - Use --deduplicate flag to show each unique pair only once:
+#   python scripts/curation/find_pending_dups.py \
+#     --compare-pending \
+#     --format table \
+#     --deduplicate
 ```
 
 ### Step 7: Iterative Curation Process (High Similarity First)
@@ -414,6 +423,186 @@ Curation convergence reached after 3 cycles:
 
 Save session? (y/n) > y
 ✓ Session saved to .curation_state.json
+```
+
+---
+
+## Alternative: Overnight Auto-Curation (Phase 2 + Phase 3)
+
+For larger datasets or when Carlos doesn't have time for manual review, Phase 2 and Phase 3 together provide a fully automated overnight workflow. Phase 2 builds the community structure (see [phase2-spec.md](./plan/phase2-spec.md)), and Phase 3 iterates on those communities with LLM decisions.
+
+### When to Use Overnight Auto-Curation
+
+**Use overnight mode when:**
+- Dataset has >200 pending items (would take hours to review manually)
+- Carlos has limited time and prefers morning review of results
+- Team wants to maximize automatic deduplication before manual review
+
+**Use manual mode (Phase 3 from previous section) when:**
+- Dataset is small (<100 items)
+- Need fine-grained control over every decision
+- Learning the curation process for the first time
+
+### Carlos's Overnight Workflow
+
+**Step 1: Build Communities (Phase 2) - 2 minutes:**
+
+```bash
+# Navigate to project root and activate environment
+cd ~/your/project/curated-heuristic-loop
+source .venv-apple/bin/activate  # or .venv-nvidia
+
+# Build sparse graph and detect communities
+python scripts/curation/build_communities.py \
+  --db-path data/curation/chl_curation.db \
+  --output data/curation/communities.json
+
+# Output:
+# ✓ Building sparse similarity graph...
+# ✓ Querying FAISS top-50 neighbors for 100 items...
+# ✓ Filtering edges below threshold 0.72...
+# ✓ Graph built: 847 edges
+# ✓ Running Louvain community detection...
+# ✓ Found 15 communities (sizes: 3-12 items)
+# ✓ Community data exported to: data/curation/communities.json
+# ✓ Graph saved to: data/curation/similarity_graph.pkl
+```
+
+**Step 2: LLM Iteration (Phase 3) - Before bed (3 minutes):**
+
+```bash
+# Start overnight LLM-powered curation
+python scripts/curation/overnight_curation.py \
+  --communities data/curation/communities.json \
+  --db-path data/curation/chl_curation.db \
+  --max-iterations 10
+
+# Output:
+# ✓ Starting overnight auto-curation...
+# ✓ Configuration:
+#   - Auto-dedup threshold: 0.98 (merge without review)
+#   - Max iterations: 10
+#   - LLM mode: Claude Code MCP (or local LLM if configured)
+# ✓ Loaded 15 communities from Phase 2
+# ✓ Initial state: 100 pending items
+#
+# Iteration 1: Auto-dedup phase...
+# [Carlos goes to bed, script runs overnight]
+```
+
+**Next morning (review results):**
+
+```bash
+# Generate morning report
+python scripts/curation/overnight_curation.py --report-only
+
+# Output:
+# ========================================
+# Overnight Curation Report
+# ========================================
+#
+# Summary:
+# ✓ Status: Converged after 4 iterations
+# ✓ Runtime: 4h 23m
+# ✓ Items before: 100
+# ✓ Items after: 68
+# ✓ Reduction: 32% (32 duplicates removed)
+#
+# Iteration Breakdown:
+#
+# Iteration 1 (Auto-dedup):
+#   - Found 12 pairs with similarity ≥0.98
+#   - Merged automatically: 12 duplicates removed
+#   - Remaining items: 88
+#
+# Iteration 2 (Community processing):
+#   - Communities detected: 15
+#   - Highest priority community (5 items, avg sim=0.89): MERGED
+#   - LLM decision: merge_all
+#   - Items removed: 4
+#   - Remaining items: 84
+#
+# Iteration 3 (Community processing):
+#   - Communities detected: 12
+#   - Highest priority community (8 items, avg sim=0.85): MERGED
+#   - LLM decision: merge_subset (5 items merged, 3 kept separate)
+#   - Items removed: 4
+#   - Remaining items: 80
+#
+# Iteration 4 (Convergence):
+#   - Communities detected: 8
+#   - Progress: 33% reduction (below 5% threshold)
+#   - Remaining communities: low priority (avg sim <0.78)
+#   - Status: Converged
+#
+# Manual Review Queue:
+# ✓ 8 borderline communities flagged for review
+# ✓ Total items in queue: 24
+# ✓ Recommended: Review with --interactive mode
+#
+# Next Steps:
+# 1. Review flagged communities:
+#    python scripts/curation/find_pending_dups.py --bucket medium --interactive
+# 2. Export approved data:
+#    python scripts/curation/export_curated.py --output data/curation/approved
+# 3. Publish to canonical sheet
+#
+# Cost: $0 (local LLM) or ~$0.50 (Claude API)
+# ========================================
+```
+
+**Review borderline cases (optional):**
+
+If overnight curation flagged borderline communities for manual review:
+
+```bash
+# Review remaining medium-similarity items interactively
+python scripts/curation/find_pending_dups.py \
+  --bucket medium \
+  --interactive
+
+# Carlos reviews ~24 items (much less than original 100)
+# Takes 10-15 minutes instead of 45 minutes
+```
+
+### Overnight Benefits
+
+**Time savings:**
+- Original manual review: 45 minutes for 100 items
+- Overnight (Phase 2 + 3): 5 min setup + 10 min morning review = 15 minutes total
+- Savings: 30 minutes (67% reduction)
+
+**Scalability:**
+- Manual review time grows linearly: 200 items = 90 minutes, 500 items = 3+ hours
+- Overnight mode handles 1000+ items in same overnight window
+- Morning review time stays constant (~15-20 minutes for borderline cases)
+
+**Quality:**
+- Automatic high-confidence merges (≥0.98 similarity) are very safe
+- LLM community decisions provide reasoning and consistency
+- Human still reviews borderline cases where LLM is uncertain
+- Convergence guarantees prevent infinite loops or stuck states
+
+### Configuration
+
+Configuration in `scripts/scripts_config.yaml`:
+
+```yaml
+curation:
+  # Phase 2: Graph construction
+  min_similarity_threshold: 0.72  # Ignore edges below this
+  top_k_neighbors: 50             # Keep top-k neighbors per item
+  algorithm: "louvain"            # Community detection algorithm
+
+  # Phase 3: LLM iteration
+  auto_dedup_threshold: 0.98    # Auto-merge without review
+  max_iterations: 10
+  min_improvement_rate: 0.05    # 5% community reduction per round
+
+  # LLM configuration (choose one)
+  # Option 1: Claude Code MCP (recommended - fixed monthly cost)
+  # Option 2: Claude API (pay per use, ~$0.02 per community)
+  # Option 3: Local LLM (free, requires 16GB+ VRAM, use qwen2.5:14b)
 ```
 
 ---

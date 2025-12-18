@@ -69,9 +69,10 @@ Solo mode: same flow but usually only one member directory; duplicate finder use
 ## Duplicate Finder (Phase 1 deliverable)
 - Inputs: curation DB, embeddings already present. Use FAISS similarity search per category.
 - Candidate generation: for each pending experience, fetch top‑K neighbors (default 50) from all other pending experiences (self‑comparison). Original sync_status values are unreliable from individual exports, so all items are compared against each other.
-- Scoring: use cosine similarity from embeddings; optional rerank hook (LLM) is configurable but may be stubbed in Phase 1.
+- Scoring: use cosine similarity from embeddings (IndexFlatIP returns similarity scores directly, not distances); optional rerank hook (LLM) is configurable but may be stubbed in Phase 1.
 - Buckets (default thresholds): high ≥0.92, medium 0.75–0.92 (processed iteratively). Process high first, then medium, with recomputation after each phase. Allow CLI overrides.
 - Output formats: `table` (stdout), `json`, `csv`. Include columns: `pending_id, anchor_id, score, category, title_snippet, section_mismatch, id_collision_flag`.
+- Output structure: Self-matches (diagonal) are automatically filtered. Symmetric pairs (A→B and B→A) appear twice by default; use `--deduplicate` flag to show each unique pair only once (recommended for reporting, not for interactive review).
 - Interactive mode commands (persist to `evaluation_log.csv` and state file):
   - `merge <pending_id> <anchor_id>`: mark pending as duplicate of anchor (sets pending entry `sync_status=2` and records `merge_with=anchor_id` plus optional `curation_notes`; anchor keeps its current status).
   - `keep <pending_id>`: keep separate; record note.
@@ -108,6 +109,8 @@ Solo mode: same flow but usually only one member directory; duplicate finder use
 - Category conflict: same code, different name → merge aborts.
 - ID collision handling: verify suffixing and audit log entries.
 - Duplicate finder: confirm high/medium bucket counts match thresholds; verify iterative workflow (process high, then medium, with recomputation); resume after quit; dry‑run writes sidecars only.
+- Output structure: verify self-matches (diagonal) are filtered out; verify symmetric pairs (A→B and B→A) both appear by default; verify `--deduplicate` flag removes symmetric duplicates correctly.
+- FAISS integration: verify IndexFlatIP similarity scores are used directly without inversion; verify numpy.int64 indices are converted to Python int for database queries.
 - GPU guard: running build/index on CPU backend must exit with error message.
 
 ---

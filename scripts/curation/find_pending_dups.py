@@ -115,6 +115,11 @@ def parse_args():
         action="store_true",
         help="Don't write any changes to database or state file",
     )
+    parser.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help="Remove symmetric duplicate pairs (A→B and B→A) from output, keeping only unique pairs",
+    )
 
     # Bucket thresholds - now loaded from config by default but can be overridden
     parser.add_argument(
@@ -192,12 +197,18 @@ def main():
         # Filter results by bucket if specified
         if args.bucket != 'all':
             results = [r for r in results if r['bucket'] == args.bucket]
-            
+
         # Format and output results
-        formatted_results = ResultFormatter.format_results(results, args.format)
+        formatted_results = ResultFormatter.format_results(results, args.format, deduplicate=args.deduplicate)
         print(formatted_results)
 
-    print(f"\n✅ Found {len(results)} potential duplicates")
+        # Report count based on deduplication setting
+        count_msg = f"\n✅ Found {len(results)} potential duplicates"
+        if args.deduplicate:
+            # The formatter deduplicates, so we need to count the deduplicated results
+            deduplicated_count = len(ResultFormatter.deduplicate_symmetric_pairs(results))
+            count_msg = f"\n✅ Found {len(results)} potential duplicates ({deduplicated_count} unique pairs after deduplication)"
+        print(count_msg)
 
 
 if __name__ == "__main__":

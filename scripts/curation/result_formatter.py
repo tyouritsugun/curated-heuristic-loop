@@ -11,8 +11,50 @@ import csv
 
 class ResultFormatter:
     @staticmethod
-    def format_results(results: List[Dict], format_type: str) -> str:
-        """Format results in specified format."""
+    def deduplicate_symmetric_pairs(results: List[Dict]) -> List[Dict]:
+        """
+        Remove symmetric duplicate pairs (A→B and B→A).
+        Keeps only one direction for each unique pair using lexicographic ordering.
+
+        Args:
+            results: List of duplicate detection results
+
+        Returns:
+            Deduplicated list with only unique pairs
+        """
+        seen_pairs = set()
+        deduplicated = []
+
+        for result in results:
+            pending_id = result['pending_id']
+            anchor_id = result['anchor_id']
+
+            # Create a canonical pair key (always smaller ID first)
+            pair_key = tuple(sorted([pending_id, anchor_id]))
+
+            if pair_key not in seen_pairs:
+                seen_pairs.add(pair_key)
+                deduplicated.append(result)
+
+        return deduplicated
+
+    @staticmethod
+    def format_results(results: List[Dict], format_type: str, deduplicate: bool = False) -> str:
+        """
+        Format results in specified format.
+
+        Args:
+            results: List of duplicate detection results
+            format_type: Output format (table, json, csv, spreadsheet)
+            deduplicate: If True, remove symmetric pairs (A→B and B→A)
+
+        Returns:
+            Formatted output string
+        """
+        # Apply deduplication if requested
+        if deduplicate:
+            results = ResultFormatter.deduplicate_symmetric_pairs(results)
+
         if format_type == "table":
             # Table format
             if not results:

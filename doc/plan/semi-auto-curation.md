@@ -83,6 +83,8 @@ python scripts/curation/import_to_curation_db.py \
 python scripts/curation/build_curation_index.py --db-path data/curation/chl_curation.db
 
 # 6) Run duplicate detection (using curation DB embeddings)
+# Note: Each duplicate pair appears twice by default (A→B and B→A)
+# Add --deduplicate flag to show unique pairs only once
 python scripts/curation/find_pending_dups.py \
   --db-path data/curation/chl_curation.db \
   --compare-pending \
@@ -134,12 +136,14 @@ Notes:
   - Scope anchors to non-pending by default; add `--compare-pending` flag for team mode.
   - Bucket matches iteratively: process `high >=0.92` first, then `medium 0.75–0.92`, with recomputation after each phase to account for merges.
   - Emit conflicts (section mismatch, title-same/content-diff, regression, extension).
+  - Output structure: self-matches (diagonal) are automatically filtered out; symmetric pairs (A→B and B→A) appear twice by default; add `--deduplicate` flag to show each unique pair only once (recommended for reporting, not for interactive review).
+  - FAISS integration: use IndexFlatIP similarity scores directly (already in [0,1] range); convert numpy.int64 indices to Python int for database queries.
   - Support resume: write state to `.curation_state.json` in the working dir (schema: {run_id, input_path, last_bucket, last_index, decisions[], version, timestamp, user, input_checksum}; discard with `--reset-state` if checksum/input mismatches).
   - Interactive mode commands: `merge` (pick canonical, mark others `merge_with`, log), `update` (edit title/playbook/context inline), `keep` (mark `keep_separate` + note), `reject` (set sync_status=2 with reason), `split` (duplicate entry into parent+suffix for separate decisions; suffix format `{original_id}_split_{YYYYMMDDHHMMSS}`), `diff` (unified diff of titles/playbooks), `quit` (save state and exit).
   - Support iterative workflow: after completing high-similarity merges, rebuild index and recompute similarities to identify new high-similarity pairs that may emerge from medium merges.
   - **Important**: When duplicates are confirmed via `merge` command, the duplicate entries are marked as `sync_status=2` (REJECTED) and will be excluded from the final export, effectively "removing" them from the canonical knowledge base.
 - `score_atomicity`: deferred to Phase 2+; leave placeholder flag but no-op until spec is defined (definition TBD: measures whether an experience is single, minimal, non-compound).
-- Non-interactive outputs: `table|json|csv`.
+- Non-interactive outputs: `table|json|csv|spreadsheet`.
 - Dry-run flag on any command that mutates files or sheets; dry-run writes only sidecar files (suffix `.dryrun`) and prints planned changes.
 
 ---
@@ -195,9 +199,9 @@ Notes:
 
 ## Roadmap / Phases
 - **Phase 0 – Test Data & Dual-Sheet Harness**: curate a reusable test set (dev-tooling category), two parallel spreadsheets to simulate two teammates; 10 manuals + 20 seed experiences inflated to ~100–150 variants; ground-truth labels + `expected_action`; build `POST /api/v1/similarity/batch` (pairs → scores) and define `merge_audit.csv` + `.curation_state.json` schemas.
-- **Phase 1 – Plumbing & Safety**: schema checks, merge/export/import scripts, resume state, dry-run flags, bucketed duplicate finder (existing thresholds), integrate pairwise batch API into CLI.
-- **Phase 2 – Sparse Similarity Graph**: compute/embed + LLM signals per category, blend, sparsify (top-k / tau_keep), dedup via tau_eq components, similarity clusters via Louvain/DBSCAN, borderline queue, drift guards.
-- **Phase 3 – Agentic Loop (optional pilot)**: worker + reviewer agents generate and validate actions; produce `agent_suggestions.jsonl` and `agent_reviews.jsonl`; feed curated queue to humans.
+- **Phase 1 – Plumbing & Safety**: schema checks, merge/export/import scripts, resume state, dry-run flags, bucketed duplicate finder (existing thresholds), integrate pairwise batch API into CLI. ✅ **Complete**
+- **Phase 2 – Sparse Graph & Community Detection**: build sparse similarity graph from FAISS index, detect non-overlapping communities using graph clustering (`python-louvain` or `leidenalg`), rank communities by priority (similarity, density, size), and export structured community data for LLM processing. See [phase2-spec.md](./phase2-spec.md) for full specification.
+- **Phase 3 – LLM-Powered Community Iteration**: fully automated overnight workflow that iterates on Phase 2 communities with auto-deduplication (≥0.98 similarity), LLM-powered community resolution, iterative refinement with convergence guarantees (max 10 iterations, 5% improvement threshold), and morning report generation. Target: unsupervised overnight runtime, ≥30% item reduction, minimal cost with local LLM option or Claude Code MCP.
 - **Phase 4 – Polishing & Scale**: blocking before LLM for cost, richer UI for triage, metrics (precision/recall on labeled dup set), noise handling for huge categories.
 
 ---
@@ -239,23 +243,41 @@ Notes:
 
 ---
 
-## Agentic Curation Loop (Worker + Reviewer)
-- Roles:
-  - Worker agent: consumes manuals, drift triads, and similarity clusters; proposes concrete actions per item (merge targets, keep separate, retitle/scope, split facets, canonical choice).
-  - Reviewer agent: tool-augmented checker that validates worker proposals (threshold sanity, consistency with provenance, MST/triangle drift checks), then produces a short rationale plus a pass/fail recommendation.
-- Flow:
-  1) Input packages: cluster bundle (nodes, edges, sims), drift list, and relevant manual snippets/checklists.
-  2) Worker outputs for each cluster: (a) dedup sets with canonical pick, (b) related-but-keep sets with reasons, (c) proposed edits (titles/scope notes), (d) uncertainties.
-  3) Reviewer runs validations via tools: recompute edge thresholds, confirm no A≈B≈C gaps were ignored, check provenance (embed vs LLM), ensure actions obey guardrails (e.g., don’t auto-merge below tau_eq). Reviewer emits accept/adjust/reject with minimal justification.
-  4) Human curator receives: reviewer-approved suggestions + flagged disagreements/uncertainties ordered by risk (drift first, low-margin scores next).
-- Guardrails:
-  - Worker must cite which signal(s) support each suggested merge/split.
-  - Reviewer fails any merge suggestion lacking an edge ≥ tau_eq or missing a direct edge in a proposed component.
-  - Any cluster containing drift gaps auto-goes to human if worker and reviewer disagree.
-- Outputs:
-  - `agent_suggestions.jsonl`: worker proposals.
-  - `agent_reviews.jsonl`: reviewer decisions + tool checks.
-  - Final UI should highlight reviewer-approved actions and a separate queue for “needs human judgment.”
+## LLM-Powered Community Iteration (Phase 3)
+
+**Purpose:** Automated overnight curation using Phase 2 community data
+
+**Workflow:**
+1. **Input:** Load communities.json from Phase 2
+2. **Auto-Dedup Phase:** Find and merge all pairs with similarity ≥0.98 (no LLM needed)
+3. **Community Processing:** Iterate on communities by priority order:
+   - LLM receives: community members, pairwise scores, item details (title, playbook, context)
+   - LLM decides: `merge_all`, `merge_subset`, `keep_separate`, or `manual_review`
+   - Execute decision and rebuild graph for next iteration
+4. **Convergence Check:** Stop when progress <5% or max iterations reached
+5. **Morning Report:** Summary of actions, remaining borderline cases for human review
+
+**LLM Options:**
+- **Claude API** via `anthropic` library (pay per use)
+- **Local LLM** via `ollama` (qwen2.5:14b for 16GB+ VRAM, free)
+- **Claude Code MCP** (recommended for fixed monthly pricing)
+
+**Decision Types:**
+- `merge_all`: All items are duplicates, choose canonical
+- `merge_subset`: Some subgroups duplicate, others distinct
+- `keep_separate`: Related but distinct items
+- `manual_review`: Too ambiguous for LLM
+
+**Convergence Guarantees:**
+- Max iterations: 10 rounds hard limit
+- Progress threshold: Must reduce communities by ≥5% per round
+- Stuck detection: After 2 slow rounds, escalate remainder to manual review
+- Monotonic reduction: Item count must decrease or stay same
+
+**Outputs:**
+- Morning report with iteration summary
+- Manual review queue (borderline cases)
+- Updated curation database with merge decisions applied
 
 ---
 
