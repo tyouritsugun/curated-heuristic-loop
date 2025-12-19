@@ -92,19 +92,77 @@ def parse_args():
     return args
 
 
-def read_csv(file_path: Path) -> List[Dict]:
-    """Read CSV file and return list of dicts."""
+REQUIRED_CATEGORY_COLUMNS = {"code", "name", "description", "created_at"}
+REQUIRED_EXPERIENCE_COLUMNS = {
+    "id",
+    "category_code",
+    "section",
+    "title",
+    "playbook",
+    "context",
+    "source",
+    "sync_status",
+    "author",
+    "embedding_status",
+    "created_at",
+    "updated_at",
+    "synced_at",
+    "exported_at",
+}
+OPTIONAL_EXPERIENCE_COLUMNS = {"expected_action"}
+REQUIRED_MANUAL_COLUMNS = {
+    "id",
+    "category_code",
+    "title",
+    "content",
+    "summary",
+    "source",
+    "sync_status",
+    "author",
+    "embedding_status",
+    "created_at",
+    "updated_at",
+    "synced_at",
+    "exported_at",
+}
+OPTIONAL_MANUAL_COLUMNS: Set[str] = set()
+
+
+def read_csv(file_path: Path) -> Tuple[List[Dict], List[str]]:
+    """Read CSV file and return list of dicts + fieldnames."""
     # Try lowercase first, then capitalized (handle both cases)
     if file_path.exists():
         pass
     elif file_path.with_name(file_path.name.capitalize()).exists():
         file_path = file_path.with_name(file_path.name.capitalize())
     else:
-        return []
+        return [], []
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        return list(reader)
+        return list(reader), (reader.fieldnames or [])
+
+
+def validate_columns(
+    fieldnames: List[str],
+    required: Set[str],
+    optional: Set[str],
+    entity_label: str,
+    username: str,
+    file_path: Path,
+) -> List[str]:
+    if not fieldnames:
+        return [f"{entity_label}: {file_path} has no header row for user {username}"]
+
+    actual = set(fieldnames)
+    missing = required - actual
+    extra = actual - (required | optional)
+    errors = []
+    if missing:
+        errors.append(f"{entity_label}: Missing columns for user {username}: {sorted(missing)}")
+    if extra:
+        errors.append(f"{entity_label}: Extra columns for user {username}: {sorted(extra)}")
+    return errors
 
 
 def write_csv(file_path: Path, rows: List[Dict], fieldnames: List[str]):
@@ -312,13 +370,45 @@ def main():
     categories_data = {}
     experiences_data = {}
     manuals_data = {}
+    schema_errors: List[str] = []
 
     for input_dir in input_dirs:
         username = input_dir.name
 
-        categories = read_csv(input_dir / "categories.csv")
-        experiences = read_csv(input_dir / "experiences.csv")
-        manuals = read_csv(input_dir / "manuals.csv")
+        categories, category_fields = read_csv(input_dir / "categories.csv")
+        experiences, experience_fields = read_csv(input_dir / "experiences.csv")
+        manuals, manual_fields = read_csv(input_dir / "manuals.csv")
+
+        schema_errors.extend(
+            validate_columns(
+                category_fields,
+                REQUIRED_CATEGORY_COLUMNS,
+                set(),
+                "Categories",
+                username,
+                input_dir / "categories.csv",
+            )
+        )
+        schema_errors.extend(
+            validate_columns(
+                experience_fields,
+                REQUIRED_EXPERIENCE_COLUMNS,
+                OPTIONAL_EXPERIENCE_COLUMNS,
+                "Experiences",
+                username,
+                input_dir / "experiences.csv",
+            )
+        )
+        schema_errors.extend(
+            validate_columns(
+                manual_fields,
+                REQUIRED_MANUAL_COLUMNS,
+                OPTIONAL_MANUAL_COLUMNS,
+                "Manuals",
+                username,
+                input_dir / "manuals.csv",
+            )
+        )
 
         categories_data[username] = categories
         experiences_data[username] = experiences
@@ -327,6 +417,12 @@ def main():
         print(f"  {username}: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals")
 
     print()
+
+    if schema_errors:
+        print("❌ Schema validation failed:")
+        for err in schema_errors:
+            print(f"  - {err}")
+        sys.exit(1)
 
     # Merge categories
     merged_categories, cat_warnings = merge_categories(categories_data)
@@ -382,9 +478,21 @@ def main():
             output_dir / "experiences.csv",
             merged_experiences,
             [
-                "id", "category_code", "section", "title", "playbook", "context",
-                "source", "author", "embedding_status",
-                "created_at", "updated_at", "synced_at", "exported_at",
+                "id",
+                "category_code",
+                "section",
+                "title",
+                "playbook",
+                "context",
+                "source",
+                "sync_status",
+                "author",
+                "embedding_status",
+                "created_at",
+                "updated_at",
+                "synced_at",
+                "exported_at",
+                "expected_action",
             ],
         )
 
@@ -393,9 +501,19 @@ def main():
             output_dir / "manuals.csv",
             merged_manuals,
             [
-                "id", "category_code", "title", "content", "summary",
-                "source", "author", "embedding_status",
-                "created_at", "updated_at", "synced_at", "exported_at",
+                "id",
+                "category_code",
+                "title",
+                "content",
+                "summary",
+                "source",
+                "sync_status",
+                "author",
+                "embedding_status",
+                "created_at",
+                "updated_at",
+                "synced_at",
+                "exported_at",
             ],
         )
 

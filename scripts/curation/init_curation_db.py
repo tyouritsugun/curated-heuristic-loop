@@ -85,6 +85,7 @@ def main():
     print(f"  - category_manuals")
     print(f"  - embeddings")
     print(f"  - faiss_metadata")
+    print(f"  - curation_decisions")
     print(f"  - job_history")
     print(f"  - audit_log")
     print(f"  - settings")

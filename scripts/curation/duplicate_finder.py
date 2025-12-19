@@ -42,7 +42,6 @@ class DuplicateFinder:
         # Import FAISS and embedding components
         from src.api.gpu.faiss_manager import FAISSIndexManager
         from src.common.config.config import get_config
-        from src.api.gpu.embedding_client import EmbeddingClient
 
         print("Loading FAISS index and embeddings...")
 
@@ -74,6 +73,21 @@ class DuplicateFinder:
 
             print(f"Found {len(pending_experiences)} pending experiences, {len(pending_manuals)} pending manuals")
 
+            # Load all embeddings to get mapping
+            emb_repo = EmbeddingRepository(session)
+
+            sample_emb = None
+            for pending_item in all_pending:
+                sample_emb = session.query(Embedding).filter(
+                    Embedding.entity_id == pending_item.id,
+                    Embedding.model_version == config.embedding_model
+                ).first()
+                if sample_emb:
+                    break
+            if not sample_emb:
+                print("❌ Error: No embeddings found for pending items")
+                return []
+
             # Load FAISS index
             index_dir = self.db_path.parent / "faiss_index"
             if not index_dir.exists():
@@ -83,14 +97,10 @@ class DuplicateFinder:
 
             faiss_manager = FAISSIndexManager(
                 index_dir=str(index_dir),
-                dimension=1024,  # Default dimension, will be auto-detected
+                dimension=len(emb_repo.to_numpy(sample_emb)),
                 model_name=config.embedding_model,
                 session=session,
             )
-
-            # Load all embeddings to get mapping
-            emb_repo = EmbeddingRepository(session)
-            all_embeddings = emb_repo.get_all_by_model(config.embedding_model, entity_type=None)
 
             # Prepare results
             results = []
@@ -129,8 +139,9 @@ class DuplicateFinder:
                     indices = indices.reshape(1, -1)
 
                 # Get the results and filter based on sync_status if not comparing pending
-                for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
-                    if i >= limit:  # Only take top limit results
+                added = 0
+                for dist, idx in zip(distances[0], indices[0]):
+                    if added >= limit:  # Only take top limit results after filtering
                         break
 
                     # Get the entity_id from the FAISS metadata
@@ -146,19 +157,33 @@ class DuplicateFinder:
                     if anchor_id == pending_item.id:
                         continue
 
+                    if isinstance(pending_item, Experience) and anchor_type != "experience":
+                        continue
+                    if isinstance(pending_item, CategoryManual) and anchor_type != "manual":
+                        continue
+
+                    anchor_entity = None
+                    if anchor_type == "experience":
+                        anchor_entity = session.query(Experience).filter(Experience.id == anchor_id).first()
+                    elif anchor_type == "manual":
+                        if not include_manuals:
+                            continue
+                        anchor_entity = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
+
+                    if not anchor_entity:
+                        continue
+
                     # Calculate similarity score
                     # IndexFlatIP returns inner product scores (already similarity, not distance)
                     # For normalized vectors, scores are in [0, 1] where higher = more similar
                     similarity_score = float(dist)  # Already a similarity score, no conversion needed
 
                     # If not comparing pending, filter out pending items
-                    if not compare_pending:
-                        if anchor_type == "experience":
-                            anchor_entity = session.query(Experience).filter(Experience.id == anchor_id).first()
-                        else:
-                            anchor_entity = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
-
-                        if not anchor_entity or anchor_entity.sync_status == 0:  # PENDING
+                    if compare_pending:
+                        if anchor_entity.sync_status != 0:
+                            continue
+                    else:
+                        if anchor_entity.sync_status == 0:  # PENDING
                             continue
 
                     # Classify into bucket
@@ -191,6 +216,7 @@ class DuplicateFinder:
                     }
 
                     results.append(result)
+                    added += 1
 
             print(f"Found {len(results)} potential duplicates")
 

@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import CategoryManual, CurationDecision, Experience
 
 
 class InteractiveReviewer:
@@ -21,13 +21,34 @@ class InteractiveReviewer:
         self.engine = create_engine(f"sqlite:///{db_path}")
         self.Session = sessionmaker(bind=self.engine)
 
+    def _ensure_decisions_table(self) -> None:
+        CurationDecision.__table__.create(bind=self.engine, checkfirst=True)
+
+    def _log_decision(
+        self,
+        session,
+        entry_id: str,
+        action: str,
+        target_id: str | None,
+        notes: str | None,
+        user: str,
+    ) -> None:
+        decision = CurationDecision(
+            entry_id=entry_id,
+            action=action,
+            target_id=target_id,
+            notes=notes,
+            user=user,
+        )
+        session.add(decision)
+
     def run_interactive_review(self, results: List[Dict]) -> List[Dict]:
         """Run interactive review session."""
         import getpass
 
         print("\n=== Interactive Duplicate Review ===")
         print("Commands:")
-        print("  merge <pending_id> <anchor_id> - mark pending as duplicate of anchor")
+        print("  merge <anchor_id> [or merge <pending_id> <anchor_id>] - mark pending as duplicate of anchor")
         print("  keep <pending_id> [note] - keep separate with optional note")
         print("  reject <pending_id> <reason> - reject entry with reason")
         print("  update <pending_id> - edit title/playbook/context")
@@ -48,6 +69,9 @@ class InteractiveReviewer:
             state['user'] = user  # Update user if changed
 
         session = self.Session()
+        save_state = True
+        if not self.dry_run:
+            self._ensure_decisions_table()
 
         try:
             # Group results by pending_id for easier navigation
@@ -92,19 +116,24 @@ class InteractiveReviewer:
                         continue
                     elif cmd_input == 'quit':
                         print("Exiting without saving...")
+                        save_state = False
                         return state['decisions']
                     elif cmd_input == 'skip':
                         state['last_offset'] = current_idx
                         from state_manager import StateManager
                         StateManager.save_state(state, self.state_file, self.dry_run)
+                        save_state = False
                         print("Progress saved. Exiting...")
                         return state['decisions']
 
                     parts = cmd_input.split()
                     cmd = parts[0].lower() if parts else ''
 
-                    if cmd == 'merge' and len(parts) >= 3:
-                        anchor_id = parts[1]
+                    if cmd == 'merge' and len(parts) >= 2:
+                        if len(parts) >= 3 and parts[1] == pending_id:
+                            anchor_id = parts[2]
+                        else:
+                            anchor_id = parts[1]
                         # Find the specific result for this pairing
                         target_result = None
                         for r in related_results:
@@ -134,6 +163,14 @@ class InteractiveReviewer:
                                         # If there's no merge_with column, we'd need to add it or use a different approach
                                         # For now, just add a note to curation_notes if it exists
                                         pass
+                                    self._log_decision(
+                                        session,
+                                        entry_id=pending_id,
+                                        action="merge",
+                                        target_id=anchor_id,
+                                        notes=f"Merged with {anchor_id}",
+                                        user=user,
+                                    )
                                     session.commit()
                                     print(f"  ✓ Database updated: {pending_id} marked as rejected")
                                 else:
@@ -141,6 +178,14 @@ class InteractiveReviewer:
                                     pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
                                     if pending_manual:
                                         pending_manual.sync_status = 2  # REJECTED
+                                        self._log_decision(
+                                            session,
+                                            entry_id=pending_id,
+                                            action="merge",
+                                            target_id=anchor_id,
+                                            notes=f"Merged with {anchor_id}",
+                                            user=user,
+                                        )
                                         session.commit()
                                         print(f"  ✓ Database updated: {pending_id} marked as rejected")
                             else:
@@ -164,7 +209,16 @@ class InteractiveReviewer:
                         state['decisions'].append(decision)
                         if not self.dry_run:
                             # In this case we would just make a note or leave as pending
-                            print(f"  (!) Would mark {pending_id} to be kept separate in database")
+                            self._log_decision(
+                                session,
+                                entry_id=pending_id,
+                                action="keep",
+                                target_id=None,
+                                notes=note,
+                                user=user,
+                            )
+                            session.commit()
+                            print(f"  ✓ Decision saved for {pending_id} (kept separate)")
                         else:
                             print(f"  (!) Would keep {pending_id} separate")
                         break
@@ -187,12 +241,28 @@ class InteractiveReviewer:
                             pending_exp = session.query(Experience).filter(Experience.id == pending_id).first()
                             if pending_exp:
                                 pending_exp.sync_status = 2  # REJECTED
+                                self._log_decision(
+                                    session,
+                                    entry_id=pending_id,
+                                    action="reject",
+                                    target_id=None,
+                                    notes=reason,
+                                    user=user,
+                                )
                                 session.commit()
                                 print(f"  ✓ Database updated: {pending_id} marked as rejected")
                             else:
                                 pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
                                 if pending_manual:
                                     pending_manual.sync_status = 2  # REJECTED
+                                    self._log_decision(
+                                        session,
+                                        entry_id=pending_id,
+                                        action="reject",
+                                        target_id=None,
+                                        notes=reason,
+                                        user=user,
+                                    )
                                     session.commit()
                                     print(f"  ✓ Database updated: {pending_id} marked as rejected")
                         else:
@@ -240,6 +310,14 @@ class InteractiveReviewer:
                                     pending_exp.context = new_context
                                 # Reset embedding status to pending for re-embedding
                                 pending_exp.embedding_status = 'pending'
+                                self._log_decision(
+                                    session,
+                                    entry_id=pending_id,
+                                    action="update",
+                                    target_id=None,
+                                    notes=note,
+                                    user=user,
+                                )
                                 session.commit()
                                 print(f"  ✓ Database updated: {pending_id}")
                             else:
@@ -252,6 +330,14 @@ class InteractiveReviewer:
                                     if new_context:
                                         pending_manual.summary = new_context
                                     pending_manual.embedding_status = 'pending'
+                                    self._log_decision(
+                                        session,
+                                        entry_id=pending_id,
+                                        action="update",
+                                        target_id=None,
+                                        notes=note,
+                                        user=user,
+                                    )
                                     session.commit()
                                     print(f"  ✓ Database updated: {pending_id}")
                         else:
@@ -298,6 +384,14 @@ class InteractiveReviewer:
                                     exported_at=pending_exp.exported_at,
                                 )
                                 session.add(new_exp)
+                                self._log_decision(
+                                    session,
+                                    entry_id=pending_id,
+                                    action="split",
+                                    target_id=new_id,
+                                    notes=f"Split into {new_id}",
+                                    user=user,
+                                )
                                 session.commit()
                                 print(f"  ✓ Database updated: {new_id} created as split from {pending_id}")
                             else:
@@ -319,6 +413,14 @@ class InteractiveReviewer:
                                         exported_at=pending_manual.exported_at,
                                     )
                                     session.add(new_manual)
+                                    self._log_decision(
+                                        session,
+                                        entry_id=pending_id,
+                                        action="split",
+                                        target_id=new_id,
+                                        notes=f"Split into {new_id}",
+                                        user=user,
+                                    )
                                     session.commit()
                                     print(f"  ✓ Database updated: {new_id} created as split from {pending_id}")
                         else:
@@ -389,6 +491,7 @@ class InteractiveReviewer:
             # Save state when done with current session
             state['last_offset'] = current_idx
             from state_manager import StateManager
-            StateManager.save_state(state, self.state_file, self.dry_run)
+            if save_state:
+                StateManager.save_state(state, self.state_file, self.dry_run)
 
         return state['decisions']

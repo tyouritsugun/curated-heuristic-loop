@@ -99,6 +99,18 @@ class FAISSMetadata(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class CurationDecision(Base):
+    __tablename__ = "curation_decisions"
+
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(String(64), nullable=False, index=True)
+    action = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=True)
+    notes = Column(Text, nullable=True)
+    user = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class JobHistory(Base):
     __tablename__ = "job_history"
 

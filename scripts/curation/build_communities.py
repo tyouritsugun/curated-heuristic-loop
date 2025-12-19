@@ -66,6 +66,9 @@ def parse_args() -> argparse.Namespace:
         default_per_cat = cur.get("per_category", True)
         default_algorithm = cur.get("algorithm", "louvain")
         default_rerank_cache = cur.get("rerank_cache_dir", "data/curation/rerank_cache")
+        default_min_comm = cur.get("min_community_size", 2)
+        default_max_comm = cur.get("max_community_size", 50)
+        default_use_rerank = cur.get("use_rerank", False)
     except Exception:
         default_db = "data/curation/chl_curation.db"
         default_output = "data/curation/communities.json"
@@ -75,6 +78,9 @@ def parse_args() -> argparse.Namespace:
         default_per_cat = True
         default_algorithm = "louvain"
         default_rerank_cache = "data/curation/rerank_cache"
+        default_min_comm = 2
+        default_max_comm = 50
+        default_use_rerank = False
 
     parser = argparse.ArgumentParser(description="Build sparse similarity graph and detect communities (Phase 2)")
     parser.add_argument("--db-path", default=default_db, help="Path to curation SQLite DB")
@@ -87,11 +93,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--algorithm", choices=["louvain", "leiden"], default=default_algorithm, help="Community detection algorithm")
     parser.add_argument("--summary-only", action="store_true", help="Print summary without writing files")
     parser.add_argument("--include-synced", action="store_true", help="Include SYNCED items (default: pending only)")
-    parser.add_argument("--with-rerank", action="store_true", help="Enable rerank blend (disabled by default for speed)")
+    parser.add_argument("--with-rerank", action="store_true", default=default_use_rerank, help="Enable rerank blend")
+    parser.add_argument("--no-rerank", action="store_true", help="Disable rerank even if config enables it")
     parser.add_argument("--rerank-cache-dir", default=default_rerank_cache, help="Directory for rerank cache")
     parser.add_argument("--clear-cache", action="store_true", help="Clear rerank cache before running")
     parser.add_argument("--per-category", action="store_true", default=default_per_cat, help="Force per-category graphs (default true)")
     parser.add_argument("--allow-cross-category", action="store_true", help="Allow cross-category edges (overrides per-category)")
+    parser.add_argument("--min-community-size", type=int, default=default_min_comm, help="Minimum community size to keep")
+    parser.add_argument("--max-community-size", type=int, default=default_max_comm, help="Flag communities larger than this size")
     return parser.parse_args()
 
 
@@ -177,6 +186,7 @@ def build_neighbors(
         distances = distances.reshape(1, -1) if len(distances.shape) == 1 else distances
         indices = indices.reshape(1, -1) if len(indices.shape) == 1 else indices
 
+        candidates: List[dict] = []
         for dist, idx in zip(distances[0], indices[0]):
             internal_id = int(idx)
             if internal_id == -1:
@@ -192,7 +202,7 @@ def build_neighbors(
                 continue
             if per_category and anchor_item.category != item.category:
                 continue
-            neighbors.append(
+            candidates.append(
                 {
                     "src": item.id,
                     "dst": anchor_id,
@@ -201,6 +211,8 @@ def build_neighbors(
                     "dst_category": anchor_item.category,
                 }
             )
+        candidates.sort(key=lambda x: x["embed_score"], reverse=True)
+        neighbors.extend(candidates[:top_k])
     return neighbors
 
 
@@ -395,12 +407,22 @@ def export_communities(
     communities_by_cat: Dict[str, List[List[str]]],
     output_path: Path,
     metadata: Dict[str, object],
+    min_size: int,
+    max_size: int,
 ) -> Dict[str, object]:
     communities = []
     counter = 1
+    skipped_small = 0
+    oversized_count = 0
     for category, comms in communities_by_cat.items():
         for nodes in comms:
+            if len(nodes) < min_size:
+                skipped_small += 1
+                continue
             avg_sim, density, size = score_community(G, nodes)
+            oversized = size > max_size
+            if oversized:
+                oversized_count += 1
             pid = f"COMM-{counter:03d}"
             counter += 1
             sub = G.subgraph(nodes)
@@ -414,10 +436,14 @@ def export_communities(
                     "density": round(density, 4),
                     "size": size,
                     "priority_score": round(priority_score(avg_sim, density, size), 4),
+                    "oversized": oversized,
                     "edges": edges_payload,
                 }
             )
 
+    metadata["skipped_small_communities"] = skipped_small
+    metadata["oversized_communities"] = oversized_count
+    metadata["total_communities"] = len(communities)
     payload = {"communities": communities, "metadata": metadata}
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
@@ -486,11 +512,13 @@ def main() -> None:
                             rerank_cache[rec["key"]] = float(rec["score"])
             except Exception:
                 rerank_cache = {}
-        reranker = get_reranker(config, args.with_rerank)
+        use_rerank = args.with_rerank and not args.no_rerank
+        reranker = get_reranker(config, use_rerank)
 
         # Neighbor cache: default ON
         neighbors_file = Path(args.neighbors_file)
         neighbors: Optional[List[dict]] = None
+        cache_hit = False
         if not args.refresh_neighbors:
             neighbors = load_neighbors(
                 neighbors_file,
@@ -499,6 +527,7 @@ def main() -> None:
                 expected_threshold=args.min_threshold,
                 index_mtime=index_mtime,
             )
+            cache_hit = neighbors is not None
         if neighbors is None:
             neighbors = build_neighbors(
                 items=items,
@@ -522,8 +551,8 @@ def main() -> None:
 
         print(f"Items: {len(items)} | Per-category: {per_category} | Algorithm: {args.algorithm}")
         print(f"Top-K: {args.top_k} | Threshold: {args.min_threshold}")
-        print(f"Blend weights: embed={w_embed}, rerank={w_rerank} | Rerank enabled: {bool(reranker)} (pass --with-rerank to enable)")
-        print(f"Neighbors: {len(neighbors)} (cache {'hit' if neighbors else 'miss'})")
+        print(f"Blend weights: embed={w_embed}, rerank={w_rerank} | Rerank enabled: {bool(reranker)}")
+        print(f"Neighbors: {len(neighbors)} (cache {'hit' if cache_hit else 'miss'})")
 
         G, stats = build_graph(
             items=items,
@@ -543,9 +572,10 @@ def main() -> None:
 
         communities_by_cat = detect_communities(G, algorithm=args.algorithm, per_category=per_category)
         total_comms = sum(len(v) for v in communities_by_cat.values())
+        total_kept = sum(len([nodes for nodes in v if len(nodes) >= args.min_community_size]) for v in communities_by_cat.values())
 
         print(f"✓ Graph built: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-        print(f"✓ Communities detected: {total_comms}")
+        print(f"✓ Communities detected: {total_comms} (kept: {total_kept})")
         print(
             f"Rerank: cache_hits={stats.get('rerank_cache_hits',0)} "
             f"calls={stats.get('rerank_calls',0)} "
@@ -554,7 +584,7 @@ def main() -> None:
 
         metadata = {
             "total_items": G.number_of_nodes(),
-            "total_communities": total_comms,
+            "total_communities": total_kept,
             "graph_edges": G.number_of_edges(),
             "min_threshold": args.min_threshold,
             "top_k": args.top_k,
@@ -562,6 +592,8 @@ def main() -> None:
             "per_category": per_category,
             "blend_weights": {"embed": w_embed, "rerank": w_rerank},
             "rerank_enabled": bool(reranker),
+            "min_community_size": args.min_community_size,
+            "max_community_size": args.max_community_size,
             "edge_thresholds": cur_cfg.get("thresholds", {}),
         }
 
@@ -578,6 +610,8 @@ def main() -> None:
             communities_by_cat=communities_by_cat,
             output_path=Path(args.output),
             metadata=metadata,
+            min_size=args.min_community_size,
+            max_size=args.max_community_size,
         )
 
         print(f"✓ Community data written to {args.output}")

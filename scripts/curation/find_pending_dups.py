@@ -24,6 +24,7 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -32,8 +33,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root.parent))
 
 from scripts._config_loader import load_scripts_config
-import sys
-from pathlib import Path
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Add the scripts directory to path for imports
 scripts_dir = Path(__file__).parent
@@ -43,6 +44,7 @@ from duplicate_finder import DuplicateFinder
 from result_formatter import ResultFormatter
 from interactive_reviewer import InteractiveReviewer
 from decision_logging import write_evaluation_log
+from src.common.storage.schema import CategoryManual, Experience
 
 
 def parse_args():
@@ -53,9 +55,10 @@ def parse_args():
         default_db_path = curation_config.get("curation_db_path", "data/curation/chl_curation.db")
         default_state_file = curation_config.get("state_file", "data/curation/.curation_state.json")
         # Load thresholds from config
-        high_threshold = curation_config.get("high_threshold", 0.92)
-        medium_threshold = curation_config.get("medium_threshold", 0.75)
-        low_threshold = curation_config.get("low_threshold", 0.55)
+        thresholds = curation_config.get("thresholds", {})
+        high_threshold = thresholds.get("high_bucket", 0.92)
+        medium_threshold = thresholds.get("medium_bucket", 0.75)
+        low_threshold = thresholds.get("low_bucket", 0.55)
     except Exception:
         # Fallback to hard-coded defaults if config loading fails
         default_db_path = "data/curation/chl_curation.db"
@@ -99,6 +102,11 @@ def parse_args():
         "--compare-pending",
         action="store_true",
         help="Compare pending items against each other (for solo mode)",
+    )
+    parser.add_argument(
+        "--anchor-mode",
+        action="store_true",
+        help="Compare pending items against non-pending anchors (default if anchors exist)",
     )
     parser.add_argument(
         "--interactive",
@@ -149,6 +157,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def has_non_pending_anchors(db_path: Path) -> bool:
+    engine = create_engine(f"sqlite:///{db_path}")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        exp_count = session.query(Experience).filter(Experience.sync_status != 0).limit(1).count()
+        manual_count = session.query(CategoryManual).filter(CategoryManual.sync_status != 0).limit(1).count()
+        return (exp_count + manual_count) > 0
+    finally:
+        session.close()
+
+
 def main():
     args = parse_args()
 
@@ -175,11 +195,22 @@ def main():
         low_threshold=args.low_threshold
     )
 
+    if args.anchor_mode and args.compare_pending:
+        print("❌ Error: --anchor-mode and --compare-pending are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+
+    if args.anchor_mode:
+        compare_pending = False
+    elif args.compare_pending:
+        compare_pending = True
+    else:
+        compare_pending = not has_non_pending_anchors(db_path)
+
     # Find potential duplicates
     # Apply bucket filter if specified (only high or medium for iterative workflow)
     bucket_filter = args.bucket if args.bucket != 'all' else None
     results = finder.find_duplicates(
-        compare_pending=args.compare_pending,
+        compare_pending=compare_pending,
         limit=args.limit,
         bucket_filter=bucket_filter
     )
