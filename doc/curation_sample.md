@@ -37,27 +37,14 @@ python scripts/curation/build_curation_index.py
 ```
 GPU only; stop the API server before running.
 
-## 5) Duplicate Scan + Review
-Preview (auto mode chooses pending-vs-pending if no anchors exist):
+## 5) Remove Identical Items
+Run the duplicate review prompt and mark only obvious duplicates. This step removes identical or near-identical items before Phase 3.
 ```bash
-python scripts/curation/find_pending_dups.py --format table
+python scripts/curation/find_pending_dups.py
 ```
-Force anchor mode if you already imported a canonical baseline with `sync_status=1`:
-```bash
-python scripts/curation/find_pending_dups.py --anchor-mode --format table
-```
-Interactive review (high then medium):
-```bash
-python scripts/curation/find_pending_dups.py --bucket high --interactive
-python scripts/curation/find_pending_dups.py --bucket medium --interactive
-```
-Commands: `merge <anchor_id>`, `keep`, `reject`, `update`, `diff`, `split`, `skip`, `quit`.
+This opens an interactive prompt where you mark duplicates. If unsure, keep the items for Phase 3.
 
-Decisions are recorded in:
-- `data/curation/evaluation_log.csv`
-- `curation_decisions` table in `chl_curation.db`
-
-After merges or updates, rebuild embeddings + index:
+After finishing, rebuild embeddings + index:
 ```bash
 python scripts/curation/build_curation_index.py
 ```

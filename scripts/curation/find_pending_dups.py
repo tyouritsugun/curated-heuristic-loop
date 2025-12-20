@@ -7,17 +7,17 @@ pending experiences and anchors (by default, synced entries), then buckets
 them by similarity threshold. In solo mode, it compares pending vs pending.
 
 Usage:
-    # Find duplicates with table output (using default curation database)
-    python scripts/curation/find_pending_dups.py
+    # Find duplicates with table output (non-interactive)
+    python scripts/curation/find_pending_dups.py --non-interactive
 
     # Find duplicates in solo mode (pending vs pending)
-    python scripts/curation/find_pending_dups.py --compare-pending
+    python scripts/curation/find_pending_dups.py --compare-pending --non-interactive
 
-    # Run interactive review session (high similarity items)
-    python scripts/curation/find_pending_dups.py --interactive --bucket high
+    # Run interactive review session (defaults to high similarity items)
+    python scripts/curation/find_pending_dups.py
 
     # Export to JSON format
-    python scripts/curation/find_pending_dups.py --format json
+    python scripts/curation/find_pending_dups.py --format json --non-interactive
 
     # Override default database path (if needed)
     python scripts/curation/find_pending_dups.py --db-path /custom/path/chl_curation.db
@@ -84,8 +84,8 @@ def parse_args():
     parser.add_argument(
         "--bucket",
         choices=["high", "medium", "all"],  # Removed 'low' as it's not part of iterative workflow
-        default="all",
-        help="Similarity bucket to show (default: all)",
+        default="high",
+        help="Similarity bucket to show (default: high)",
     )
     parser.add_argument(
         "--limit",
@@ -111,7 +111,13 @@ def parse_args():
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Run in interactive mode for duplicate review",
+        default=True,
+        help="Run in interactive mode for duplicate review (default)",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable interactive review and print results",
     )
     parser.add_argument(
         "--state-file",
@@ -198,6 +204,9 @@ def main():
     if args.anchor_mode and args.compare_pending:
         print("❌ Error: --anchor-mode and --compare-pending are mutually exclusive", file=sys.stderr)
         sys.exit(1)
+
+    if args.non_interactive and args.interactive:
+        args.interactive = False
 
     if args.anchor_mode:
         compare_pending = False
