@@ -37,17 +37,21 @@ python scripts/curation/build_curation_index.py
 ```
 GPU only; stop the API server before running.
 
-## 5) Remove Identical Items
-Run the duplicate pass to auto-merge obvious duplicates (high similarity only). This step removes identical or near-identical items before Phase 3.
+## 5) Remove Identical Items (prep for Phase 2/3)
+Run the duplicate pass to auto-merge obvious duplicates (high similarity only). This step removes identical or near-identical items and refreshes all Phase‑2 artifacts so Phase 3 can start immediately.
 ```bash
+# auto-merge very high sim pairs (>=auto_dedup threshold)
 python scripts/curation/find_pending_dups.py
-```
-If you want a preview without DB changes, add `--dry-run`.
 
-After finishing, rebuild embeddings + index:
-```bash
+# rebuild embeddings + FAISS after the auto-merges
 python scripts/curation/build_curation_index.py
+
+# build sparse graph + communities (Phase 2 output expected by Phase 3 step 6)
+# Default is embed-only; add --with-rerank if you want rerank-only scoring.
+python scripts/curation/build_communities.py --refresh-neighbors
+# (optional) python scripts/curation/build_communities.py --refresh-neighbors --with-rerank
 ```
+If you want a preview without DB changes on the first command, add `--dry-run` to `find_pending_dups.py`.
 
 ## 6) TBD
 

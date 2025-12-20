@@ -31,7 +31,8 @@ curation:
   graph_file: data/curation/similarity_graph.pkl
   community_data_file: data/curation/communities.json
   # Similarity signals (embed + rerank blend)
-  use_rerank: true
+  # Default: embed-only. Pass --with-rerank to enable rerank (rerank-only scoring).
+  use_rerank: false
   blend_weights:
     embed: 0.7
     rerank: 0.3

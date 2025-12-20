@@ -68,7 +68,8 @@ def parse_args() -> argparse.Namespace:
         default_rerank_cache = cur.get("rerank_cache_dir", "data/curation/rerank_cache")
         default_min_comm = cur.get("min_community_size", 2)
         default_max_comm = cur.get("max_community_size", 50)
-        default_use_rerank = cur.get("use_rerank", False)
+        # Default: rerank off (embed-only) unless explicitly requested
+        default_use_rerank = False
     except Exception:
         default_db = "data/curation/chl_curation.db"
         default_output = "data/curation/communities.json"
@@ -514,6 +515,9 @@ def main() -> None:
                 rerank_cache = {}
         use_rerank = args.with_rerank and not args.no_rerank
         reranker = get_reranker(config, use_rerank)
+        # If rerank is enabled, switch to rerank-only scoring unless user overrides weights in code
+        if use_rerank:
+            w_embed, w_rerank = 0.0, 1.0
 
         # Neighbor cache: default ON
         neighbors_file = Path(args.neighbors_file)
@@ -579,7 +583,7 @@ def main() -> None:
         print(
             f"Rerank: cache_hits={stats.get('rerank_cache_hits',0)} "
             f"calls={stats.get('rerank_calls',0)} "
-            f"(pass --with-rerank to enable if zero calls)"
+            f"(pass --with-rerank for rerank-only scoring)"
         )
 
         metadata = {
