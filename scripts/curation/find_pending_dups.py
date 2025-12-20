@@ -7,17 +7,14 @@ pending experiences and anchors (by default, synced entries), then buckets
 them by similarity threshold. In solo mode, it compares pending vs pending.
 
 Usage:
-    # Find duplicates with table output (non-interactive)
-    python scripts/curation/find_pending_dups.py --non-interactive
-
-    # Find duplicates in solo mode (pending vs pending)
-    python scripts/curation/find_pending_dups.py --compare-pending --non-interactive
-
-    # Run interactive review session (defaults to high similarity items)
+    # Auto-merge obvious duplicates (default: high similarity bucket)
     python scripts/curation/find_pending_dups.py
 
-    # Export to JSON format
-    python scripts/curation/find_pending_dups.py --format json --non-interactive
+    # Find duplicates in solo mode (pending vs pending)
+    python scripts/curation/find_pending_dups.py --compare-pending
+
+    # Export to JSON format (no DB changes)
+    python scripts/curation/find_pending_dups.py --format json --dry-run
 
     # Override default database path (if needed)
     python scripts/curation/find_pending_dups.py --db-path /custom/path/chl_curation.db
@@ -42,9 +39,9 @@ sys.path.append(str(scripts_dir))
 
 from duplicate_finder import DuplicateFinder
 from result_formatter import ResultFormatter
-from interactive_reviewer import InteractiveReviewer
+from datetime import datetime, timezone
 from decision_logging import write_evaluation_log
-from src.common.storage.schema import CategoryManual, Experience
+from src.common.storage.schema import CategoryManual, CurationDecision, Experience
 
 
 def parse_args():
@@ -109,17 +106,6 @@ def parse_args():
         help="Compare pending items against non-pending anchors (default if anchors exist)",
     )
     parser.add_argument(
-        "--interactive",
-        action="store_true",
-        default=True,
-        help="Run in interactive mode for duplicate review (default)",
-    )
-    parser.add_argument(
-        "--non-interactive",
-        action="store_true",
-        help="Disable interactive review and print results",
-    )
-    parser.add_argument(
         "--state-file",
         default=default_state_file,
         help=f"Path to resume state file (default: {default_state_file})",
@@ -175,6 +161,141 @@ def has_non_pending_anchors(db_path: Path) -> bool:
         session.close()
 
 
+def _find_root(parent: dict, item: str) -> str:
+    while parent[item] != item:
+        parent[item] = parent[parent[item]]
+        item = parent[item]
+    return item
+
+
+def _union(parent: dict, a: str, b: str) -> None:
+    ra = _find_root(parent, a)
+    rb = _find_root(parent, b)
+    if ra != rb:
+        parent[rb] = ra
+
+
+def auto_merge(
+    db_path: Path,
+    results: list[dict],
+    compare_pending: bool,
+    high_threshold: float,
+    dry_run: bool,
+) -> list[dict]:
+    if not results:
+        return []
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    decisions: list[dict] = []
+    try:
+        if compare_pending:
+            parent: dict[str, str] = {}
+            nodes: set[str] = set()
+            for res in results:
+                if res["score"] < high_threshold:
+                    continue
+                a = res["pending_id"]
+                b = res["anchor_id"]
+                nodes.add(a)
+                nodes.add(b)
+                parent.setdefault(a, a)
+                parent.setdefault(b, b)
+                _union(parent, a, b)
+
+            groups: dict[str, list[str]] = {}
+            for node in nodes:
+                root = _find_root(parent, node)
+                groups.setdefault(root, []).append(node)
+
+            for group in groups.values():
+                group_sorted = sorted(group)
+                anchor_id = None
+                for candidate in group_sorted:
+                    exp = session.query(Experience).filter(Experience.id == candidate).first()
+                    if exp and exp.sync_status == 0:
+                        anchor_id = candidate
+                        break
+                if not anchor_id:
+                    continue
+
+                for member_id in group_sorted:
+                    if member_id == anchor_id:
+                        continue
+                    pending_exp = session.query(Experience).filter(Experience.id == member_id).first()
+                    if not pending_exp or pending_exp.sync_status != 0:
+                        continue
+                    decisions.append(
+                        {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "user": "auto",
+                            "entry_id": member_id,
+                            "action": "merge",
+                            "target_id": anchor_id,
+                            "was_correct": None,
+                            "notes": f"auto-merge {member_id} -> {anchor_id}",
+                        }
+                    )
+                    if not dry_run:
+                        pending_exp.sync_status = 2
+                        session.add(
+                            CurationDecision(
+                                entry_id=member_id,
+                                action="merge",
+                                target_id=anchor_id,
+                                notes="auto-merge high similarity",
+                                user="auto",
+                            )
+                        )
+        else:
+            best_anchor: dict[str, tuple[str, float]] = {}
+            for res in results:
+                if res["score"] < high_threshold:
+                    continue
+                pending_id = res["pending_id"]
+                anchor_id = res["anchor_id"]
+                score = res["score"]
+                current = best_anchor.get(pending_id)
+                if not current or score > current[1]:
+                    best_anchor[pending_id] = (anchor_id, score)
+
+            for pending_id, (anchor_id, _) in best_anchor.items():
+                pending_exp = session.query(Experience).filter(Experience.id == pending_id).first()
+                if not pending_exp or pending_exp.sync_status != 0:
+                    continue
+                decisions.append(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "user": "auto",
+                        "entry_id": pending_id,
+                        "action": "merge",
+                        "target_id": anchor_id,
+                        "was_correct": None,
+                        "notes": f"auto-merge {pending_id} -> {anchor_id}",
+                    }
+                )
+                if not dry_run:
+                    pending_exp.sync_status = 2
+                    session.add(
+                        CurationDecision(
+                            entry_id=pending_id,
+                            action="merge",
+                            target_id=anchor_id,
+                            notes="auto-merge high similarity",
+                            user="auto",
+                        )
+                    )
+
+        if not dry_run:
+            session.commit()
+    finally:
+        session.close()
+
+    return decisions
+
+
 def main():
     args = parse_args()
 
@@ -205,9 +326,6 @@ def main():
         print("❌ Error: --anchor-mode and --compare-pending are mutually exclusive", file=sys.stderr)
         sys.exit(1)
 
-    if args.non_interactive and args.interactive:
-        args.interactive = False
-
     if args.anchor_mode:
         compare_pending = False
     elif args.compare_pending:
@@ -224,70 +342,67 @@ def main():
         bucket_filter=bucket_filter
     )
 
-    if args.interactive:
-        # Results are already filtered by the finder, but double-check
-        if args.bucket != 'all':
-            results = [r for r in results if r['bucket'] == args.bucket]
+    # Filter results by bucket if specified
+    if args.bucket != 'all':
+        results = [r for r in results if r['bucket'] == args.bucket]
 
-        # Run interactive review
-        reviewer = InteractiveReviewer(db_path, Path(args.state_file), args.dry_run)
-        decisions = reviewer.run_interactive_review(results)
+    # Format and output results
+    formatted_results = ResultFormatter.format_results(results, args.format, deduplicate=args.deduplicate)
+    print(formatted_results)
 
-        # Write evaluation log
+    # Report count based on deduplication setting
+    count_msg = f"\n✅ Found {len(results)} potential duplicates"
+    if args.deduplicate:
+        # The formatter deduplicates, so we need to count the deduplicated results
+        deduplicated_count = len(ResultFormatter.deduplicate_symmetric_pairs(results))
+        count_msg = f"\n✅ Found {len(results)} potential duplicates ({deduplicated_count} unique pairs after deduplication)"
+    print(count_msg)
+
+    decisions = auto_merge(
+        db_path=db_path,
+        results=results,
+        compare_pending=compare_pending,
+        high_threshold=args.high_threshold,
+        dry_run=args.dry_run,
+    )
+    if decisions:
         evaluation_log_path = db_path.parent / "evaluation_log.csv"
         write_evaluation_log(decisions, evaluation_log_path, args.dry_run)
+    print(f"✅ Auto-merged {len(decisions)} duplicates")
 
-        print(f"\n✅ Interactive review complete! {len(decisions)} decisions logged to evaluation_log.csv")
-    else:
-        # Filter results by bucket if specified
-        if args.bucket != 'all':
-            results = [r for r in results if r['bucket'] == args.bucket]
-
-        # Format and output results
-        formatted_results = ResultFormatter.format_results(results, args.format, deduplicate=args.deduplicate)
-        print(formatted_results)
-
-        # Report count based on deduplication setting
-        count_msg = f"\n✅ Found {len(results)} potential duplicates"
-        if args.deduplicate:
-            # The formatter deduplicates, so we need to count the deduplicated results
-            deduplicated_count = len(ResultFormatter.deduplicate_symmetric_pairs(results))
-            count_msg = f"\n✅ Found {len(results)} potential duplicates ({deduplicated_count} unique pairs after deduplication)"
-        print(count_msg)
-
-        # Emit neighbors cache for Phase 2 by default
-        try:
-            neighbors_path = Path(args.neighbors_file)
-            neighbors_path.parent.mkdir(parents=True, exist_ok=True)
-            neighbor_records = []
-            for r in results:
-                neighbor_records.append(
+    # Emit neighbors cache for Phase 2 by default
+    try:
+        neighbors_path = Path(args.neighbors_file)
+        neighbors_path.parent.mkdir(parents=True, exist_ok=True)
+        neighbor_records = []
+        for r in results:
+            neighbor_records.append(
+                {
+                    "src": r["pending_id"],
+                    "dst": r["anchor_id"],
+                    "embed_score": r["score"],
+                    "src_category": r.get("category"),
+                    "dst_category": r.get("category"),
+                }
+            )
+        with neighbors_path.open("w", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
                     {
-                        "src": r["pending_id"],
-                        "dst": r["anchor_id"],
-                        "embed_score": r["score"],
-                        "src_category": r.get("category"),
-                        "dst_category": r.get("category"),
+                        "type": "meta",
+                        "from": "find_pending_dups",
+                        "top_k": args.limit,
+                        "high_threshold": args.high_threshold,
+                        "medium_threshold": args.medium_threshold,
                     }
                 )
-            with neighbors_path.open("w", encoding="utf-8") as fh:
-                fh.write(
-                    json.dumps(
-                        {
-                            "type": "meta",
-                            "from": "find_pending_dups",
-                            "top_k": args.limit,
-                            "high_threshold": args.high_threshold,
-                            "medium_threshold": args.medium_threshold,
-                        }
-                    )
-                    + "\n"
-                )
-                for rec in neighbor_records:
-                    fh.write(json.dumps(rec) + "\n")
-            print(f"✓ Neighbors cache written to {neighbors_path}")
-        except Exception as exc:
-            print(f"⚠️  Failed to write neighbors cache: {exc}")
+                + "\n"
+            )
+            for rec in neighbor_records:
+                fh.write(json.dumps(rec) + "\n")
+        print(f"✓ Neighbors cache written to {neighbors_path}")
+    except Exception as exc:
+        print(f"⚠️  Failed to write neighbors cache: {exc}")
 
 
 if __name__ == "__main__":

@@ -38,30 +38,20 @@ python scripts/curation/build_curation_index.py
 GPU only; stop the API server before running.
 
 ## 5) Remove Identical Items
-Run the duplicate review prompt and mark only obvious duplicates. This step removes identical or near-identical items before Phase 3.
+Run the duplicate pass to auto-merge obvious duplicates (high similarity only). This step removes identical or near-identical items before Phase 3.
 ```bash
 python scripts/curation/find_pending_dups.py
 ```
-This opens an interactive prompt where you mark duplicates. If unsure, keep the items for Phase 3.
+If you want a preview without DB changes, add `--dry-run`.
 
 After finishing, rebuild embeddings + index:
 ```bash
 python scripts/curation/build_curation_index.py
 ```
 
-## 6) (Optional) Build Communities for Phase 3
-```bash
-python scripts/curation/build_communities.py \
-  --db-path data/curation/chl_curation.db \
-  --output data/curation/communities.json
-```
-Outputs `neighbors.jsonl`, `similarity_graph.pkl`, and `communities.json`.
+## 6) TBD
 
-## 7) Export + Publish
-```bash
-python scripts/curation/export_curated.py --output data/curation/approved
-python scripts/curation/publish_to_canonical.py --input data/curation/approved --sheet-id <SHEET_ID>
-```
+## 7) TBD
 
 ## 8) Team Sync
 UI: Operations → Import from Google Sheet  
