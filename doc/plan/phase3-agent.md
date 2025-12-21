@@ -32,24 +32,23 @@ Goal: provide a single overnight wrapper that loads Phase‑2 artifacts, uses an
 
 ## Agent Layer Design
 - Single agent is sufficient; no multi-agent chat needed.
-- Abstraction: `scripts/curation/agents/agent_factory.py` returns an `AssistantAgent` wired to one of:
-  - **OpenAI‑compatible**: `OpenAIChatCompletionClient`
-  - **Claude via MCP**: `MCPChatCompletionClient` targeting `claude mcp serve`
-  - **Local**: Ollama/LM Studio via their chat endpoint (OpenAI‑compatible)
-- Config surface (env or YAML):
-  - `LLM_PROVIDER` = `openai|anthropic_mcp|ollama|lmstudio`
-  - `LLM_MODEL` (e.g., `gpt-4.1-mini`, `claude-3.5`, `qwen2.5:14b`)
-  - `LLM_API_BASE`, `LLM_API_KEY` (ignored for MCP if using local auth)
-  - `LLM_MAX_TOKENS`, `LLM_TEMPERATURE`
-  - `MCP_CMD` (e.g., `claude mcp serve --stdio`)
-- When `--with-rerank` was used in Phase 2, edge weights are rerank-only; agent relies on those scores as “strength” signals.
+- Uses `scripts/curation/agents/autogen_openai_completion_agent.py` with AutoGen's `AssistantAgent`
+- Supports any OpenAI-compatible endpoint:
+  - **OpenAI API**: GPT-4, GPT-4o-mini, etc.
+  - **Google Gemini**: via OpenAI-compatible endpoint
+  - **Local LLMs**: Ollama/LM Studio (free, offline, recommended for cost control)
+- Config surface (env or YAML via `scripts/scripts_config.yaml`):
+  - `LLM_MODEL` (e.g., `gpt-4o-mini`, `gemini-pro`, `qwen2.5:14b`)
+  - `LLM_API_BASE` (for local: `http://localhost:11434/v1` for Ollama, `http://localhost:1234/v1` for LM Studio)
+  - `LLM_API_KEY` (required for OpenAI/Gemini; local can use a placeholder)
+- When `--with-rerank` was used in Phase 2, edge weights are rerank-only; agent relies on those scores as "strength" signals.
 
 ## Wrapper Script Plan (`scripts/curation/run_phase3.py`)
 Inputs
 - `--db-path` (default `data/curation/chl_curation.db`)
 - `--communities` (default `data/curation/communities.json`)
 - `--graph` (default `data/curation/similarity_graph.pkl`)
-- `--llm-provider`, `--model`, `--api-base`, `--api-key`, `--mcp-cmd`
+- `--config` (default `scripts/scripts_config.yaml` for LLM settings)
 - `--max-rounds` (default 10), `--improvement-threshold` (default 0.05)
 - `--dry-run`
 - `--two-pass` (enable rerank refinement)
@@ -79,8 +78,11 @@ Outputs
 - Safety rails: max community size already limited (default 50). Agent must abstain (`manual_review`) if uncertainty is high.
 
 ## What to document for developers
-- How to start Claude MCP: `claude mcp serve --stdio` (or via MCP launch file); set `MCP_CMD` env.
-- How to point to OpenAI‑compatible endpoints (LM Studio/Ollama): set `LLM_PROVIDER=openai`, `LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY` (dummy if not required).
+- How to configure LLM provider in `scripts/scripts_config.yaml`:
+  - For OpenAI: set `provider: openai`, `model: gpt-4o-mini`, and `OPENAI_API_KEY` env var
+  - For Gemini: set `provider: openai`, `model: gemini-pro`, `api_base: <gemini-endpoint>`, and `GEMINI_API_KEY` env var
+  - For local LLM (Ollama): set `provider: local`, `model: qwen2.5:14b`, `api_base: http://localhost:11434/v1`, `api_key: dummy`
+  - For local LLM (LM Studio): set `provider: local`, `model: <model-name>`, `api_base: http://localhost:1234/v1`, `api_key: dummy`
 - Cost controls: max tokens per call, per‑run cost ceiling, and community budget (skip/abstain if exceeded).
 - Resume: the wrapper reads `.curation_state.json`‑like file for phase‑3 state; `--reset-state` to start over.
 
@@ -94,27 +96,20 @@ Outputs
 ---
 
 ## Implementation Steps (developer checklist)
-1) **Agent factory layer**
-   - Add `scripts/curation/agents/agent_factory.py` that builds an `AssistantAgent` with pluggable providers (OpenAI-compatible, Claude MCP, Ollama/LM Studio).
-   - Read provider/model/base/key/temperature from env or YAML; support `MCP_CMD` for Claude.
-   - Add a tiny smoke-test prompt file (e.g., `prompts/hello.yaml`) that asks the model to reply “hello world”; run it once to validate connectivity for: OpenAI-compatible (ChatGPT/Gemini), Claude MCP, and local LM Studio.
-   - Selection UX (for Carlos): set `curation.llm.provider` in `scripts/scripts_config.yaml` to `openai`, `anthropic_mcp`, or `local` (LM Studio/Ollama); no CLI override needed.
-2) **Decision tool contract**
-   - Define the minimal schema `{decision, merges?, notes?}` and validation.
-   - Implement helpers to apply decisions to the curation DB and log to `evaluation_log.csv`.
-3) **Auto‑dedup module**
-   - Reuse Phase‑2 edge weights; merge pairs ≥ `auto_dedup`; update DB + decisions log.
-   - Rebuild FAISS index if needed after merges.
-4) **Rerank refinement (optional `--two-pass`)**
-   - Rerank intra‑community pairs; cache scores; rebuild graph/communities with rerank weights.
-   - Write `communities_rerank.json` and switch active community file when enabled.
-5) **Round loop + convergence**
-   - Iterate communities by priority, call agent, apply decisions.
-   - Rebuild graph/communities each round; track improvement (<5% for 2 rounds → stop) or max rounds (default 10).
-6) **Wrapper script `scripts/curation/run_phase3.py`**
-   - Wire CLI flags (`--two-pass`, rerank settings, provider/model, dry-run, thresholds, max rounds).
-   - Preflight checks (files exist, embeddings ready); resume/reset state support.
+> Phases 0–2 already delivered the decision contract, auto‑dedup, and rerank modules; Phase 3 just reuses them and adds the agent/wrapper.
+
+1) **Agent configuration** (new)
+   - Use `scripts/curation/agents/autogen_openai_completion_agent.py` with AutoGen's `AssistantAgent`.
+   - Read model/api_base/api_key from `scripts/scripts_config.yaml` via `settings_util.py`.
+   - Smoke-test with `scripts/curation/agents/prompts/curation_prompt.yaml` for OpenAI/Gemini/local (Ollama/LM Studio).
+2) **Round loop + convergence** (new)
+   - Iterate communities by priority, call agent, apply decisions; stop on max rounds or <5% improvement twice.
+3) **Wrapper script `scripts/curation/run_phase3.py`** (new glue)
+   - Wire CLI flags (`--two-pass`, rerank settings, model/api_base/api_key, dry-run, thresholds, max rounds).
+   - Preflight (files exist, embeddings ready); resume/reset state support.
    - Emit artifacts: updated DB, `evaluation_log.csv`, `morning_report.md`, optional `tuning_report.txt`, `.dryrun` sidecars.
-7) **Docs + examples**
-   - Add usage examples for OpenAI, Claude MCP, and local endpoints.
-   - Document cost controls (token caps, pair caps) and troubleshooting.
+4) **Docs + examples** (update)
+   - Usage examples for OpenAI and local endpoints.
+   - Cost controls (token caps, pair caps) and troubleshooting.
+5) **(Reused) Decision contract / Auto‑dedup / Rerank**
+   - Already implemented in Phases 0–2; wrapper simply calls these modules.

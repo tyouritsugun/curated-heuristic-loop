@@ -51,6 +51,8 @@ tenacity>=8.2.0
 markdown>=3.6
 networkx>=3.2.1
 python-louvain>=0.16
+autogen>=0.4.1              # Phase 3 LLM agent
+autogen-ext[openai]>=0.4.1  # OpenAI-compatible client helpers
 
 # ML stack (HF-based embeddings/reranker)
 faiss-cpu>=1.8.0

@@ -50,6 +50,13 @@ If you have Python 3.13 and want GPU acceleration, install a compatible version 
 
 **Need a guide?** If you are not confident with Python/FAISS/GPU setup, open this repo in your preferred code assistant (Claude Code, Codex, Cursor, Gemini CLI, etc.) and ask it to walk you through the install. Some steps may still need manual permission/security approvals, but an assistant can simplify the process. This project assumes an engineering audience, so leaning on a code assistant is expected.
 
+### LLM Access for Curation (Optional)
+- Only needed if you run the overnight curation. Choose one path:
+  1) **Commercial OpenAI-compatible API** (ChatGPT/Gemini): set the appropriate API key in `.env` (e.g., `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`). Use cheaper mini tiers; e.g., prefer `gpt-5-mini-2025-08-07` over `gpt-5.2-2025-12-11`, or prefer `gemini-3-flash-preview` over heavier Gemini models—the curation task doesn’t require the most expensive models.  
+  2) **Local endpoint (zero API cost, requires your GPU)**: LM Studio or Ollama on an OpenAI-compatible endpoint; set `api_base` in `scripts/scripts_config.yaml` to your local server (e.g., `http://localhost:11434/v1`), and set `LLM_API_KEY` to any placeholder if your local server ignores it. `gpt-oss-20b` is recommended.  
+- Keep API keys in `.env` (see `.env.sample`); do not commit them.
+- Dependencies: `requirements_apple.txt` and `requirements_nvidia.txt` already include `autogen` + `autogen-ext[openai]` for the agent.
+
 ### Step 1: Install API Server
 
 Choose your hardware platform and install the API server runtime:

@@ -201,7 +201,7 @@ Notes:
 - **Phase 0 – Test Data & Dual-Sheet Harness**: curate a reusable test set (dev-tooling category), two parallel spreadsheets to simulate two teammates; 10 manuals + 20 seed experiences inflated to ~100–150 variants; ground-truth labels + `expected_action`; build `POST /api/v1/similarity/batch` (pairs → scores) and define `merge_audit.csv` + `.curation_state.json` schemas.
 - **Phase 1 – Plumbing & Safety**: schema checks, merge/export/import scripts, resume state, dry-run flags, bucketed duplicate finder (existing thresholds), integrate pairwise batch API into CLI. ✅ **Complete**
 - **Phase 2 – Sparse Graph & Community Detection**: build sparse similarity graph from FAISS index, detect non-overlapping communities using graph clustering (`python-louvain` or `leidenalg`), rank communities by priority (similarity, density, size), and export structured community data for LLM processing. See [phase2-spec.md](./phase2-spec.md) for full specification.
-- **Phase 3 – LLM-Powered Community Iteration**: fully automated overnight workflow that iterates on Phase 2 communities with auto-deduplication (≥0.98 similarity), LLM-powered community resolution, iterative refinement with convergence guarantees (max 10 iterations, 5% improvement threshold), and morning report generation. Target: unsupervised overnight runtime, ≥30% item reduction, minimal cost with local LLM option or Claude Code MCP.
+- **Phase 3 – LLM-Powered Community Iteration**: fully automated overnight workflow that iterates on Phase 2 communities with auto-deduplication (≥0.98 similarity), LLM-powered community resolution, iterative refinement with convergence guarantees (max 10 iterations, 5% improvement threshold), and morning report generation. Target: unsupervised overnight runtime, ≥30% item reduction, minimal cost with local LLM option.
 - **Phase 4 – Polishing & Scale**: blocking before LLM for cost, richer UI for triage, metrics (precision/recall on labeled dup set), noise handling for huge categories.
 
 ---
@@ -287,9 +287,10 @@ curation:
 5. **Morning Report:** Summary of actions, remaining borderline cases for human review
 
 **LLM Options:**
-- **Claude API** via `anthropic` library (pay per use)
-- **Local LLM** via `ollama` (qwen2.5:14b for 16GB+ VRAM, free)
-- **Claude Code MCP** (recommended for fixed monthly pricing)
+- **OpenAI API** (GPT-4, GPT-4o-mini) - pay per use
+- **Gemini API** (Google) - pay per use via OpenAI-compatible endpoint
+- **Local LLM** via Ollama (qwen2.5:14b for 16GB+ VRAM, free, recommended for cost control)
+- **Local LLM** via LM Studio (free, offline)
 
 **Decision Types:**
 - `merge_all`: All items are duplicates, choose canonical
