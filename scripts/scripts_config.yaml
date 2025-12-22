@@ -17,6 +17,8 @@ curation:
   approved_output_dir: data/curation/approved
   # State file for resume functionality
   state_file: data/curation/.curation_state.json
+  # Phase 3 state (round loop); keeps schema separate from Phase 1/interactive
+  phase3_state_file: data/curation/.phase3_state.json
   # Other potential curation paths
   faiss_index_dir: data/curation/faiss_index
   audit_log_path: data/curation/merge_audit.csv
@@ -75,3 +77,7 @@ curation_llm:
                                       #   Local (Ollama): http://localhost:11434/v1
                                       #   Local (LM Studio): http://localhost:1234/v1
   # api_key: null                     # Set via env: OPENAI_API_KEY, GEMINI_API_KEY, or LLM_API_KEY
+  timeout: 120                        # seconds per LLM call
+  max_retries: 2                      # retry attempts on failure
+  retry_backoff: exponential          # exponential or linear
+  retry_delays: [5, 15]               # seconds between retries (used if backoff unavailable)

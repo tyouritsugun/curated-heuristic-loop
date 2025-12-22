@@ -38,9 +38,9 @@ Goal: provide a single overnight wrapper that loads Phase‑2 artifacts, uses an
   - **Google Gemini**: via OpenAI-compatible endpoint
   - **Local LLMs**: Ollama/LM Studio (free, offline, recommended for cost control)
 - Config surface (env or YAML via `scripts/scripts_config.yaml`):
-  - `LLM_MODEL` (e.g., `gpt-4o-mini`, `gemini-pro`, `qwen2.5:14b`)
-  - `LLM_API_BASE` (for local: `http://localhost:11434/v1` for Ollama, `http://localhost:1234/v1` for LM Studio)
-  - `LLM_API_KEY` (required for OpenAI/Gemini; local can use a placeholder)
+  - YAML: `curation_llm.model`, `curation_llm.api_base`, optional `curation_llm.api_key`
+  - Env overrides: `LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY` (preferred) or provider-specific keys (OPENAI/GEMINI/GOOGLE/ANTHROPIC)
+  - Examples: `gpt-4o-mini`, `gemini-2.0-flash`, `qwen2.5:14b` (Ollama)
 - When `--with-rerank` was used in Phase 2, edge weights are rerank-only; agent relies on those scores as "strength" signals.
 
 ## Wrapper Script Plan (`scripts/curation/run_phase3.py`)
@@ -107,7 +107,7 @@ Outputs
 3) **Wrapper script `scripts/curation/run_phase3.py`** (new glue)
    - Wire CLI flags (`--two-pass`, rerank settings, model/api_base/api_key, dry-run, thresholds, max rounds).
    - Preflight (files exist, embeddings ready); resume/reset state support.
-   - Emit artifacts: updated DB, `evaluation_log.csv`, `morning_report.md`, optional `tuning_report.txt`, `.dryrun` sidecars.
+   - Emit artifacts: updated DB, `evaluation_log.csv`, `morning_report.md`, optional `tuning_report.txt`, `.dryrun` sidecars, and both `communities.json` and `communities_rerank.json` when `--two-pass`.
 4) **Docs + examples** (update)
    - Usage examples for OpenAI and local endpoints.
    - Cost controls (token caps, pair caps) and troubleshooting.

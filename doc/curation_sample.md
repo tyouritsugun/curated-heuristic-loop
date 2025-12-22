@@ -53,9 +53,33 @@ python scripts/curation/build_communities.py --refresh-neighbors
 ```
 If you want a preview without DB changes on the first command, add `--dry-run` to `find_pending_dups.py`.
 
-## 6) TBD
+## 6) Run Phase 3 Agent (overnight loop)
+- Dry-run first to inspect sidecars and the morning report:
+```bash
+python scripts/curation/run_phase3.py \
+  --max-rounds 10 \
+  --improvement-threshold 0.05 \
+  --dry-run
+```
+- Real run (uses `curation_llm` config or env `LLM_MODEL`/`LLM_API_BASE`/`LLM_API_KEY`):
+```bash
+python scripts/curation/run_phase3.py --max-rounds 10
+```
+- Two-pass rerank variant (keeps both community files):
+```bash
+python scripts/curation/run_phase3.py --two-pass --rerank-keep-threshold 0.80
+```
+- Check outputs after the run:
+  - `data/curation/morning_report.md`
+  - `data/curation/communities.json` (and `communities_rerank.json` if two-pass)
+  - `data/curation/evaluation_log.csv`
 
-## 7) TBD
+## 7) Review Manual Queue
+- Any communities marked `manual_review` stay pending. Review them before publishing:
+```bash
+python scripts/curation/review_manual_queue.py  # (Phase 4 placeholder)
+```
+For now, use the manual queue section in `morning_report.md` as the checklist.
 
 ## 8) Team Sync
 UI: Operations → Import from Google Sheet  
@@ -76,6 +100,7 @@ data/curation/
   merge_audit.csv          # merge audit log
   evaluation_log.csv       # interactive decisions log
   .curation_state.json     # resume state
+  .phase3_state.json       # Phase 3 round-loop resume state
   neighbors.jsonl          # Phase 2 cache
   similarity_graph.pkl     # Phase 2 graph
   communities.json         # Phase 2 communities
