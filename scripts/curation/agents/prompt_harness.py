@@ -30,6 +30,8 @@ Notes
 from __future__ import annotations
 
 import argparse
+import json
+import time
 from pathlib import Path
 
 from scripts._config_loader import load_scripts_config
@@ -52,6 +54,11 @@ def main() -> int:
     parser.add_argument("--mock-response", help="Raw JSON string to validate instead of calling LLM")
     parser.add_argument("--save-prompt", help="Optional file to write the rendered user prompt")
     parser.add_argument("--prompt", default=None, help="Path to YAML prompt template (system/user keys)")
+    parser.add_argument(
+        "--strict-members",
+        action="store_true",
+        help="Fail if any community members are missing from the DB",
+    )
     args = parser.parse_args()
 
     cfg, _ = load_scripts_config()
@@ -64,6 +71,9 @@ def main() -> int:
     missing = set(community.get("members", [])) - set(members.keys())
     if missing:
         print(f"⚠️  Missing {len(missing)} member records in DB: {sorted(missing)}")
+        if args.strict_members:
+            print("❌ Aborting due to --strict-members.")
+            return 1
 
     prompt_path = Path(args.prompt) if args.prompt else None
     messages = build_prompt_messages(community, members, round_index=args.round_index, prompt_path=prompt_path)
@@ -75,6 +85,7 @@ def main() -> int:
     if args.mock_response:
         raw_reply = args.mock_response
         print("[mock reply] ", raw_reply)
+        ok, errs, warnings, normalized = validate_response(raw_reply, community.get("members", []))
     elif args.call_llm:
         llm_config, settings, cfg_path = build_llm_config()
         print(f"[config] {cfg_path}")
@@ -84,15 +95,53 @@ def main() -> int:
         except Exception as exc:  # pragma: no cover - dependency issue
             raise SystemExit(f"autogen is required to call LLM: {exc}")
         agent = AssistantAgent(name="phase3_agent", llm_config=llm_config)
-        raw_reply = agent.generate_reply(messages=messages)
-        print("[llm raw]", raw_reply)
+
+        max_retries = max(0, int(settings.max_retries or 0))
+        retry_delays = settings.retry_delays or []
+        retry_backoff = (settings.retry_backoff or "exponential").lower()
+
+        def delay_for(attempt_index: int) -> float:
+            if attempt_index <= len(retry_delays):
+                return float(retry_delays[attempt_index - 1])
+            base = 5.0
+            if retry_backoff == "linear":
+                return base * attempt_index
+            return base * (2 ** (attempt_index - 1))
+
+        ok = False
+        errs: list[str] = []
+        warnings: list[str] = []
+        normalized = {}
+        raw_reply = ""
+        for attempt in range(1, max_retries + 2):
+            try:
+                raw_reply = agent.generate_reply(messages=messages)
+                print("[llm raw]", raw_reply)
+            except Exception as exc:
+                errs = [f"LLM call failed on attempt {attempt}: {exc}"]
+                if attempt <= max_retries:
+                    time.sleep(delay_for(attempt))
+                    continue
+                break
+
+            ok, errs, warnings, normalized = validate_response(raw_reply, community.get("members", []))
+            if ok:
+                break
+            if attempt <= max_retries:
+                time.sleep(delay_for(attempt))
+        # fallthrough: ok/errs/warnings populated
     else:
         print("No LLM call. Use --mock-response or --call-llm.")
         return 0
 
-    ok, errs = validate_response(raw_reply, community.get("members", []))
     if ok:
         print("✅ Response is valid.")
+        if warnings:
+            print("⚠️  Warnings:")
+            for warning in warnings:
+                print(" -", warning)
+        if normalized and normalized != json.loads(raw_reply):
+            print("[normalized]", normalized)
         return 0
     print("❌ Response failed validation:")
     for err in errs:

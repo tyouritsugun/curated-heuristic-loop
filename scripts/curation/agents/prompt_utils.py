@@ -91,19 +91,37 @@ def build_prompt_messages(
         "edges_block": "\n".join(edge_lines),
     }
 
-    system = template["system"].format(**format_vars)
-    user = template["user"].format(**format_vars)
+    try:
+        system = template["system"].format(**format_vars)
+        user = template["user"].format(**format_vars)
+    except KeyError as exc:
+        missing = exc.args[0] if exc.args else "<unknown>"
+        raise ValueError(
+            f"Prompt template references missing variable '{missing}'. "
+            f"Available keys: {sorted(format_vars.keys())}"
+        ) from exc
 
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-def validate_response(raw: str, allowed_ids: List[str]) -> Tuple[bool, List[str]]:
-    """Validate an LLM raw string reply against the contract."""
+def validate_response(raw: str, allowed_ids: List[str]) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
+    """Validate an LLM raw string reply against the contract.
+
+    Returns:
+        ok: True if no hard errors
+        errors: list of fatal validation errors
+        warnings: list of non-fatal issues (e.g., downgraded merges)
+        normalized: possibly adjusted payload (decision/merges)
+    """
     errors: List[str] = []
+    warnings: List[str] = []
     try:
         data = json.loads(raw)
     except Exception as exc:
-        return False, [f"Response is not valid JSON: {exc}"]
+        return False, [f"Response is not valid JSON: {exc}"], [], {}
+
+    if not isinstance(data, dict):
+        return False, ["Response JSON must be an object"], [], {}
 
     decision = data.get("decision")
     merges = data.get("merges")
@@ -112,21 +130,36 @@ def validate_response(raw: str, allowed_ids: List[str]) -> Tuple[bool, List[str]
     if decision not in valid_decisions:
         errors.append(f"Invalid decision '{decision}' (must be one of {sorted(valid_decisions)})")
 
+    normalized_merges: List[List[str]] = []
     if decision in {"merge_all", "merge_subset"}:
         if merges is None:
             errors.append("Missing 'merges' for merge decision")
+        elif not isinstance(merges, list):
+            errors.append("'merges' must be a list")
         elif not merges:
-            errors.append("Empty 'merges' for merge decision")
+            warnings.append("Empty 'merges' for merge decision; downgrading to keep_separate")
+            decision = "keep_separate"
         else:
             for pair in merges:
                 if not isinstance(pair, list) or len(pair) != 2:
-                    errors.append(f"Invalid merge pair shape: {pair}")
+                    warnings.append(f"Invalid merge pair shape (skipped): {pair}")
                     continue
                 a, b = pair
                 if a not in allowed_ids or b not in allowed_ids:
-                    errors.append(f"Merge pair contains unknown id: {pair}")
+                    warnings.append(f"Merge pair contains unknown id (skipped): {pair}")
+                    continue
+                normalized_merges.append([a, b])
+            if not normalized_merges:
+                warnings.append("All merge pairs invalid or filtered; downgrading to keep_separate")
+                decision = "keep_separate"
+    else:
+        normalized_merges = []
 
-    return len(errors) == 0, errors
+    normalized = dict(data)
+    normalized["decision"] = decision
+    normalized["merges"] = normalized_merges
+
+    return len(errors) == 0, errors, warnings, normalized
 
 
 __all__ = [
