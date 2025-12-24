@@ -69,8 +69,9 @@ import:
 # LLM settings for Phase 3 agent (used by scripts/curation/agents/autogen_openai_completion_agent.py)
 # Supports any OpenAI-compatible endpoint (OpenAI, Gemini, or local: Ollama/LM Studio)
 curation_llm:
-  model: gpt-5-mini-2025-08-07        # e.g., gpt-4o-mini, gemini-2.0-flash, claude-3-5-sonnet, qwen2.5:14b
-  api_base: null                      # Optional base URL. Examples:
+  # model: gpt-5-mini-2025-08-07        # e.g., gpt-4o-mini, gemini-2.0-flash, claude-3-5-sonnet, qwen2.5:14b
+  model: gemini-3-flash-preview
+  api_base: https://generativelanguage.googleapis.com/v1beta/openai/                      # Optional base URL. Examples:
                                       #   OpenAI: leave null (api.openai.com)
                                       #   Gemini (OpenAI-compat): https://generativelanguage.googleapis.com/v1beta/openai/
                                       #   Claude (OpenAI-compat): https://api.anthropic.com/v1/

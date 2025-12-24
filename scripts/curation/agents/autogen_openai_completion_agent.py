@@ -32,6 +32,7 @@ def build_llm_config():
             {
                 "model": settings.model,
                 "api_key": settings.api_key,
+                "price": [0, 0],  # Suppress cost warning for preview models
             }
         ]
     }

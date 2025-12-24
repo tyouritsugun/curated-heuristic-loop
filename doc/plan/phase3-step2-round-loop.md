@@ -102,6 +102,8 @@ Purpose: orchestrate iterative, unattended LLM-driven curation over Phase‑2 co
    - Build the LLM payload and response validation for one community (no DB writes).  
    - Provide a CLI switch (e.g., `--one-community <id>` or separate `test_prompt` helper) to exercise the prompt with a known fixture.  
    - Use stub/mocked LLM responses to verify schema validation, bad-decision handling, retries, and sidecar generation in isolation.
+   - Concrete harness (added): `python -m scripts.curation.agents.prompt_harness --community-id COMM-001 --mock-response '{"decision":"keep_separate"}'`  
+   - To call a real model: `python -m scripts.curation.agents.prompt_harness --community-id COMM-001 --call-llm --save-prompt /tmp/prompt.txt` (reads defaults from `scripts_config.yaml`; no DB writes)
 2) **Dry-run round loop**  
    - Integrate the single-community executor into the round loop with `--dry-run` and `--batch-size 1` to smoke-test logging, state, and report generation without mutations.  
    - Confirm progress metrics and morning report render correctly.

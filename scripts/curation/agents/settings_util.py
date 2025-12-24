@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -14,6 +14,10 @@ class LLMSettings:
     model: str
     api_base: Optional[str]
     api_key: Optional[str]
+    timeout: Optional[int] = None
+    max_retries: int = 2
+    retry_backoff: str = "exponential"
+    retry_delays: Optional[List[int]] = None
 
 
 def load_llm_settings(config_path: Optional[str] = None) -> Tuple[LLMSettings, str]:
@@ -34,7 +38,20 @@ def load_llm_settings(config_path: Optional[str] = None) -> Tuple[LLMSettings, s
         or os.getenv("ANTHROPIC_API_KEY")
         or llm.get("api_key")
     )
-    settings = LLMSettings(model=model, api_base=api_base, api_key=api_key)
+    timeout = llm.get("timeout")
+    max_retries = int(llm.get("max_retries", 2) or 2)
+    retry_backoff = llm.get("retry_backoff", "exponential")
+    retry_delays = llm.get("retry_delays")
+
+    settings = LLMSettings(
+        model=model,
+        api_base=api_base,
+        api_key=api_key,
+        timeout=timeout,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+        retry_delays=retry_delays,
+    )
     return settings, str(path)
 
 
