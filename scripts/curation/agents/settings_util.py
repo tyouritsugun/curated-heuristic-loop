@@ -28,7 +28,13 @@ def load_llm_settings(config_path: Optional[str] = None) -> Tuple[LLMSettings, s
     cur = cfg.get("curation", {})
     llm = cur.get("llm", {}) or cfg.get("curation_llm", {})
 
-    model = os.getenv("LLM_MODEL", llm.get("model", "gpt-4.1-mini")).strip()
+    model = os.getenv("LLM_MODEL") or llm.get("model")
+    if not model:
+        raise RuntimeError(
+            "Missing LLM model configuration. "
+            f"Set LLM_MODEL environment variable or 'curation_llm.model' in {path}"
+        )
+    model = model.strip()
     api_base = os.getenv("LLM_API_BASE", llm.get("api_base"))
     api_key = (
         os.getenv("LLM_API_KEY")
