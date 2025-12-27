@@ -36,6 +36,8 @@ def build_llm_config():
             }
         ]
     }
+    if settings.timeout is not None:
+        cfg["timeout"] = settings.timeout
     if settings.api_base:
         cfg["config_list"][0]["base_url"] = settings.api_base
     return cfg, settings, cfg_path

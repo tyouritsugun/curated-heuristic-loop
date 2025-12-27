@@ -140,8 +140,17 @@ def main() -> int:
             print("⚠️  Warnings:")
             for warning in warnings:
                 print(" -", warning)
-        if normalized and normalized != json.loads(raw_reply):
-            print("[normalized]", normalized)
+        if normalized:
+            parsed = None
+            if isinstance(raw_reply, dict):
+                parsed = raw_reply
+            elif isinstance(raw_reply, str):
+                try:
+                    parsed = json.loads(raw_reply)
+                except json.JSONDecodeError:
+                    parsed = None
+            if parsed is not None and normalized != parsed:
+                print("[normalized]", normalized)
         return 0
     print("❌ Response failed validation:")
     for err in errs:

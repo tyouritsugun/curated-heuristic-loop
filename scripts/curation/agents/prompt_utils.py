@@ -104,7 +104,7 @@ def build_prompt_messages(
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-def validate_response(raw: str, allowed_ids: List[str]) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
+def validate_response(raw: Any, allowed_ids: List[str]) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
     """Validate an LLM raw string reply against the contract.
 
     Returns:
@@ -115,10 +115,17 @@ def validate_response(raw: str, allowed_ids: List[str]) -> Tuple[bool, List[str]
     """
     errors: List[str] = []
     warnings: List[str] = []
-    try:
-        data = json.loads(raw)
-    except Exception as exc:
-        return False, [f"Response is not valid JSON: {exc}"], [], {}
+    if raw is None:
+        return False, ["Response is empty (None)"], [], {}
+    if isinstance(raw, dict):
+        data = raw
+    elif isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return False, [f"Response is not valid JSON: {exc}"], [], {}
+    else:
+        return False, [f"Response must be JSON string or object, got {type(raw).__name__}"], [], {}
 
     if not isinstance(data, dict):
         return False, ["Response JSON must be an object"], [], {}
