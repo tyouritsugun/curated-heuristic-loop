@@ -17,8 +17,8 @@ curation:
   approved_output_dir: data/curation/approved
   # State file for resume functionality
   state_file: data/curation/.curation_state.json
-  # Phase 3 state (round loop); keeps schema separate from Phase 1/interactive
-  phase3_state_file: data/curation/.phase3_state.json
+  # Curation loop state (round loop); keeps schema separate from Phase 1/interactive
+  curation_state_file: data/curation/.curation_state_loop.json
   # Other potential curation paths
   faiss_index_dir: data/curation/faiss_index
   audit_log_path: data/curation/merge_audit.csv

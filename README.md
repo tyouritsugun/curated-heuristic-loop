@@ -3,6 +3,7 @@
 Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
 For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detailed operator procedures see [doc/manual.md](doc/manual.md).
+For the overnight curation overview, see [doc/curation.md](doc/curation.md).
 
 ## Architecture Overview
 
@@ -61,7 +62,7 @@ If you have Python 3.13 and want GPU acceleration, install a compatible version 
 - `curation_llm.llm_response_timeout` (seconds per LLM call)
 - `curation_llm.max_retries`, `curation_llm.retry_backoff`, `curation_llm.retry_delays`
 - `curation.thresholds.auto_dedup` (auto-merge threshold)
-See `doc/curation_sample.md` for the simplified runbook.
+See `doc/curation.md` for the simplified runbook.
 
 ### Step 1: Install API Server
 

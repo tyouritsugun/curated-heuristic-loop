@@ -10,9 +10,9 @@ from pathlib import Path
 
 def main() -> int:
     py = sys.executable
-    script = Path("scripts/curation/overnight/run_phase3.py")
+    script = Path("scripts/curation/overnight/run_curation_loop.py")
     if not script.exists():
-        print("❌ scripts/curation/overnight/run_phase3.py not found")
+        print("❌ scripts/curation/overnight/run_curation_loop.py not found")
         return 1
 
     user_args = sys.argv[1:]
@@ -29,7 +29,7 @@ def main() -> int:
         if "--db-copy" not in user_args:
             args.extend(["--db-copy", "data/curation-copy/chl_curation.db"])
             if "--state-file" not in user_args:
-                args.extend(["--state-file", "data/curation-copy/.phase3_state.json"])
+                args.extend(["--state-file", "data/curation-copy/.curation_state_loop.json"])
             if "--refresh-db-copy" not in user_args:
                 args.append("--refresh-db-copy")
         args.extend(user_args)

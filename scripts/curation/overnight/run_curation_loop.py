@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
         cur = cfg.get("curation", {})
         default_db = cur.get("curation_db_path", "data/curation/chl_curation.db")
         default_communities = cur.get("community_data_file", "data/curation/communities.json")
-        default_state = cur.get("phase3_state_file", "data/curation/.phase3_state.json")
+        default_state = cur.get("curation_state_file", "data/curation/.curation_state_loop.json")
         default_eval = cur.get("evaluation_log_path", "data/curation/evaluation_log.csv")
         thresholds = cur.get("thresholds", {})
         default_threshold = thresholds.get("edge_keep", cur.get("min_similarity_threshold", 0.72))
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
     except Exception:
         default_db = "data/curation/chl_curation.db"
         default_communities = "data/curation/communities.json"
-        default_state = "data/curation/.phase3_state.json"
+        default_state = "data/curation/.curation_state_loop.json"
         default_eval = "data/curation/evaluation_log.csv"
         default_threshold = 0.72
         default_auto_dedup = 0.98
