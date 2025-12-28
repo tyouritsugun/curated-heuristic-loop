@@ -847,33 +847,8 @@ def main() -> int:
                             flush=True,
                         )
 
-                if not ok:
-                    warnings.extend(errs)
-                    manual_this_round += 1
-                    manual_queue.append(community_id)
-                    decisions_for_log.extend(
-                        add_decision_note(
-                            session,
-                            comm.get("members", []),
-                            action="manual_review",
-                            user=args.user,
-                            notes="llm failure",
-                            dry_run=args.dry_run,
-                        )
-                    )
-                else:
-                    warnings.extend(warn)
-                    decision = normalized.get("decision")
-                    if decision in {"merge_all", "merge_subset"}:
-                        merged_count, merge_decisions = apply_merges(
-                            session,
-                            normalized.get("merges", []),
-                            user=args.user,
-                            dry_run=args.dry_run,
-                        )
-                        merges_this_round += merged_count
-                        decisions_for_log.extend(merge_decisions)
-                    elif decision == "manual_review":
+                    if not ok:
+                        warnings.extend(errs)
                         manual_this_round += 1
                         manual_queue.append(community_id)
                         decisions_for_log.extend(
@@ -882,28 +857,53 @@ def main() -> int:
                                 comm.get("members", []),
                                 action="manual_review",
                                 user=args.user,
-                                notes=normalized.get("notes") or "manual review",
+                                notes="llm failure",
                                 dry_run=args.dry_run,
                             )
                         )
                     else:
-                        decisions_for_log.extend(
-                            add_decision_note(
+                        warnings.extend(warn)
+                        decision = normalized.get("decision")
+                        if decision in {"merge_all", "merge_subset"}:
+                            merged_count, merge_decisions = apply_merges(
                                 session,
-                                comm.get("members", []),
-                                action="keep_separate",
+                                normalized.get("merges", []),
                                 user=args.user,
-                                notes=normalized.get("notes") or "keep separate",
                                 dry_run=args.dry_run,
                             )
-                        )
+                            merges_this_round += merged_count
+                            decisions_for_log.extend(merge_decisions)
+                        elif decision == "manual_review":
+                            manual_this_round += 1
+                            manual_queue.append(community_id)
+                            decisions_for_log.extend(
+                                add_decision_note(
+                                    session,
+                                    comm.get("members", []),
+                                    action="manual_review",
+                                    user=args.user,
+                                    notes=normalized.get("notes") or "manual review",
+                                    dry_run=args.dry_run,
+                                )
+                            )
+                        else:
+                            decisions_for_log.extend(
+                                add_decision_note(
+                                    session,
+                                    comm.get("members", []),
+                                    action="keep_separate",
+                                    user=args.user,
+                                    notes=normalized.get("notes") or "keep separate",
+                                    dry_run=args.dry_run,
+                                )
+                            )
 
-                state.setdefault("communities_resolved", []).append(community_id)
+                    state.setdefault("communities_resolved", []).append(community_id)
 
-                if not args.dry_run:
-                    session.commit()
+                    if not args.dry_run:
+                        session.commit()
 
-                StateManager.save_state(state, state_file, dry_run=args.dry_run)
+                    StateManager.save_state(state, state_file, dry_run=args.dry_run)
 
                 # Write evaluation log for the round
                 if decisions_for_log:
