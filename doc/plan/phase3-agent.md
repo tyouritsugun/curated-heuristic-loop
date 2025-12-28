@@ -49,7 +49,7 @@ Inputs
 - `--communities` (default `data/curation/communities.json`)
 - `--graph` (default `data/curation/similarity_graph.pkl`)
 - `--config` (default `scripts/scripts_config.yaml` for LLM settings)
-- `--max-rounds` (default 10), `--improvement-threshold` (default 0.05)
+- `--max-rounds` (default 3), `--improvement-threshold` (default 0.05)
 - `--dry-run`
 - `--two-pass` (enable rerank refinement)
 - `--rerank-model` (e.g., `Qwen3-Reranker-0.6B`)

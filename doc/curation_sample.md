@@ -54,16 +54,19 @@ python scripts/curation/build_communities.py --refresh-neighbors
 If you want a preview without DB changes on the first command, add `--dry-run` to `find_pending_dups.py`.
 
 ## 6) Run Phase 3 Agent (overnight loop)
+- What a round means: one pass over selected communities (LLM decisions → merges → rebuild communities).
+  - More rounds are not always better: round 1 typically yields most merges, round 2 catches newly formed clusters,
+    and later rounds often have diminishing returns. The loop stops early if improvement is small.
 - Dry-run first to inspect sidecars and the morning report:
 ```bash
 python scripts/curation/run_phase3.py \
-  --max-rounds 10 \
+  --max-rounds 3 \
   --improvement-threshold 0.05 \
   --dry-run
 ```
 - Real run (uses `curation_llm` config or env `LLM_MODEL`/`LLM_API_BASE`/`LLM_API_KEY`):
 ```bash
-python scripts/curation/run_phase3.py --max-rounds 10
+python scripts/curation/run_phase3.py --max-rounds 3
 ```
 - Two-pass rerank variant (keeps both community files):
 ```bash

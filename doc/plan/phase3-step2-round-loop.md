@@ -49,7 +49,7 @@ Purpose: orchestrate iterative, unattended LLM-driven curation over Phase‑2 co
   - Invalid member IDs in `merges` → drop invalid pairs, proceed with valid; warn in report.
 
 ## Convergence & Safety
-- Hard cap: `--max-rounds` (default 10).
+- Hard cap: `--max-rounds` (default 3).
 - Progress threshold formula (relative):  
   `improvement_items = (prev_items - curr_items) / prev_items`  
   `improvement_comms = (prev_comms - curr_comms) / prev_comms`
@@ -74,7 +74,7 @@ Purpose: orchestrate iterative, unattended LLM-driven curation over Phase‑2 co
   - `communities.json.dryrun` / `communities_rerank.json.dryrun` (if regenerated)
 
 ## Flags / Config
-- `--max-rounds` (default 10)
+- `--max-rounds` (default 3)
 - `--improvement-threshold` (default 0.05, relative, AND condition)
 - `--batch-size` (communities per round; default all; recommendation: 50–100 on datasets >200 communities)
 - `--dry-run`
