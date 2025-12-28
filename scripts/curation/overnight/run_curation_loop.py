@@ -823,18 +823,18 @@ def main() -> int:
                         prompt_path=prompt_path,
                     )
 
-                    max_retries = max(0, int(settings.max_retries or 0))
-                    retry_delays = settings.retry_delays or []
-                    retry_backoff = (settings.retry_backoff or "exponential").lower()
+                max_retries = 0
+                retry_delays: List[int] = []
+                retry_backoff = "exponential"
 
-                    ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
-                        agent,
-                        messages,
-                        allowed_ids=comm.get("members", []),
-                        max_retries=max_retries,
-                        retry_delays=retry_delays,
-                        retry_backoff=retry_backoff,
-                    )
+                ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
+                    agent,
+                    messages,
+                    allowed_ids=comm.get("members", []),
+                    max_retries=max_retries,
+                    retry_delays=retry_delays,
+                    retry_backoff=retry_backoff,
+                )
                     if warn and args.verbose:
                         for w in warn:
                             print(f"[round {round_index}] {community_id} warning: {w}", flush=True)

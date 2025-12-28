@@ -96,9 +96,9 @@ def main() -> int:
             raise SystemExit(f"autogen is required to call LLM: {exc}")
         agent = AssistantAgent(name="phase3_agent", llm_config=llm_config)
 
-        max_retries = max(0, int(settings.max_retries or 0))
-        retry_delays = settings.retry_delays or []
-        retry_backoff = (settings.retry_backoff or "exponential").lower()
+        max_retries = 0
+        retry_delays = []
+        retry_backoff = "exponential"
 
         def delay_for(attempt_index: int) -> float:
             if attempt_index <= len(retry_delays):

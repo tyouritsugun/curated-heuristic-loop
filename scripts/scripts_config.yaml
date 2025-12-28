@@ -84,6 +84,4 @@ curation_llm:
                                       # and a longer value for local LLMs on low-spec GPUs. Use field
                                       # trial measurements + a small buffer when estimating runtime.
                                       # For total runtime estimation, prefer --expected-llm-seconds.
-  max_retries: 2                      # retry attempts on failure
-  retry_backoff: exponential          # exponential or linear
-  retry_delays: [5, 15]               # seconds between retries (used if backoff unavailable)
+  # Retries are disabled by default (fail fast on error).

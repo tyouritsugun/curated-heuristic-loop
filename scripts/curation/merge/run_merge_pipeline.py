@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_step(label: str, cmd: list[str]) -> None:
-    print(f"\n==> {label}")
+    print(f"\n==> {label}", flush=True)
     subprocess.run(cmd, check=True)
 
 

@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-Export approved data from curation database to CSV files.
+Export approved data from curation database to TSV/CSV files.
 
-This script exports data from the curation database to approved CSV files,
+This script exports data from the curation database to approved TSV/CSV files,
 excluding rejected entries (sync_status=2) by default. Creates the same
-structure as member exports (categories.csv, experiences.csv, manuals.csv).
+structure as member exports (categories.csv, experiences.csv, manuals.csv) plus experiences.tsv by default.
 
 Usage:
-    # Default export
+    # Default export (TSV)
     python scripts/curation/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved
+
+    # Include CSV files as well
+    python scripts/curation/export_curated.py \\
+        --db-path data/curation/chl_curation.db \\
+        --output data/curation/approved \\
+        --csv
 
     # Include rejected entries
     python scripts/curation/export_curated.py \\
@@ -75,6 +81,11 @@ def parse_args():
         "--dry-run",
         action="store_true",
         help="Don't write any files, just show what would be exported",
+    )
+    parser.add_argument(
+        "--csv",
+        action="store_true",
+        help="Also write categories.csv/experiences.csv/manuals.csv",
     )
     return parser.parse_args()
 
@@ -186,50 +197,67 @@ def main():
         # Write CSVs (if not dry run)
         if args.dry_run:
             print(f" (!) Dry run: would write to {output_dir}/")
-            print(f"  - categories.csv ({len(categories_data)} rows)")
-            print(f"  - experiences.csv ({len(experiences_data)} rows)")
-            print(f"  - manuals.csv ({len(manuals_data)} rows)")
+            if args.csv:
+                print(f"  - categories.csv ({len(categories_data)} rows)")
+                print(f"  - experiences.csv ({len(experiences_data)} rows)")
+                print(f"  - manuals.csv ({len(manuals_data)} rows)")
+            print(f"  - experiences.tsv ({len(experiences_data)} rows)")
         else:
             # Create output directory
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Write categories
-            if categories_data:
-                categories_file = output_dir / "categories.csv"
-                with open(categories_file, "w", encoding="utf-8", newline="") as f:
-                    fieldnames = ["code", "name", "description", "created_at"]
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(categories_data)
-                print(f"✓ Wrote categories.csv: {len(categories_data)} rows")
-
-            # Write experiences
+            # Write experiences TSV for spreadsheet review (default)
             if experiences_data:
-                experiences_file = output_dir / "experiences.csv"
-                with open(experiences_file, "w", encoding="utf-8", newline="") as f:
+                experiences_tsv = output_dir / "experiences.tsv"
+                with open(experiences_tsv, "w", encoding="utf-8", newline="") as f:
                     fieldnames = [
                         "id", "category_code", "section", "title", "playbook", "context",
                         "source", "author", "sync_status", "embedding_status",
                         "created_at", "updated_at", "synced_at", "exported_at"
                     ]
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
                     writer.writeheader()
                     writer.writerows(experiences_data)
-                print(f"✓ Wrote experiences.csv: {len(experiences_data)} rows")
+                print(f"✓ Wrote experiences.tsv: {len(experiences_data)} rows")
 
-            # Write manuals
-            if manuals_data:
-                manuals_file = output_dir / "manuals.csv"
-                with open(manuals_file, "w", encoding="utf-8", newline="") as f:
-                    fieldnames = [
-                        "id", "category_code", "title", "content", "summary",
-                        "source", "author", "sync_status", "embedding_status",
-                        "created_at", "updated_at", "synced_at", "exported_at"
-                    ]
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(manuals_data)
-                print(f"✓ Wrote manuals.csv: {len(manuals_data)} rows")
+            if args.csv:
+                # Write categories
+                if categories_data:
+                    categories_file = output_dir / "categories.csv"
+                    with open(categories_file, "w", encoding="utf-8", newline="") as f:
+                        fieldnames = ["code", "name", "description", "created_at"]
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        writer.writerows(categories_data)
+                    print(f"✓ Wrote categories.csv: {len(categories_data)} rows")
+
+                # Write experiences
+                if experiences_data:
+                    experiences_file = output_dir / "experiences.csv"
+                    with open(experiences_file, "w", encoding="utf-8", newline="") as f:
+                        fieldnames = [
+                            "id", "category_code", "section", "title", "playbook", "context",
+                            "source", "author", "sync_status", "embedding_status",
+                            "created_at", "updated_at", "synced_at", "exported_at"
+                        ]
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        writer.writerows(experiences_data)
+                    print(f"✓ Wrote experiences.csv: {len(experiences_data)} rows")
+
+                # Write manuals
+                if manuals_data:
+                    manuals_file = output_dir / "manuals.csv"
+                    with open(manuals_file, "w", encoding="utf-8", newline="") as f:
+                        fieldnames = [
+                            "id", "category_code", "title", "content", "summary",
+                            "source", "author", "sync_status", "embedding_status",
+                            "created_at", "updated_at", "synced_at", "exported_at"
+                        ]
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        writer.writerows(manuals_data)
+                    print(f"✓ Wrote manuals.csv: {len(manuals_data)} rows")
 
         print()
         print("✅ Export complete!")

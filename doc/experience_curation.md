@@ -67,10 +67,18 @@ python scripts/curation/overnight/run_curation_overnight.py
 Note: the overnight wrapper uses `data/curation-copy/.curation_state_loop.json` by default (safe for reruns).
 Key knobs (in `scripts/scripts_config.yaml`):
 - `curation_llm.llm_response_timeout` (seconds per LLM call)
-- `curation_llm.max_retries`, `curation_llm.retry_backoff`, `curation_llm.retry_delays`
 - `curation.thresholds.auto_dedup` (pre-merge threshold)
+Note: LLM errors fail fast (no retries) so API key / local server issues surface immediately.
 
-## 4) Optional: Dry-run Overnight Loop
+After the run, export the curated experiences to TSV for review:
+```bash
+python scripts/curation/export_curated.py --db-path data/curation/chl_curation.db --output data/curation/approved
+```
+Use `data/curation/approved/experiences.tsv` for review.
+
+<details>
+<summary>Optional: Dry-run Overnight Loop</summary>
+
 - What a round means: one pass over selected communities (LLM decisions → merges → rebuild communities).
   - More rounds are not always better: round 1 typically yields most merges, round 2 catches newly formed clusters,
     and later rounds often have diminishing returns. The loop stops early if improvement is small.
@@ -94,14 +102,11 @@ python scripts/curation/overnight/run_curation_loop.py --two-pass
   - `data/curation/communities.json` (and `communities_rerank.json` if two-pass)
   - `data/curation/evaluation_log.csv`
 
-## 5) Review Manual Queue
-- Any communities marked `manual_review` stay pending. Review them before publishing:
-```bash
-python scripts/curation/review_manual_queue.py  # (Phase 4 placeholder)
-```
-For now, use the manual queue section in `morning_report.md` as the checklist.
+</details>
 
-## 6) Team Sync
+## 4) Review and Publish (Spreadsheet)
+- Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
+- If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
 UI: Operations → Import from Google Sheet  
 CLI:
 ```bash

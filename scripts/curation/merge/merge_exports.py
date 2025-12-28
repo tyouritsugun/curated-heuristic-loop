@@ -92,40 +92,44 @@ def parse_args():
     return args
 
 
-REQUIRED_CATEGORY_COLUMNS = {"code", "name", "description", "created_at"}
-REQUIRED_EXPERIENCE_COLUMNS = {
-    "id",
-    "category_code",
-    "section",
-    "title",
-    "playbook",
-    "context",
-    "source",
-    "sync_status",
-    "author",
-    "embedding_status",
-    "created_at",
-    "updated_at",
-    "synced_at",
-    "exported_at",
+MIN_CATEGORY_COLUMNS = {"code", "name", "description"}
+MIN_EXPERIENCE_COLUMNS = {"id", "category_code", "section", "title", "playbook"}
+MIN_MANUAL_COLUMNS = {"id", "category_code", "title", "content"}
+
+OPTIONAL_EXPERIENCE_COLUMNS = {"context", "expected_action"}
+OPTIONAL_MANUAL_COLUMNS = {"summary"}
+
+
+def default_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+CATEGORY_DEFAULTS = {
+    "created_at": default_timestamp,
 }
-OPTIONAL_EXPERIENCE_COLUMNS = {"expected_action"}
-REQUIRED_MANUAL_COLUMNS = {
-    "id",
-    "category_code",
-    "title",
-    "content",
-    "summary",
-    "source",
-    "sync_status",
-    "author",
-    "embedding_status",
-    "created_at",
-    "updated_at",
-    "synced_at",
-    "exported_at",
+EXPERIENCE_DEFAULTS = {
+    "context": "",
+    "source": "local",
+    "sync_status": "0",
+    "author": "",
+    "embedding_status": "pending",
+    "created_at": default_timestamp,
+    "updated_at": default_timestamp,
+    "synced_at": "",
+    "exported_at": "",
+    "expected_action": "",
 }
-OPTIONAL_MANUAL_COLUMNS: Set[str] = set()
+MANUAL_DEFAULTS = {
+    "summary": "",
+    "source": "local",
+    "sync_status": "0",
+    "author": "",
+    "embedding_status": "pending",
+    "created_at": default_timestamp,
+    "updated_at": default_timestamp,
+    "synced_at": "",
+    "exported_at": "",
+}
 
 
 def read_csv(file_path: Path) -> Tuple[List[Dict], List[str]]:
@@ -146,7 +150,6 @@ def read_csv(file_path: Path) -> Tuple[List[Dict], List[str]]:
 def validate_columns(
     fieldnames: List[str],
     required: Set[str],
-    optional: Set[str],
     entity_label: str,
     username: str,
     file_path: Path,
@@ -156,13 +159,24 @@ def validate_columns(
 
     actual = set(fieldnames)
     missing = required - actual
-    extra = actual - (required | optional)
     errors = []
     if missing:
         errors.append(f"{entity_label}: Missing columns for user {username}: {sorted(missing)}")
-    if extra:
-        errors.append(f"{entity_label}: Extra columns for user {username}: {sorted(extra)}")
     return errors
+
+
+def normalize_rows(
+    rows: List[Dict],
+    defaults: Dict[str, object],
+) -> List[Dict]:
+    normalized = []
+    for row in rows:
+        updated = dict(row)
+        for key, value in defaults.items():
+            if updated.get(key) in (None, ""):
+                updated[key] = value() if callable(value) else value
+        normalized.append(updated)
+    return normalized
 
 
 def write_csv(file_path: Path, rows: List[Dict], fieldnames: List[str]):
@@ -382,8 +396,7 @@ def main():
         schema_errors.extend(
             validate_columns(
                 category_fields,
-                REQUIRED_CATEGORY_COLUMNS,
-                set(),
+                MIN_CATEGORY_COLUMNS,
                 "Categories",
                 username,
                 input_dir / "categories.csv",
@@ -392,8 +405,7 @@ def main():
         schema_errors.extend(
             validate_columns(
                 experience_fields,
-                REQUIRED_EXPERIENCE_COLUMNS,
-                OPTIONAL_EXPERIENCE_COLUMNS,
+                MIN_EXPERIENCE_COLUMNS,
                 "Experiences",
                 username,
                 input_dir / "experiences.csv",
@@ -402,17 +414,16 @@ def main():
         schema_errors.extend(
             validate_columns(
                 manual_fields,
-                REQUIRED_MANUAL_COLUMNS,
-                OPTIONAL_MANUAL_COLUMNS,
+                MIN_MANUAL_COLUMNS,
                 "Manuals",
                 username,
                 input_dir / "manuals.csv",
             )
         )
 
-        categories_data[username] = categories
-        experiences_data[username] = experiences
-        manuals_data[username] = manuals
+        categories_data[username] = normalize_rows(categories, CATEGORY_DEFAULTS)
+        experiences_data[username] = normalize_rows(experiences, EXPERIENCE_DEFAULTS)
+        manuals_data[username] = normalize_rows(manuals, MANUAL_DEFAULTS)
 
         print(f"  {username}: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals")
 
