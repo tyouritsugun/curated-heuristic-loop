@@ -32,8 +32,8 @@ except Exception:  # pragma: no cover - optional
     tqdm = None
 
 # Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT.parent))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 from scripts._config_loader import load_scripts_config  # noqa: E402
 from src.api.gpu.faiss_manager import FAISSIndexManager  # noqa: E402
@@ -483,7 +483,7 @@ def main() -> None:
         index_dir = Path(cur_cfg.get("faiss_index_dir", db_path.parent / "faiss_index"))
         if not index_dir.exists():
             print(f"❌ FAISS index directory not found: {index_dir}")
-            print("   Run scripts/curation/build_curation_index.py first.")
+            print("   Run scripts/curation/merge/build_curation_index.py first.")
             sys.exit(1)
 
         sample_vec = next(iter(vectors.values()))

@@ -8,10 +8,10 @@ marked with embedding_status='pending' for later processing.
 
 Usage:
     # With default paths from scripts_config.yaml:
-    python scripts/curation/import_to_curation_db.py
+    python scripts/curation/merge/import_to_curation_db.py
 
     # With explicit paths:
-    python scripts/curation/import_to_curation_db.py \\
+    python scripts/curation/merge/import_to_curation_db.py \\
         --input data/curation/merged \\
         --db-path data/curation/chl_curation.db
 """
@@ -23,8 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
-sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -188,7 +188,7 @@ def main():
         print("✅ Import complete!")
         print()
         print("Next step: Build embeddings and FAISS index")
-        print(f"  python scripts/curation/build_curation_index.py --db-path {db_path}")
+        print(f"  python scripts/curation/merge/build_curation_index.py --db-path {db_path}")
 
     except Exception as e:
         session.rollback()

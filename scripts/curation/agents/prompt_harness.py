@@ -36,7 +36,7 @@ from pathlib import Path
 
 from scripts._config_loader import load_scripts_config
 from scripts.curation.agents.autogen_openai_completion_agent import build_llm_config
-from scripts.curation.agents.prompt_utils import (
+from scripts.curation.common.prompt_utils import (
     build_prompt_messages,
     fetch_member_records,
     load_community,

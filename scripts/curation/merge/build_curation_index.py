@@ -10,10 +10,10 @@ IMPORTANT: The API server must be stopped before running this script to avoid
 
 Usage:
     # With default path from scripts_config.yaml:
-    python scripts/curation/build_curation_index.py
+    python scripts/curation/merge/build_curation_index.py
 
     # With explicit path:
-    python scripts/curation/build_curation_index.py \\
+    python scripts/curation/merge/build_curation_index.py \\
         --db-path data/curation/chl_curation.db
 """
 
@@ -24,8 +24,8 @@ import time
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
-sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
 
 from scripts._config_loader import load_scripts_config
 

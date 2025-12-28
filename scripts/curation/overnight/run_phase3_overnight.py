@@ -10,18 +10,20 @@ from pathlib import Path
 
 def main() -> int:
     py = sys.executable
-    script = Path("scripts/curation/run_phase3.py")
+    script = Path("scripts/curation/overnight/run_phase3.py")
     if not script.exists():
-        print("❌ scripts/curation/run_phase3.py not found")
+        print("❌ scripts/curation/overnight/run_phase3.py not found")
         return 1
 
-    print("Starting overnight Phase 3 run with defaults...", flush=True)
-    print("- To adjust behavior, edit scripts/scripts_config.yaml", flush=True)
-    print("- To adjust the prompt, edit scripts/curation/agents/prompts/curation_prompt.yaml", flush=True)
+    user_args = sys.argv[1:]
+    is_help = "-h" in user_args or "--help" in user_args
+    if not is_help:
+        print("Starting overnight Phase 3 run with defaults...", flush=True)
+        print("- To adjust behavior, edit scripts/scripts_config.yaml", flush=True)
+        print("- To adjust the prompt, edit scripts/curation/agents/prompts/curation_prompt.yaml", flush=True)
 
     try:
         args = [py, str(script)]
-        user_args = sys.argv[1:]
         if "--reset-state" not in user_args:
             args.append("--reset-state")
         if "--db-copy" not in user_args:
@@ -36,8 +38,9 @@ def main() -> int:
         print(f"\n❌ Phase 3 run failed: {exc}")
         return exc.returncode
 
-    print("\n✅ Phase 3 overnight run complete.")
-    print("Check data/curation/morning_report.md in the morning.")
+    if not is_help:
+        print("\n✅ Phase 3 overnight run complete.")
+        print("Check data/curation/morning_report.md in the morning.")
     return 0
 
 

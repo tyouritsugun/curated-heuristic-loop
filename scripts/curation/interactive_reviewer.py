@@ -60,7 +60,7 @@ class InteractiveReviewer:
         print()
 
         # Load existing state
-        from state_manager import StateManager
+        from scripts.curation.common.state_manager import StateManager
         state = StateManager.load_state(self.state_file)
         user = getpass.getuser() if hasattr(getpass, 'getuser') else 'unknown'
         if state is None:
@@ -120,7 +120,7 @@ class InteractiveReviewer:
                         return state['decisions']
                     elif cmd_input == 'skip':
                         state['last_offset'] = current_idx
-                        from state_manager import StateManager
+                        from scripts.curation.common.state_manager import StateManager
                         StateManager.save_state(state, self.state_file, self.dry_run)
                         save_state = False
                         print("Progress saved. Exiting...")
@@ -490,7 +490,7 @@ class InteractiveReviewer:
             session.close()
             # Save state when done with current session
             state['last_offset'] = current_idx
-            from state_manager import StateManager
+            from scripts.curation.common.state_manager import StateManager
             if save_state:
                 StateManager.save_state(state, self.state_file, self.dry_run)
 

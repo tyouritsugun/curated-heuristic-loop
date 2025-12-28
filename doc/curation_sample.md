@@ -14,7 +14,7 @@ Short sample flow for Alice, Bob, and a curator (Carlos) using the semi-auto cur
 ## 2) Curator Merge + Prep (one command)
 After unzipping member exports into `data/curation/members/`, run:
 ```bash
-python scripts/curation/run_merge_pipeline.py --force-db
+python scripts/curation/merge/run_merge_pipeline.py --force-db
 ```
 This wraps steps 2–5 (merge → init DB → import → build embeddings/FAISS → auto-merge → rebuild → communities).
 
@@ -22,7 +22,7 @@ This wraps steps 2–5 (merge → init DB → import → build embeddings/FAISS 
 - Defaults are in `scripts/scripts_config.yaml` and the prompt in `scripts/curation/agents/prompts/curation_prompt.yaml`.
 - If you need to override behavior, edit those files instead of CLI flags.
 ```bash
-python scripts/curation/run_phase3_overnight.py
+python scripts/curation/overnight/run_phase3_overnight.py
 ```
 Key Phase 3 knobs (in `scripts/scripts_config.yaml`):
 - `curation_llm.llm_response_timeout` (seconds per LLM call)
@@ -35,18 +35,18 @@ Key Phase 3 knobs (in `scripts/scripts_config.yaml`):
     and later rounds often have diminishing returns. The loop stops early if improvement is small.
 - Dry-run first to inspect sidecars and the morning report:
 ```bash
-python scripts/curation/run_phase3.py \
+python scripts/curation/overnight/run_phase3.py \
   --max-rounds 3 \
   --improvement-threshold 0.05 \
   --dry-run
 ```
 - Real run (uses `curation_llm` config or env `LLM_MODEL`/`LLM_API_BASE`/`LLM_API_KEY`):
 ```bash
-python scripts/curation/run_phase3.py --max-rounds 3
+python scripts/curation/overnight/run_phase3.py --max-rounds 3
 ```
 - Two-pass rerank variant (keeps both community files):
 ```bash
-python scripts/curation/run_phase3.py --two-pass --rerank-keep-threshold 0.80
+python scripts/curation/overnight/run_phase3.py --two-pass --rerank-keep-threshold 0.80
 ```
 - Check outputs after the run:
   - `data/curation/morning_report.md`

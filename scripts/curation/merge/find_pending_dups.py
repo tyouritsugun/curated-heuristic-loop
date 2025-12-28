@@ -8,16 +8,16 @@ them by similarity threshold. In solo mode, it compares pending vs pending.
 
 Usage:
     # Auto-merge obvious duplicates (default: high similarity bucket)
-    python scripts/curation/find_pending_dups.py
+    python scripts/curation/merge/find_pending_dups.py
 
     # Find duplicates in solo mode (pending vs pending)
-    python scripts/curation/find_pending_dups.py --compare-pending
+    python scripts/curation/merge/find_pending_dups.py --compare-pending
 
     # Export to JSON format (no DB changes)
-    python scripts/curation/find_pending_dups.py --format json --dry-run
+    python scripts/curation/merge/find_pending_dups.py --format json --dry-run
 
     # Override default database path (if needed)
-    python scripts/curation/find_pending_dups.py --db-path /custom/path/chl_curation.db
+    python scripts/curation/merge/find_pending_dups.py --db-path /custom/path/chl_curation.db
 """
 
 import argparse
@@ -26,21 +26,21 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root.parent))
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
 
 from scripts._config_loader import load_scripts_config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-# Add the scripts directory to path for imports
-scripts_dir = Path(__file__).parent
+# Add the curation scripts directory to path for imports
+scripts_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(scripts_dir))
 
-from duplicate_finder import DuplicateFinder
-from result_formatter import ResultFormatter
+from scripts.curation.common.duplicate_finder import DuplicateFinder
+from scripts.curation.common.result_formatter import ResultFormatter
 from datetime import datetime, timezone
-from decision_logging import write_evaluation_log
+from scripts.curation.common.decision_logging import write_evaluation_log
 from src.common.storage.schema import CategoryManual, CurationDecision, Experience
 
 

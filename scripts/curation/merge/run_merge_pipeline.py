@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT.parent))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 from scripts._config_loader import load_scripts_config
 
@@ -41,20 +41,20 @@ def main() -> int:
     args = parse_args()
     py = sys.executable
 
-    merge_cmd = [py, "scripts/curation/merge_exports.py"]
+    merge_cmd = [py, "scripts/curation/merge/merge_exports.py"]
     if args.inputs:
         merge_cmd.extend(["--inputs", *args.inputs])
 
-    init_cmd = [py, "scripts/curation/init_curation_db.py", "--db-path", args.db_path]
+    init_cmd = [py, "scripts/curation/merge/init_curation_db.py", "--db-path", args.db_path]
     if args.force_db:
         init_cmd.append("--force")
 
-    import_cmd = [py, "scripts/curation/import_to_curation_db.py", "--db-path", args.db_path]
-    build_index_cmd = [py, "scripts/curation/build_curation_index.py", "--db-path", args.db_path]
-    dedup_cmd = [py, "scripts/curation/find_pending_dups.py", "--db-path", args.db_path]
+    import_cmd = [py, "scripts/curation/merge/import_to_curation_db.py", "--db-path", args.db_path]
+    build_index_cmd = [py, "scripts/curation/merge/build_curation_index.py", "--db-path", args.db_path]
+    dedup_cmd = [py, "scripts/curation/merge/find_pending_dups.py", "--db-path", args.db_path]
     build_comm_cmd = [
         py,
-        "scripts/curation/build_communities.py",
+        "scripts/curation/merge/build_communities.py",
         "--db-path",
         args.db_path,
         "--refresh-neighbors",

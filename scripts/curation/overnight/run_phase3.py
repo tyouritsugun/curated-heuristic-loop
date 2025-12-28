@@ -24,18 +24,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 # Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT.parent))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 from scripts._config_loader import load_scripts_config
 from scripts.curation.agents.autogen_openai_completion_agent import build_llm_config
-from scripts.curation.agents.prompt_utils import (
+from scripts.curation.common.prompt_utils import (
     build_prompt_messages,
     fetch_member_records,
     validate_response,
 )
-from scripts.curation.decision_logging import write_evaluation_log
-from scripts.curation.state_manager import StateManager
+from scripts.curation.common.decision_logging import write_evaluation_log
+from scripts.curation.common.state_manager import StateManager
 from src.common.storage.schema import CurationDecision, Experience
 
 

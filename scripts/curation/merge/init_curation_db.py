@@ -8,10 +8,10 @@ workflow.
 
 Usage:
     # With default path from scripts_config.yaml:
-    python scripts/curation/init_curation_db.py
+    python scripts/curation/merge/init_curation_db.py
 
     # With explicit path:
-    python scripts/curation/init_curation_db.py --db-path data/curation/chl_curation.db
+    python scripts/curation/merge/init_curation_db.py --db-path data/curation/chl_curation.db
 """
 
 import argparse
@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
-sys.path.insert(0, str(project_root.parent))  # This gives us the project root directory
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
 
 from sqlalchemy import create_engine
 from src.common.storage.schema import Base

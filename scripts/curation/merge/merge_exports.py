@@ -12,12 +12,12 @@ This script:
 
 Usage:
     # With explicit paths:
-    python scripts/curation/merge_exports.py \\
+    python scripts/curation/merge/merge_exports.py \\
         --inputs data/curation/members/alice data/curation/members/bob \\
         --output data/curation/merged
 
     # With defaults from scripts_config.yaml:
-    python scripts/curation/merge_exports.py
+    python scripts/curation/merge/merge_exports.py
 """
 
 import argparse
@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 # Add project root to sys.path for config loading
-project_root = Path(__file__).parent.parent  # This gives us the 'scripts' directory
-sys.path.insert(0, str(project_root.parent))  # This gives us the project root
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
 
 from scripts._config_loader import load_scripts_config
 
