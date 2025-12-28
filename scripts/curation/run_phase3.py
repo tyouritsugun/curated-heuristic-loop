@@ -92,6 +92,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-rounds", type=int, default=3)
     parser.add_argument("--improvement-threshold", type=float, default=0.05)
     parser.add_argument("--batch-size", type=int, default=0, help="Communities per round (0 = all)")
+    parser.add_argument("--verbose", action="store_true", help="Verbose per-community logging")
     parser.add_argument(
         "--llm-timeout",
         type=int,
@@ -623,6 +624,14 @@ def write_morning_report(
     lines.append(f"- Reduction: {summary.get('reduction_pct'):.2%}")
     lines.append(f"- Rounds run: {summary.get('rounds_run')}")
     lines.append(f"- Stop reason: {summary.get('stop_reason')}")
+    if summary.get("estimated_max_runtime_seconds") is not None:
+        lines.append(f"- Estimated max runtime (seconds): {summary.get('estimated_max_runtime_seconds')}")
+        if summary.get("estimated_llm_calls") is not None:
+            lines.append(f"- Estimated LLM calls: {summary.get('estimated_llm_calls')}")
+        if summary.get("estimated_llm_seconds") is not None:
+            lines.append(f"- Estimated seconds per call: {summary.get('estimated_llm_seconds')}")
+        if summary.get("runtime_multiplier") is not None:
+            lines.append(f"- Runtime multiplier: {summary.get('runtime_multiplier')}")
     lines.append("")
     lines.append("## Round Details")
     lines.append("| Round | Communities | Items | Merges | Manual Reviews | Progress Items | Progress Comms |")
@@ -695,23 +704,38 @@ def main() -> int:
         max_rounds=args.max_rounds,
     )
 
-    if args.expected_llm_seconds is not None and args.max_runtime_seconds is None:
-        initial_payload = load_communities(communities_path)
-        comm_count = len(initial_payload.get("communities", []))
-        per_round = args.batch_size if args.batch_size and args.batch_size > 0 else comm_count
-        max_calls = args.max_rounds * max(1, per_round)
-        est = int(max_calls * float(args.expected_llm_seconds) * float(args.runtime_multiplier))
-        args.max_runtime_seconds = max(1, est)
-        print(f"✓ Estimated max runtime: {args.max_runtime_seconds}s ({max_calls} calls)")
-
-    # Setup DB session
-    engine = create_engine(f"sqlite:///{db_path}")
-    Session = sessionmaker(bind=engine)
-
     llm_config, settings, cfg_path = build_llm_config()
     if args.llm_timeout is not None:
         llm_config["timeout"] = args.llm_timeout
         settings.timeout = args.llm_timeout
+
+    estimated_seconds_per_call = None
+    if args.max_runtime_seconds is None:
+        estimate_seconds = None
+        if args.expected_llm_seconds is not None:
+            estimate_seconds = float(args.expected_llm_seconds)
+        else:
+            timeout_hint = args.llm_timeout or settings.timeout
+            if timeout_hint is not None:
+                estimate_seconds = float(timeout_hint)
+
+        if estimate_seconds is not None:
+            estimated_seconds_per_call = estimate_seconds
+            initial_payload = load_communities(communities_path)
+            comm_count = len(initial_payload.get("communities", []))
+            per_round = args.batch_size if args.batch_size and args.batch_size > 0 else comm_count
+            max_calls = args.max_rounds * max(1, per_round)
+            est = int(max_calls * estimate_seconds * float(args.runtime_multiplier))
+            args.max_runtime_seconds = max(1, est)
+            args._estimated_llm_calls = max_calls
+            print(f"✓ Estimated max runtime: {args.max_runtime_seconds}s ({max_calls} calls)")
+    else:
+        if args.expected_llm_seconds is not None:
+            estimated_seconds_per_call = float(args.expected_llm_seconds)
+
+    # Setup DB session
+    engine = create_engine(f"sqlite:///{db_path}")
+    Session = sessionmaker(bind=engine)
     try:
         from autogen import AssistantAgent
     except Exception as exc:  # pragma: no cover
@@ -787,28 +811,41 @@ def main() -> int:
                     community_id = comm.get("id")
                     if not community_id:
                         continue
+                    if args.verbose:
+                        print(f"[round {round_index}] LLM call for {community_id} ({idx}/{len(selected)})", flush=True)
 
-                members = fetch_member_records(db_path, comm.get("members", []))
-                prompt_path = Path(args.prompt) if args.prompt else None
-                messages = build_prompt_messages(
-                    comm,
-                    members,
-                    round_index=round_index,
-                    prompt_path=prompt_path,
-                )
+                    members = fetch_member_records(db_path, comm.get("members", []))
+                    prompt_path = Path(args.prompt) if args.prompt else None
+                    messages = build_prompt_messages(
+                        comm,
+                        members,
+                        round_index=round_index,
+                        prompt_path=prompt_path,
+                    )
 
-                max_retries = max(0, int(settings.max_retries or 0))
-                retry_delays = settings.retry_delays or []
-                retry_backoff = (settings.retry_backoff or "exponential").lower()
+                    max_retries = max(0, int(settings.max_retries or 0))
+                    retry_delays = settings.retry_delays or []
+                    retry_backoff = (settings.retry_backoff or "exponential").lower()
 
-                ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
-                    agent,
-                    messages,
-                    allowed_ids=comm.get("members", []),
-                    max_retries=max_retries,
-                    retry_delays=retry_delays,
-                    retry_backoff=retry_backoff,
-                )
+                    ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
+                        agent,
+                        messages,
+                        allowed_ids=comm.get("members", []),
+                        max_retries=max_retries,
+                        retry_delays=retry_delays,
+                        retry_backoff=retry_backoff,
+                    )
+                    if warn and args.verbose:
+                        for w in warn:
+                            print(f"[round {round_index}] {community_id} warning: {w}", flush=True)
+                    decision_label = normalized.get("decision") if ok else None
+                    merge_count = len(normalized.get("merges", []) or []) if ok else 0
+                    decision_msg = decision_label or ("invalid" if not ok else "unknown")
+                    if args.verbose:
+                        print(
+                            f"[round {round_index}] LLM response for {community_id}: {decision_msg} merges={merge_count}",
+                            flush=True,
+                        )
 
                 if not ok:
                     warnings.extend(errs)
@@ -971,6 +1008,10 @@ def main() -> int:
             "reduction_pct": reduction_pct,
             "rounds_run": rounds_run,
             "stop_reason": stop_reason,
+            "estimated_max_runtime_seconds": args.max_runtime_seconds,
+            "estimated_llm_calls": getattr(args, "_estimated_llm_calls", None),
+            "estimated_llm_seconds": estimated_seconds_per_call,
+            "runtime_multiplier": args.runtime_multiplier if estimated_seconds_per_call is not None else None,
         },
         rounds=rounds_report,
         manual_queue=manual_queue,

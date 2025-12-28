@@ -44,7 +44,7 @@ def load_llm_settings(config_path: Optional[str] = None) -> Tuple[LLMSettings, s
         or os.getenv("ANTHROPIC_API_KEY")
         or llm.get("api_key")
     )
-    timeout = llm.get("timeout")
+    timeout = llm.get("llm_response_timeout", llm.get("timeout"))
     max_retries = int(llm.get("max_retries", 2) or 2)
     retry_backoff = llm.get("retry_backoff", "exponential")
     retry_delays = llm.get("retry_delays")

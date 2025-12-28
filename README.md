@@ -57,6 +57,12 @@ If you have Python 3.13 and want GPU acceleration, install a compatible version 
 - Keep API keys in `.env` (see `.env.sample`); do not commit them.
 - Dependencies: `requirements_apple.txt` and `requirements_nvidia.txt` already include `autogen` + `autogen-ext[openai]` for the agent.
 
+**Phase 3 defaults (config-driven):**
+- `curation_llm.llm_response_timeout` (seconds per LLM call)
+- `curation_llm.max_retries`, `curation_llm.retry_backoff`, `curation_llm.retry_delays`
+- `curation.thresholds.auto_dedup` (auto-merge threshold)
+See `doc/curation_sample.md` for the simplified runbook.
+
 ### Step 1: Install API Server
 
 Choose your hardware platform and install the API server runtime:

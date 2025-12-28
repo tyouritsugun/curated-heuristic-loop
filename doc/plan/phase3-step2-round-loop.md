@@ -86,11 +86,11 @@ Purpose: orchestrate iterative, unattended LLM-driven curation over Phase‑2 co
 - Auto-dedup (≥0.98) runs **once before round 1**; later rounds rely on the agent.
 
 ## Error Handling
-- LLM call policy: timeout 120s; max 2 retries with exponential backoff (e.g., 5s, 15s). Failures = HTTP error, timeout, invalid JSON/schema. On final failure, mark community `manual_review` and log in morning report.
+- LLM call policy: `llm_response_timeout` (default 120s); max 2 retries with exponential backoff (e.g., 5s, 15s). Failures = HTTP error, timeout, invalid JSON/schema. On final failure, mark community `manual_review` and log in morning report.
 - Graph rebuild failure: abort loop, record error in morning report, leave DB unchanged for that round.
 - All failures contribute to a "Warnings" subsection in the morning report.
 - Config validation preflight: refuse to start if `curation_llm.model` missing or config YAML is malformed; surface the path used in the error message.
- - LLM retry tunables read from `curation_llm` in `scripts_config.yaml` (`timeout`, `max_retries`, `retry_backoff`, `retry_delays`).
+ - LLM retry tunables read from `curation_llm` in `scripts_config.yaml` (`llm_response_timeout`, `max_retries`, `retry_backoff`, `retry_delays`).
 
 ## Acceptance
 - At least one round executed and logged.

@@ -78,7 +78,12 @@ curation_llm:
                                       #   Local (Ollama): http://localhost:11434/v1
                                       #   Local (LM Studio): http://localhost:1234/v1
   # api_key: null                     # Set via env: OPENAI_API_KEY, GEMINI_API_KEY, or LLM_API_KEY
-  timeout: 120                        # seconds per LLM call
+  llm_response_timeout: 120           # seconds per LLM call
+                                      # Note: expected per-call latency varies by model/provider.
+                                      # Use a short value for fast hosted models (e.g., Gemini Flash),
+                                      # and a longer value for local LLMs on low-spec GPUs. Use field
+                                      # trial measurements + a small buffer when estimating runtime.
+                                      # For total runtime estimation, prefer --expected-llm-seconds.
   max_retries: 2                      # retry attempts on failure
   retry_backoff: exponential          # exponential or linear
   retry_delays: [5, 15]               # seconds between retries (used if backoff unavailable)
