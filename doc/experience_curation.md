@@ -107,6 +107,7 @@ python scripts/curation/overnight/run_curation_loop.py --two-pass
 ## 4) Review and Publish (Spreadsheet)
 - Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
 - If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
+  - Note: Importing via the UI/Excel always resets `embedding_status` to `pending` on the server and rebuilds embeddings; any `embedded` values in the TSV are ignored.
 UI: Operations → Import from Google Sheet  
 CLI:
 ```bash
