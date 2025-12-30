@@ -36,6 +36,10 @@ from scripts.curation.common.prompt_utils import (
 )
 from scripts.curation.common.decision_logging import write_evaluation_log
 from scripts.curation.common.state_manager import StateManager
+from scripts.curation.common.community_detector import detect_communities
+from scripts.curation.common.community_scoring import priority_score, score_community, size_score
+from scripts.curation.common.community_exporter import export_communities
+from scripts.curation.common.union_find import group_pairs
 from src.common.storage.schema import CurationDecision, Experience
 
 
@@ -203,131 +207,6 @@ def build_graph_from_neighbors(
     if isolated:
         G.remove_nodes_from(isolated)
     return G
-
-
-def detect_communities(G: nx.Graph, algorithm: str, per_category: bool) -> Dict[str, List[List[str]]]:
-    communities_by_cat: Dict[str, List[List[str]]] = {}
-    categories = {d.get("category") for _, d in G.nodes(data=True)}
-
-    for category in categories:
-        sub_nodes = [n for n, d in G.nodes(data=True) if d.get("category") == category] if per_category else list(G.nodes())
-        subgraph = G.subgraph(sub_nodes).copy()
-        if subgraph.number_of_nodes() == 0:
-            continue
-
-        if algorithm == "leiden":
-            try:
-                import igraph as ig  # type: ignore
-                import leidenalg  # type: ignore
-
-                mapping = {node: i for i, node in enumerate(subgraph.nodes())}
-                edges = [(mapping[u], mapping[v], data.get("weight", 1.0)) for u, v, data in subgraph.edges(data=True)]
-                g = ig.Graph()
-                g.add_vertices(len(mapping))
-                if edges:
-                    g.add_edges([(u, v) for u, v, _ in edges])
-                    g.es["weight"] = [w for _, _, w in edges]
-                partition = leidenalg.find_partition(g, leidenalg.ModularityVertexPartition, weights="weight")
-                inv_mapping = {i: node for node, i in mapping.items()}
-                comms = [[inv_mapping[idx] for idx in comm] for comm in partition]
-                communities_by_cat[category] = comms
-                continue
-            except Exception as exc:
-                print(f"⚠️  Leiden unavailable ({exc}); falling back to Louvain.")
-                algorithm = "louvain"
-
-        try:
-            import community as community_louvain  # type: ignore
-
-            partition = community_louvain.best_partition(subgraph, weight="weight")
-            comm_map: Dict[int, List[str]] = {}
-            for node, cid in partition.items():
-                comm_map.setdefault(cid, []).append(node)
-            communities_by_cat[category] = list(comm_map.values())
-        except Exception as exc:
-            raise RuntimeError(f"Louvain community detection failed: {exc}") from exc
-
-        if not per_category:
-            break
-
-    return communities_by_cat
-
-
-def score_community(G: nx.Graph, nodes: List[str]) -> Tuple[float, float, int]:
-    sub = G.subgraph(nodes)
-    size = sub.number_of_nodes()
-    if size <= 1:
-        return 0.0, 0.0, size
-    weights = [data.get("weight", 0.0) for _, _, data in sub.edges(data=True)]
-    avg_sim = float(np.mean(weights)) if weights else 0.0
-    density = nx.density(sub) if size > 1 else 0.0
-    return avg_sim, density, size
-
-
-def size_score(size: int) -> float:
-    if size < 3:
-        return size / 3.0
-    if size <= 10:
-        return 1.0
-    return max(0.0, min(1.0, 10.0 / float(size)))
-
-
-def priority_score(avg_sim: float, density: float, size: int) -> float:
-    return (0.6 * avg_sim) + (0.3 * density) + (0.1 * size_score(size))
-
-
-def export_communities(
-    G: nx.Graph,
-    communities_by_cat: Dict[str, List[List[str]]],
-    output_path: Path,
-    metadata: Dict[str, object],
-    min_size: int,
-    max_size: int,
-    dry_run: bool,
-) -> Dict[str, object]:
-    communities = []
-    counter = 1
-    skipped_small = 0
-    oversized_count = 0
-    for category, comms in communities_by_cat.items():
-        for nodes in comms:
-            if len(nodes) < min_size:
-                skipped_small += 1
-                continue
-            avg_sim, density, size = score_community(G, nodes)
-            oversized = size > max_size
-            if oversized:
-                oversized_count += 1
-            pid = f"COMM-{counter:03d}"
-            counter += 1
-            sub = G.subgraph(nodes)
-            edges_payload = [[u, v, float(d.get("weight", 0.0))] for u, v, d in sub.edges(data=True)]
-            communities.append(
-                {
-                    "id": pid,
-                    "category": category,
-                    "members": list(nodes),
-                    "avg_similarity": round(avg_sim, 4),
-                    "density": round(density, 4),
-                    "size": size,
-                    "priority_score": round(priority_score(avg_sim, density, size), 4),
-                    "oversized": oversized,
-                    "edges": edges_payload,
-                }
-            )
-
-    metadata["skipped_small_communities"] = skipped_small
-    metadata["oversized_communities"] = oversized_count
-    metadata["total_communities"] = len(communities)
-    payload = {"communities": communities, "metadata": metadata}
-
-    if dry_run:
-        output_path = output_path.with_suffix(output_path.suffix + ".dryrun")
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2)
-    return payload
 
 
 def compute_counts(session) -> Tuple[int, int]:
@@ -507,31 +386,8 @@ def auto_dedup(
     if not pairs:
         return 0, []
 
-    parent: Dict[str, str] = {}
-
-    def find(x: str) -> str:
-        while parent.get(x, x) != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a: str, b: str) -> None:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    nodes: set[str] = set()
-    for a, b in pairs:
-        nodes.add(a)
-        nodes.add(b)
-        parent.setdefault(a, a)
-        parent.setdefault(b, b)
-        union(a, b)
-
-    groups: Dict[str, List[str]] = {}
-    for node in nodes:
-        root = find(node)
-        groups.setdefault(root, []).append(node)
+    # Group connected pairs using union-find
+    groups = group_pairs(pairs)
 
     decisions: List[dict] = []
     merged = 0

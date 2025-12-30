@@ -397,9 +397,16 @@ def main():
 
         categories, category_fields = read_csv(input_dir / "categories.csv")
         experiences, experience_fields = read_csv(input_dir / "experiences.csv")
+
+        # Try to find skills file (try new name first, then legacy names)
         skills_path = input_dir / "skills.csv"
         if not skills_path.exists():
+            skills_path = input_dir / "Skills.csv"
+        if not skills_path.exists():
             skills_path = input_dir / "manuals.csv"
+        if not skills_path.exists():
+            skills_path = input_dir / "Manuals.csv"
+
         skills, skill_fields = read_csv(skills_path)
 
         schema_errors.extend(
