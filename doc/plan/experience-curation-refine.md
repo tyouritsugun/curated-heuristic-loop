@@ -93,7 +93,23 @@ Notes for Phase 1 metrics:
 
 ## Implementation Phases
 
-### Phase 1: Quick Wins (high impact)
+### Phase 1: Atomicity Pre-pass Pilot (validation)
+**Goal:** Validate reranker-based atomicity detection and LLM splitting before the normal loop.
+
+**Tasks:**
+1. **Design reranker prompt** for atomicity (binary yes/no) and run a pilot over a labeled sample.
+2. **Calibrate threshold** to trigger LLM splitting with high precision.
+3. **Evaluate split quality** on a small sample and document results.
+
+**Success criteria:**
+- Non-atomic precision ≥ 85% on a labeled set (50–100 items)
+- Splits are judged useful on a small review sample (10–20 items)
+
+**Risks:**
+- Over-splitting (loss of context)
+- Under-detection (missed multi-step entries)
+		
+### Phase 2: Quick Wins (high impact)
 **Goal:** Test core hypotheses with minimal code changes
 
 **Tasks:**
@@ -125,7 +141,7 @@ Notes for Phase 1 metrics:
 - Neighbor rebuild may not improve recall if embedding quality is poor
 - Tracking precision requires manual validation (sample-based)
 
-### Phase 2: Orchestration (medium complexity)
+### Phase 3: Orchestration (medium complexity)
 **Goal:** Automate two-pass workflow and enable split suggestions
 
 **Tasks:**
@@ -156,7 +172,7 @@ Notes for Phase 1 metrics:
 - Rerank may be too expensive for large datasets
 - Split suggestions may have high false positive rate
 
-### Phase 3: Evaluation & Iteration (ongoing)
+### Phase 4: Evaluation & Iteration (ongoing)
 **Goal:** Validate hypotheses and refine approach
 
 **Tasks:**

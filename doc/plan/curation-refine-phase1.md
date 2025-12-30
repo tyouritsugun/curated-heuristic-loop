@@ -1,55 +1,44 @@
-# Experience Curation Refinement - Phase 1 (Concise)
+# Experience Curation Refinement - Phase 1 (LLM Atomicity Split Pre-pass)
 
 ## Goal
-Improve curation quality and stability with minimal code changes by tightening atomicity guidance, refreshing neighbors during multi-round loops, and adding lightweight quality metrics.
+Use the existing curation LLM to detect non-atomic experiences, split them, and write results back to the DB before Phase 2.
 
-## Scope
-- Prompt improvements for atomicity (examples + clarity)
-- Neighbor rebuild cadence during multi-round curation
-- Merge quality metrics in reporting
+## Hypothesis
+The current reranker is not producing usable separation. A direct LLM split pre-pass will improve merge precision and reduce drift in later rounds.
 
-## Task 1: Atomicity Prompt
-**Why:** Current guidance is too vague.
-**Change:** Add 2–3 atomic and non-atomic examples plus an explicit complexity rule.
-**File:** `scripts/curation/agents/prompts/curation_prompt.yaml`
-**Done when:** Examples included; complexity rule is explicit.
+## Proposed Pipeline
+1. **Atomicity classification**: LLM returns `atomic` or `split`.
+2. **Split generation**: If split, LLM returns a list of atomic experiences.
+3. **DB writeback**: Insert split experiences; mark original as inactive.
+4. **Provenance logging**: Record split lineage in a new DB table.
+5. **Normal loop**: Run the existing neighbor/community/merge loop (Phase 2).
 
-## Task 2: Neighbor Rebuild Cadence
-**Why:** Cached neighbors go stale after merges.
-**Change:** Add a rebuild cadence flag and refresh neighbors at configured intervals.
-**Files:** `scripts/curation/overnight/run_curation_loop.py`, `scripts/curation/common/neighbor_builder.py`
-**Done when:** Flag works; rebuilds occur on schedule; logs show old/new edge counts.
+## LLM Setup (Pilot Spec)
+- Use the same LLM configuration as current curation scripts.
+- Prompt should:
+  - Define atomic vs non-atomic clearly.
+  - Ask for a strict JSON output: `{decision: "atomic"|"split", splits: [...]}`.
+  - Require each split to be atomic, self-contained, and minimal.
 
-## Task 3: Merge Quality Metrics
-**Why:** No feedback loop on merge quality.
-**Change:** Add merge rate and optional precision (when validation exists) to reporting.
-**Files:** `scripts/curation/common/decision_logging.py`, `scripts/curation/reporting/morning_report.py`
-**Done when:** Morning report shows merge rate and precision if available.
+## Safety / Constraints
+- Do not invent new steps or tools; only split existing content.
+- Keep split count small (2–4) unless clearly needed.
+- Preserve category/section from the original.
 
-## Clarifications (tightened)
-- **Rebuild placement:** After merges are applied and before communities are re-detected for the next round.
-- **Cadence choice:** Start with fixed `--rebuild-neighbors-cadence 2` (every other round). Add merge-rate-based rebuild later if needed.
-- **Threshold naming:** Use existing `--edge-threshold` consistently for graph construction; neighbor rebuild should use the same effective threshold (no new threshold flag in Phase 1).
-- **Merge rate denominator:** Use the active item count for the round (`pending_now` from `compute_counts`), not total historical items.
-- **Evaluation log round context:** Add and populate `round_index` so precision can be computed per round.
-
-## Metrics (Phase 1)
-- Merge rate per round (using active item count)
-- Precision from validated samples (if any)
-- Merge yield per round: “new merges per round” (explicitly not recall)
-
-## Open Questions
-- None blocking Phase 1. Revisit cadence heuristics after baseline metrics.
+## Evaluation Plan
+- **Sample review**: Manually review 20–30 split results for correctness and usefulness.
+- **Metrics**: Split precision (correctly split) and split quality (subjective).
+- **Success bar**: ≥ 85% of reviewed splits are judged correct and useful.
 
 ## Risks
-- Rebuild cost may be too high on large datasets
-- Prompt examples may over-constrain merges
-- Precision depends on manual validation
+- Over-splitting could fragment context.
+- Under-splitting keeps multi-step entries intact.
+- LLM may hallucinate new steps; prompt must forbid this.
 
-## Success Criteria
-- Prompt includes atomic/non-atomic examples and a clear complexity rule
-- Neighbors rebuild at least once in a multi-round run
-- Morning report shows merge rate and precision (if validation data exists)
+## Deliverables
+- A pilot script that iterates experiences and performs LLM splitting.
+- A new provenance table to record split lineage.
+- A short report with split review results and recommendation.
 
-## Next Step
-Proceed with Phase 1 changes; revisit Phase 2 only after metrics show improvement.
+## Next Step After Phase 1
+If the pilot passes, keep the atomicity pre-pass and proceed with Phase 2.
