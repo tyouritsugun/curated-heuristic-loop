@@ -35,7 +35,7 @@ from src.common.config.config import ensure_project_root_on_sys_path, get_config
 ensure_project_root_on_sys_path()
 from src.common.api_client.client import CHLAPIClient
 from src.common.storage.database import Database
-from src.common.storage.schema import Experience, CategoryManual, FAISSMetadata
+from src.common.storage.schema import Experience, CategorySkill, FAISSMetadata
 from src.common.storage.repository import EmbeddingRepository
 
 log = logging.getLogger("search_health")
@@ -84,7 +84,7 @@ def main():
     with db.session_scope() as session:
         # Totals
         report["totals"]["experiences"] = session.query(Experience).count()
-        report["totals"]["manuals"] = session.query(CategoryManual).count()
+        report["totals"]["manuals"] = session.query(CategorySkill).count()
 
         # Embedding status counts (across both types)
         emb_repo = EmbeddingRepository(session)

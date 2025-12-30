@@ -404,19 +404,23 @@ class OperationsService:
                 # Fetch from configured worksheets
                 categories_rows = sheets_client.read_worksheet(spreadsheet_id, "Categories")
                 experiences_rows = sheets_client.read_worksheet(spreadsheet_id, "Experiences")
-                manuals_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
+                
+                # Try "Skills" first (new), fall back to "Manuals" (legacy) for backward compatibility
+                skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
+                if not skills_rows:
+                    skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
 
                 logger.info(
-                    "Fetched from Google Sheets: %d categories, %d experiences, %d manuals",
+                    "Fetched from Google Sheets: %d categories, %d experiences, %d skills",
                     len(categories_rows),
                     len(experiences_rows),
-                    len(manuals_rows),
+                    len(skills_rows),
                 )
 
                 if not categories_rows:
                     return {
                         "success": True,
-                        "counts": {"categories": 0, "experiences": 0, "manuals": 0},
+                        "counts": {"categories": 0, "experiences": 0, "skills": 0},
                         "message": "No data found in Google Sheets",
                     }
 
@@ -426,7 +430,7 @@ class OperationsService:
                 session=session,
                 categories_rows=categories_rows,
                 experiences_rows=experiences_rows,
-                manuals_rows=manuals_rows,
+                skills_rows=skills_rows,
             )
 
             logger.info("Import completed: %s", counts)
@@ -444,7 +448,7 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": counts,
-                "message": f"Imported {counts['experiences']} experiences, {counts['manuals']} manuals, {counts['categories']} categories"
+                "message": f"Imported {counts['experiences']} experiences, {counts['skills']} skills, {counts['categories']} categories"
             }
 
         except Exception as exc:
@@ -566,7 +570,7 @@ class OperationsService:
         # Get worksheet names from environment (with defaults)
         categories_worksheet = os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories")
         experiences_worksheet = os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")
-        manuals_worksheet = os.getenv("EXPORT_WORKSHEET_MANUALS", "Manuals")
+        skills_worksheet = os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills"))
 
         # Export Categories
         categories_headers = ["code", "name", "description", "created_at"]
@@ -611,30 +615,30 @@ class OperationsService:
             readonly_cols=[0, 6],  # id and updated_at are readonly
         )
 
-        # Export Manuals
-        manuals_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
-        manuals_rows = [
+        # Export Skills
+        skills_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
+        skills_rows = [
             [
-                manual.id,
-                manual.category_code,
-                manual.title,
-                manual.content or "",
-                manual.summary or "",
-                manual.updated_at.isoformat() if manual.updated_at else "",
-                manual.author or "",
+                skill.id,
+                skill.category_code,
+                skill.title,
+                skill.content or "",
+                skill.summary or "",
+                skill.updated_at.isoformat() if skill.updated_at else "",
+                skill.author or "",
             ]
-            for manual in manuals
+            for skill in manuals
         ]
         sheets_client.write_worksheet(
             spreadsheet_id,
-            manuals_worksheet,
-            manuals_headers,
-            manuals_rows,
+            skills_worksheet,
+            skills_headers,
+            skills_rows,
             readonly_cols=[0, 5],  # id and updated_at are readonly
         )
 
         logger.info(
-            "Export completed: %d categories, %d experiences, %d manuals to spreadsheet %s",
+            "Export completed: %d categories, %d experiences, %d skills to spreadsheet %s",
             len(categories),
             len(experiences),
             len(manuals),
@@ -645,10 +649,10 @@ class OperationsService:
             "success": True,
             "counts": {
                 "experiences": len(experiences),
-                "manuals": len(manuals),
+                "skills": len(manuals),
                 "categories": len(categories),
             },
-            "message": f"Exported to Google Sheets: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals",
+            "message": f"Exported to Google Sheets: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} skills",
         }
 
     def _import_excel_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
@@ -748,7 +752,7 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": counts,
-                "message": f"Imported from Excel: {counts['experiences']} experiences, {counts['manuals']} manuals, {counts['categories']} categories"
+                "message": f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills, {counts['categories']} categories"
             }
 
         except Exception as exc:
@@ -844,7 +848,7 @@ class OperationsService:
                     "manuals": len(manuals),
                     "categories": len(categories),
                 },
-                "message": f"Exported to Excel: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals",
+                "message": f"Exported to Excel: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} skills",
             }
 
         except Exception as exc:

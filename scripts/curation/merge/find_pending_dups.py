@@ -41,7 +41,7 @@ from scripts.curation.common.duplicate_finder import DuplicateFinder
 from scripts.curation.common.result_formatter import ResultFormatter
 from datetime import datetime, timezone
 from scripts.curation.common.decision_logging import write_evaluation_log
-from src.common.storage.schema import CategoryManual, CurationDecision, Experience
+from src.common.storage.schema import CategorySkill, CurationDecision, Experience
 
 
 def parse_args():
@@ -155,7 +155,7 @@ def has_non_pending_anchors(db_path: Path) -> bool:
     session = Session()
     try:
         exp_count = session.query(Experience).filter(Experience.sync_status != 0).limit(1).count()
-        manual_count = session.query(CategoryManual).filter(CategoryManual.sync_status != 0).limit(1).count()
+        manual_count = session.query(CategorySkill).filter(CategorySkill.sync_status != 0).limit(1).count()
         return (exp_count + manual_count) > 0
     finally:
         session.close()

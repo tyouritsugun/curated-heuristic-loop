@@ -58,24 +58,28 @@ class ExperienceWritePayload(BaseModel):
         return self
 
 
-class ManualWritePayload(BaseModel):
-    """Validated payload for creating a manual entry."""
+class SkillWritePayload(BaseModel):
+    """Validated payload for creating a skill entry."""
 
     title: str = Field(
         ...,
         min_length=1,
         max_length=120,
-        description="Title of the manual (1-120 characters)",
+        description="Title of the skill (1-120 characters)",
     )
     content: str = Field(
         ...,
         min_length=1,
-        description="Full markdown content of the manual",
+        description="Full markdown content of the skill",
     )
     summary: str | None = Field(
         None,
-        description="Optional brief summary of the manual content",
+        description="Optional brief summary of the skill content",
     )
+
+
+# Backward compatibility alias
+ManualWritePayload = SkillWritePayload
 
 
 def format_validation_error(error: ValidationError) -> str:

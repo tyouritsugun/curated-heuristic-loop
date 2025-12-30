@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import CategoryManual, CurationDecision, Experience
+from src.common.storage.schema import CategorySkill, CurationDecision, Experience
 
 
 class InteractiveReviewer:
@@ -175,7 +175,7 @@ class InteractiveReviewer:
                                     print(f"  ✓ Database updated: {pending_id} marked as rejected")
                                 else:
                                     # Check if it's a manual instead
-                                    pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                    pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                     if pending_manual:
                                         pending_manual.sync_status = 2  # REJECTED
                                         self._log_decision(
@@ -252,7 +252,7 @@ class InteractiveReviewer:
                                 session.commit()
                                 print(f"  ✓ Database updated: {pending_id} marked as rejected")
                             else:
-                                pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                 if pending_manual:
                                     pending_manual.sync_status = 2  # REJECTED
                                     self._log_decision(
@@ -321,7 +321,7 @@ class InteractiveReviewer:
                                 session.commit()
                                 print(f"  ✓ Database updated: {pending_id}")
                             else:
-                                pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                 if pending_manual:
                                     if new_title:
                                         pending_manual.title = new_title
@@ -395,9 +395,9 @@ class InteractiveReviewer:
                                 session.commit()
                                 print(f"  ✓ Database updated: {new_id} created as split from {pending_id}")
                             else:
-                                pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                 if pending_manual:
-                                    new_manual = CategoryManual(
+                                    new_manual = CategorySkill(
                                         id=new_id,
                                         category_code=pending_manual.category_code,
                                         title=pending_manual.title,
@@ -444,12 +444,12 @@ class InteractiveReviewer:
                             anchor_exp = session.query(Experience).filter(Experience.id == anchor_id).first()
 
                             if not pending_exp:
-                                pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                 if pending_manual:
                                     pending_exp = pending_manual
 
                             if not anchor_exp:
-                                anchor_manual = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
+                                anchor_manual = session.query(CategorySkill).filter(CategorySkill.id == anchor_id).first()
                                 if anchor_manual:
                                     anchor_exp = anchor_manual
 

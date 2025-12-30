@@ -33,7 +33,7 @@ sys.path.insert(0, str(project_root.parent))
 
 from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Experience, CategoryManual, Embedding, FAISSMetadata
+from src.common.storage.schema import Experience, CategorySkill, Embedding, FAISSMetadata
 from src.common.storage.repository import EmbeddingRepository
 from scripts._config_loader import load_scripts_config
 
@@ -194,8 +194,8 @@ def find_duplicates(
         
         pending_manuals = []
         if include_manuals:
-            pending_manuals = session.query(CategoryManual).filter(
-                CategoryManual.sync_status == 0  # PENDING
+            pending_manuals = session.query(CategorySkill).filter(
+                CategorySkill.sync_status == 0  # PENDING
             ).all()
         
         all_pending = pending_experiences + pending_manuals
@@ -289,7 +289,7 @@ def find_duplicates(
                     if anchor_type == "experience":
                         anchor_entity = session.query(Experience).filter(Experience.id == anchor_id).first()
                     else:
-                        anchor_entity = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
+                        anchor_entity = session.query(CategorySkill).filter(CategorySkill.id == anchor_id).first()
                     
                     if not anchor_entity or anchor_entity.sync_status == 0:  # PENDING
                         continue
@@ -509,7 +509,7 @@ def interactive_review(db_path: Path, results: List[Dict], state_file: Path, dry
                                 print(f"  ✓ Database updated: {pending_id} marked as rejected")
                             else:
                                 # Check if it's a manual instead
-                                pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                                pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                                 if pending_manual:
                                     pending_manual.sync_status = 2  # REJECTED
                                     session.commit()
@@ -561,7 +561,7 @@ def interactive_review(db_path: Path, results: List[Dict], state_file: Path, dry
                             session.commit()
                             print(f"  ✓ Database updated: {pending_id} marked as rejected")
                         else:
-                            pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                            pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                             if pending_manual:
                                 pending_manual.sync_status = 2  # REJECTED
                                 session.commit()
@@ -614,7 +614,7 @@ def interactive_review(db_path: Path, results: List[Dict], state_file: Path, dry
                             session.commit()
                             print(f"  ✓ Database updated: {pending_id}")
                         else:
-                            pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                            pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                             if pending_manual:
                                 if new_title:
                                     pending_manual.title = new_title
@@ -672,9 +672,9 @@ def interactive_review(db_path: Path, results: List[Dict], state_file: Path, dry
                             session.commit()
                             print(f"  ✓ Database updated: {new_id} created as split from {pending_id}")
                         else:
-                            pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                            pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                             if pending_manual:
-                                new_manual = CategoryManual(
+                                new_manual = CategorySkill(
                                     id=new_id,
                                     category_code=pending_manual.category_code,
                                     title=pending_manual.title,
@@ -713,12 +713,12 @@ def interactive_review(db_path: Path, results: List[Dict], state_file: Path, dry
                         anchor_exp = session.query(Experience).filter(Experience.id == anchor_id).first()
 
                         if not pending_exp:
-                            pending_manual = session.query(CategoryManual).filter(CategoryManual.id == pending_id).first()
+                            pending_manual = session.query(CategorySkill).filter(CategorySkill.id == pending_id).first()
                             if pending_manual:
                                 pending_exp = pending_manual
 
                         if not anchor_exp:
-                            anchor_manual = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
+                            anchor_manual = session.query(CategorySkill).filter(CategorySkill.id == anchor_id).first()
                             if anchor_manual:
                                 anchor_exp = anchor_manual
 

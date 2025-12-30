@@ -48,14 +48,14 @@ class ImportService:
 
         This is a destructive operation that:
         1. Clears FAISS index files
-        2. Deletes all existing data (embeddings, experiences, manuals, categories)
+        2. Deletes all existing data (embeddings, experiences, skills, categories)
         3. Inserts new data from sheets
 
         Args:
             session: Database session
             categories_rows: List of category dicts from sheets
             experiences_rows: List of experience dicts from sheets
-            skills_rows: List of manual dicts from sheets
+            skills_rows: List of skill dicts from sheets
 
         Returns:
             Dict with counts of imported items
@@ -70,7 +70,7 @@ class ImportService:
             logger.info("FAISS index directory cleared and recreated")
 
         # Clear existing data
-        logger.info("Clearing existing categories, experiences, manuals, and embeddings")
+        logger.info("Clearing existing categories, experiences, skills, and embeddings")
         session.query(Embedding).delete()
         session.query(FAISSMetadata).delete()
         session.query(Experience).delete()
@@ -121,15 +121,15 @@ class ImportService:
             session.add(exp)
             experiences_count += 1
 
-        # Import manuals
-        manuals_count = 0
+        # Import skills
+        skills_count = 0
         for row in skills_rows:
             try:
-                manual = CategorySkill(
-                    id=self._require_value(row, "id", "Manual"),
-                    category_code=self._require_value(row, "category_code", "Manual").upper(),
-                    title=self._require_value(row, "title", "Manual"),
-                    content=self._require_value(row, "content", "Manual"),
+                skill = CategorySkill(
+                    id=self._require_value(row, "id", "Skill"),
+                    category_code=self._require_value(row, "category_code", "Skill").upper(),
+                    title=self._require_value(row, "title", "Skill"),
+                    content=self._require_value(row, "content", "Skill"),
                     summary=self._str_or_none(row.get("summary")),
                     source=self._str_or_none(row.get("source")) or "local",
                     sync_status=self._int_or_default(row.get("sync_status"), default=1),
@@ -142,24 +142,24 @@ class ImportService:
                 )
             except ValueError as exc:
                 raise ValueError(
-                    f"Invalid manual row (id={row.get('id', '<missing>')}) - {exc}"
+                    f"Invalid skill row (id={row.get('id', '<missing>')}) - {exc}"
                 ) from exc
-            session.add(manual)
-            manuals_count += 1
+            session.add(skill)
+            skills_count += 1
 
         session.commit()
 
         logger.info(
-            "Import completed: %d categories, %d experiences, %d manuals",
+            "Import completed: %d categories, %d experiences, %d skills",
             categories_count,
             experiences_count,
-            manuals_count,
+            skills_count,
         )
 
         return {
             "categories": categories_count,
             "experiences": experiences_count,
-            "manuals": manuals_count,
+            "skills": skills_count,
         }
 
     @staticmethod

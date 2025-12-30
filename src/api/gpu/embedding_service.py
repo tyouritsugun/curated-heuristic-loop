@@ -8,11 +8,11 @@ import numpy as np
 from sqlalchemy.exc import OperationalError as SAOperationalError
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 from src.common.storage.repository import (
     EmbeddingRepository,
     ExperienceRepository,
-    CategoryManualRepository,
+    CategorySkillRepository,
 )
 from .embedding_client import EmbeddingClient, EmbeddingClientError
 
@@ -38,7 +38,7 @@ class EmbeddingService:
 
         self.emb_repo = EmbeddingRepository(session)
         self.exp_repo = ExperienceRepository(session)
-        self.manual_repo = CategoryManualRepository(session)
+        self.manual_repo = CategorySkillRepository(session)
 
     def _is_sqlite_lock_error(self, exc: Exception) -> bool:
         msg = str(getattr(exc, "orig", exc)).lower()
@@ -248,12 +248,12 @@ class EmbeddingService:
             .all()
         )
 
-    def get_pending_manuals(self) -> List[CategoryManual]:
+    def get_pending_manuals(self) -> List[CategorySkill]:
         return (
-            self.session.query(CategoryManual)
+            self.session.query(CategorySkill)
             .filter(
-                (CategoryManual.embedding_status == "pending")
-                | (CategoryManual.embedding_status.is_(None))
+                (CategorySkill.embedding_status == "pending")
+                | (CategorySkill.embedding_status.is_(None))
             )
             .all()
         )
@@ -265,10 +265,10 @@ class EmbeddingService:
             .all()
         )
 
-    def get_failed_manuals(self) -> List[CategoryManual]:
+    def get_failed_manuals(self) -> List[CategorySkill]:
         return (
-            self.session.query(CategoryManual)
-            .filter(CategoryManual.embedding_status == "failed")
+            self.session.query(CategorySkill)
+            .filter(CategorySkill.embedding_status == "failed")
             .all()
         )
 

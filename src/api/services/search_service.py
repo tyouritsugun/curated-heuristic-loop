@@ -463,7 +463,7 @@ class SearchService:
                 if not entity:
                     continue
 
-                # Manuals only have author filter (no section)
+                # Skills only have author filter (no section)
                 if author_filter and entity.author != author_filter:
                     continue
 

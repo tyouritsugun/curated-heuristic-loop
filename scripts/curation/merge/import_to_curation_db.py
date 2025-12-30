@@ -28,7 +28,7 @@ sys.path.insert(0, str(repo_root))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Category, Experience, CategoryManual
+from src.common.storage.schema import Category, Experience, CategorySkill
 from scripts._config_loader import load_scripts_config
 
 
@@ -163,7 +163,7 @@ def main():
         # Import manuals
         print("Importing manuals...")
         for row in manuals_data:
-            manual = CategoryManual(
+            manual = CategorySkill(
                 id=row["id"],
                 category_code=row["category_code"],
                 title=row["title"],

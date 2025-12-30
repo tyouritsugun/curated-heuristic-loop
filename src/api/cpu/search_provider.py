@@ -9,7 +9,7 @@ import re
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 from src.common.interfaces.search import SearchProvider, SearchProviderError
 from src.common.interfaces.search_models import SearchResult, DuplicateCandidate, SearchReason
 
@@ -123,25 +123,25 @@ class SQLiteTextProvider(SearchProvider):
 
         filters = [
             or_(
-                CategoryManual.title.like(pattern),
-                CategoryManual.content.like(pattern),
-                CategoryManual.summary.like(pattern),
+                CategorySkill.title.like(pattern),
+                CategorySkill.content.like(pattern),
+                CategorySkill.summary.like(pattern),
             )
         ]
         for token in tokens:
             token_pattern = f"%{token}%"
             filters.append(
                 or_(
-                    CategoryManual.title.ilike(token_pattern),
-                    CategoryManual.content.ilike(token_pattern),
-                    CategoryManual.summary.ilike(token_pattern),
+                    CategorySkill.title.ilike(token_pattern),
+                    CategorySkill.content.ilike(token_pattern),
+                    CategorySkill.summary.ilike(token_pattern),
                 )
             )
 
-        q = session.query(CategoryManual, CategoryManual.updated_at).filter(or_(*filters))
+        q = session.query(CategorySkill, CategorySkill.updated_at).filter(or_(*filters))
 
         if category_code:
-            q = q.filter(CategoryManual.category_code == category_code)
+            q = q.filter(CategorySkill.category_code == category_code)
 
         return q.limit(limit).all()
 
@@ -239,11 +239,11 @@ class SQLiteTextProvider(SearchProvider):
     ) -> List[DuplicateCandidate]:
         candidates: List[DuplicateCandidate] = []
 
-        q = session.query(CategoryManual).filter(CategoryManual.title.ilike(title))
+        q = session.query(CategorySkill).filter(CategorySkill.title.ilike(title))
         if category_code:
-            q = q.filter(CategoryManual.category_code == category_code)
+            q = q.filter(CategorySkill.category_code == category_code)
         if exclude_id:
-            q = q.filter(CategoryManual.id != exclude_id)
+            q = q.filter(CategorySkill.id != exclude_id)
 
         for manual in q.all():
             candidates.append(
@@ -260,11 +260,11 @@ class SQLiteTextProvider(SearchProvider):
 
         if not candidates:
             pattern = f"%{title}%"
-            q = session.query(CategoryManual).filter(CategoryManual.title.like(pattern))
+            q = session.query(CategorySkill).filter(CategorySkill.title.like(pattern))
             if category_code:
-                q = q.filter(CategoryManual.category_code == category_code)
+                q = q.filter(CategorySkill.category_code == category_code)
             if exclude_id:
-                q = q.filter(CategoryManual.id != exclude_id)
+                q = q.filter(CategorySkill.id != exclude_id)
 
             for manual in q.limit(5).all():
                 candidates.append(

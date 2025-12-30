@@ -49,9 +49,9 @@ from src.common.storage.database import Database
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
-    CategoryManualRepository,
+    CategorySkillRepository,
 )
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 
 # Configure logging
 logging.basicConfig(
@@ -271,9 +271,9 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities
         def _do_counts():
             with db.session_scope() as session:
-                from src.common.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategorySkill, Category
                 exp_count_ = session.query(Experience).count()
-                manual_count_ = session.query(CategoryManual).count()
+                manual_count_ = session.query(CategorySkill).count()
                 cat_count_ = session.query(Category).count()
                 return exp_count_, manual_count_, cat_count_
 
@@ -320,7 +320,7 @@ def seed_default_content(config) -> bool:
                 print(f"  (Categories already present: {len(categories)})")
 
             exp_repo = ExperienceRepository(session)
-            manual_repo = CategoryManualRepository(session)
+            manual_repo = CategorySkillRepository(session)
 
             exp_seeded = 0
             if session.query(Experience).count() == 0:
@@ -335,7 +335,7 @@ def seed_default_content(config) -> bool:
                 print(f"  (Experiences already present: {exp_total})")
 
             manual_seeded = 0
-            if session.query(CategoryManual).count() == 0:
+            if session.query(CategorySkill).count() == 0:
                 for data in DEFAULT_MANUALS:
                     if data["category_code"] in category_codes:
                         manual_repo.create(data)
@@ -343,7 +343,7 @@ def seed_default_content(config) -> bool:
                 if manual_seeded:
                     print(f"✓ Added {manual_seeded} sample manual")
             else:
-                manual_total = session.query(CategoryManual).count()
+                manual_total = session.query(CategorySkill).count()
                 print(f"  (Manuals already present: {manual_total})")
 
         return True

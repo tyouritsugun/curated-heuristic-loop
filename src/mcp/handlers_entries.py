@@ -86,8 +86,8 @@ def read_entries(
                         filtered["playbook_preview"] = entry["playbook_preview"]
                         filtered["playbook_truncated"] = entry.get("playbook_truncated", False)
                     filtered_entries.append(filtered)
-                else:  # manual
-                    # Manuals: id, title, content (or content_preview if not full)
+                else:  # skill (entity_type='manual' for backward compatibility)
+                    # Skills: id, title, content (or content_preview if not full)
                     filtered = {"id": entry.get("id"), "title": entry.get("title")}
                     if "content" in entry:
                         filtered["content"] = entry["content"]
@@ -114,7 +114,7 @@ def create_entry(
     Create a new experience or skill entry via the API.
 
     Args:
-        entity_type: Either 'experience' or 'manual' (skills; 'manual' is legacy parameter name)
+        entity_type: Either 'experience' or 'manual' (use 'manual' for skills; legacy parameter name)
         category_code: Category shelf code (e.g., 'PGS', 'GLN')
         data: Entry payload
     """
@@ -143,7 +143,7 @@ def update_entry(
 
     Allowed fields:
         - experience: title, playbook, context, section (use force_contextual=true to set section='contextual')
-        - skill (entity_type='manual'): title, content, summary
+        - skill (use entity_type='manual'): title, content, summary
     """
     try:
         payload = {
@@ -172,7 +172,7 @@ def check_duplicates(
     Check for potential duplicate entries before writing.
 
     Args:
-        entity_type: 'experience' or 'manual' (skills; 'manual' is legacy parameter name)
+        entity_type: 'experience' or 'manual' (use 'manual' for skills; legacy parameter name)
         category_code: Category shelf code (e.g., 'PGS')
         title: Proposed entry title
         content: Proposed playbook/content body

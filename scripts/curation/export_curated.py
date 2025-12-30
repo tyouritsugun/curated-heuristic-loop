@@ -43,7 +43,7 @@ sys.path.insert(0, str(project_root.parent))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Category, Experience, CategoryManual
+from src.common.storage.schema import Category, Experience, CategorySkill
 from scripts._config_loader import load_scripts_config
 
 
@@ -141,8 +141,8 @@ def main():
         print(f"Experiences: {len(experiences)} (from filter: {sync_filter})")
 
         # Query manuals with sync_status filter
-        manuals = session.query(CategoryManual).filter(
-            CategoryManual.sync_status.in_(sync_filter)
+        manuals = session.query(CategorySkill).filter(
+            CategorySkill.sync_status.in_(sync_filter)
         ).all()
         print(f"Manuals: {len(manuals)} (from filter: {sync_filter})")
         print()

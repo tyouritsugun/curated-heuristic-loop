@@ -73,9 +73,9 @@ try:
     from src.common.storage.repository import (
         CategoryRepository,
         ExperienceRepository,
-        CategoryManualRepository,
+        CategorySkillRepository,
     )
-    from src.common.storage.schema import Experience, CategoryManual
+    from src.common.storage.schema import Experience, CategorySkill
     from src.api.services import gpu_installer
 except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirements install
     sys.stderr.write(
@@ -436,9 +436,9 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities (retry once if a missing column is detected)
         def _do_counts():
             with db.session_scope() as session:
-                from src.common.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategorySkill, Category
                 exp_count_ = session.query(Experience).count()
-                manual_count_ = session.query(CategoryManual).count()
+                manual_count_ = session.query(CategorySkill).count()
                 cat_count_ = session.query(Category).count()
                 return exp_count_, manual_count_, cat_count_
 
@@ -488,7 +488,7 @@ def _seed_default_content(config) -> bool:
                 print(f"  (Categories already present: {len(categories)})")
 
             exp_repo = ExperienceRepository(session)
-            manual_repo = CategoryManualRepository(session)
+            manual_repo = CategorySkillRepository(session)
 
             exp_seeded = 0
             if session.query(Experience).count() == 0:
@@ -503,7 +503,7 @@ def _seed_default_content(config) -> bool:
                 print(f"  (Experiences already present: {exp_total})")
 
             manual_seeded = 0
-            if session.query(CategoryManual).count() == 0:
+            if session.query(CategorySkill).count() == 0:
                 for data in DEFAULT_MANUALS:
                     if data["category_code"] in category_codes:
                         manual_repo.create(data)
@@ -511,7 +511,7 @@ def _seed_default_content(config) -> bool:
                 if manual_seeded:
                     print(f"✓ Added {manual_seeded} sample manual")
             else:
-                manual_total = session.query(CategoryManual).count()
+                manual_total = session.query(CategorySkill).count()
                 print(f"  (Manuals already present: {manual_total})")
 
         if exp_seeded or manual_seeded:
@@ -538,7 +538,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
         from src.api.gpu.embedding_client import EmbeddingClient, EmbeddingClientError
         from src.api.gpu.embedding_service import EmbeddingService
         from src.api.gpu.faiss_manager import initialize_faiss_with_recovery
-        from src.common.storage.schema import Experience, CategoryManual
+        from src.common.storage.schema import Experience, CategorySkill
 
         db = Database(config.database_path, echo=False)
         db.init_database()
@@ -546,7 +546,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
         # Quick check: if there is no content yet, nothing to embed
         with db.session_scope() as session:
             exp_count = session.query(Experience).count()
-            man_count = session.query(CategoryManual).count()
+            man_count = session.query(CategorySkill).count()
             if exp_count == 0 and man_count == 0:
                 logger.info("No experiences/manuals found; skipping initial embedding/index build.")
                 return True
@@ -586,7 +586,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
             session.query(Experience).filter(Experience.embedding_status.is_(None)).update(
                 {"embedding_status": "pending"}, synchronize_session=False
             )
-            session.query(CategoryManual).filter(CategoryManual.embedding_status.is_(None)).update(
+            session.query(CategorySkill).filter(CategorySkill.embedding_status.is_(None)).update(
                 {"embedding_status": "pending"}, synchronize_session=False
             )
             session.flush()

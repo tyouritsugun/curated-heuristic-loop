@@ -106,7 +106,7 @@ def main():
     # Import dependencies (after server check)
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from src.common.storage.schema import Experience, CategoryManual
+    from src.common.storage.schema import Experience, CategorySkill
     from src.common.storage.repository import EmbeddingRepository
     from src.common.config.config import get_config
 
@@ -153,8 +153,8 @@ def main():
             Experience.embedding_status == "pending"
         ).all()
 
-        pending_manuals = session.query(CategoryManual).filter(
-            CategoryManual.embedding_status == "pending"
+        pending_manuals = session.query(CategorySkill).filter(
+            CategorySkill.embedding_status == "pending"
         ).all()
 
         total_pending = len(pending_experiences) + len(pending_manuals)

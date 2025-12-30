@@ -312,8 +312,8 @@ class EmbeddingRepository:
             .all()
         )
         man_rows = (
-            self.session.query(CategoryManual.embedding_status, func.count(CategoryManual.id))
-            .group_by(CategoryManual.embedding_status)
+            self.session.query(CategorySkill.embedding_status, func.count(CategorySkill.id))
+            .group_by(CategorySkill.embedding_status)
             .all()
         )
 

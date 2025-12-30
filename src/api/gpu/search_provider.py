@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 from src.api.gpu.embedding_client import EmbeddingClient, EmbeddingClientError
 from src.common.interfaces.search import SearchProvider, SearchProviderError
 from src.common.interfaces.search_models import SearchResult, DuplicateCandidate, SearchReason
@@ -398,8 +398,8 @@ class VectorFAISSProvider(SearchProvider):
                     .first()
                 )
             return (
-                session.query(CategoryManual)
-                .filter(CategoryManual.id == entity_id)
+                session.query(CategorySkill)
+                .filter(CategorySkill.id == entity_id)
                 .first()
             )
         except Exception as exc:

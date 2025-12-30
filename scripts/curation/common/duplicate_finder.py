@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Experience, CategoryManual, Embedding, FAISSMetadata
+from src.common.storage.schema import Experience, CategorySkill, Embedding, FAISSMetadata
 from src.common.storage.repository import EmbeddingRepository
 
 
@@ -61,8 +61,8 @@ class DuplicateFinder:
 
             pending_manuals = []
             if include_manuals:
-                pending_manuals = session.query(CategoryManual).filter(
-                    CategoryManual.sync_status == 0  # PENDING
+                pending_manuals = session.query(CategorySkill).filter(
+                    CategorySkill.sync_status == 0  # PENDING
                 ).all()
 
             all_pending = pending_experiences + pending_manuals
@@ -159,7 +159,7 @@ class DuplicateFinder:
 
                     if isinstance(pending_item, Experience) and anchor_type != "experience":
                         continue
-                    if isinstance(pending_item, CategoryManual) and anchor_type != "manual":
+                    if isinstance(pending_item, CategorySkill) and anchor_type != "manual":
                         continue
 
                     anchor_entity = None
@@ -168,7 +168,7 @@ class DuplicateFinder:
                     elif anchor_type == "manual":
                         if not include_manuals:
                             continue
-                        anchor_entity = session.query(CategoryManual).filter(CategoryManual.id == anchor_id).first()
+                        anchor_entity = session.query(CategorySkill).filter(CategorySkill.id == anchor_id).first()
 
                     if not anchor_entity:
                         continue

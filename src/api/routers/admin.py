@@ -243,7 +243,7 @@ def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
     Returns:
     - retried: Counts of entries reset to pending
     """
-    from src.common.storage.schema import Experience, CategoryManual
+    from src.common.storage.schema import Experience, CategorySkill
 
     # Reset experiences
     exp_count = session.query(Experience).filter(
@@ -251,8 +251,8 @@ def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
     ).update({"embedding_status": "pending"})
 
     # Reset manuals
-    man_count = session.query(CategoryManual).filter(
-        CategoryManual.embedding_status == 'failed'
+    man_count = session.query(CategorySkill).filter(
+        CategorySkill.embedding_status == 'failed'
     ).update({"embedding_status": "pending"})
 
     session.commit()
