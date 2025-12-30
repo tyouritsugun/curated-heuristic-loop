@@ -111,7 +111,7 @@ This test shows how CHL enforces project-specific conventions.
    You: "I found a bug in DataPipe, here's the error: [paste same error]"
    ```
 
-   **Expected behavior:** LLM calls `read_entries(entity_type='manual' (skills; legacy parameter name), category_code='TMG', query='bug report')` and asks:
+   **Expected behavior:** LLM calls `read_entries(entity_type='manual', category_code='TMG', query='bug report')` (note: 'manual' is legacy parameter name for skills) and asks:
    ```
    "I see the error. Would you like me to:
     1. Fix it immediately
@@ -159,7 +159,7 @@ This demo shows how CHL bridges the gap between generic LLM training and your te
 
 After running the demo:
 
-1. **Add your own categories**: Create categories for your team's workflows (architecture decisions, code review checklists, deployment procedures, etc.). See [Managing Categories](manual.md#62-managing-categories) for step-by-step instructions.
+1. **Add your own categories**: Create categories for your team's workflows (architecture decisions, code review checklists, deployment procedures, etc.). See [Managing Categories](manual.md#62-managing-categories) in the Operator Guide for step-by-step instructions.
 
 2. **Work with the LLM normally**: With categories in place, keep using CHL in everyday tasks; the assistant will pull existing guidance as you go.
 

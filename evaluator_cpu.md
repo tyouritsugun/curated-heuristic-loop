@@ -41,7 +41,7 @@ Structure your response so the user (and future readers) can scan it quickly:
 Decide how to capture each insight:
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
 - **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and keep `context` empty for useful/harmful entries.
-- **Skill adjustments (`create_entry` / `update_entry` with `entity_type="manual" (skills; "manual" is legacy parameter name)`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the skill becomes too long, consider splitting it and note the recommendation for curators.
+- **Skill adjustments (`create_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. Note: "manual" is the legacy parameter name for skills. If the skill becomes too long, consider splitting it and note the recommendation for curators.
 
 Before writing:
 1. Manually check for duplicates: use multiple keyword `read_entries` calls in the target category (previews are fine) and scan titles/contents yourself; `check_duplicates` is not reliable/available in CPU mode.

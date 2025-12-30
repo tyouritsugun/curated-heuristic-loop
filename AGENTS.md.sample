@@ -20,7 +20,7 @@ Copy/paste the parts below into your code assistant’s common instructions (Cla
 ## After Tasks (reflection & curation)
 - Prompt the user to summarize outcomes and decide whether to:
   - Add an atomic experience (`create_entry(entity_type="experience", ...)`)
-  - Add a manual (`create_entry(entity_type="manual" (skills; legacy name), ...)`)
+  - Add a skill (`create_entry(entity_type="manual", ...)`)  # "manual" is legacy parameter name
 - If writing, include `category_code`, concise title, and clean playbook/content; use `check_duplicates(...)` first.
 - Remind the user they can rebuild embeddings/FAISS via `/operations` or scripts if vectors are pending (GPU mode only).
 
