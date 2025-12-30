@@ -72,7 +72,7 @@ def read_entries(
 ):
     """Read entries by query or IDs.
 
-    Phase 2: Automatically tracks viewed entry IDs in session store when
+    Automatically tracks viewed entry IDs in session store when
     X-CHL-Session header is provided.
     """
     try:
@@ -308,7 +308,7 @@ def read_entries(
 
                     entries.append(entry)
 
-        # Phase 2: Track viewed entries in session store
+            # Track viewed entries in session store
         session_id = x_chl_session or request.session_id
         if session_id and entries:
             store = get_session_store()
@@ -338,7 +338,7 @@ def create_entry(
 ):
     """Create a new entry.
 
-    Phase 3: Automatically runs duplicate check with 750ms timeout.
+    Automatically runs duplicate check with 750ms timeout.
     Decision tree:
     - Timeout → proceed with warning
     - Max score ≥ 0.85 → write, return duplicates + recommendation="review_first"
@@ -362,7 +362,7 @@ def create_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check with hard 750ms timeout
+            # Auto-run duplicate check with hard 750ms timeout
             import time
             import threading
             duplicate_candidates = []
@@ -433,7 +433,7 @@ def create_entry(
                     "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
                 )
 
-            # Phase 3: Apply decision tree based on duplicate check results
+            # Apply decision tree based on duplicate check results
             recommendation = None
             duplicates_response = None
 
@@ -507,7 +507,7 @@ def create_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check for manuals with hard 750ms timeout
+            # Auto-run duplicate check for manuals with hard 750ms timeout
             import threading
             duplicate_candidates = []
             duplicate_check_timeout = False
@@ -565,7 +565,7 @@ def create_entry(
                 "author": new_manual.author,
             }
 
-            # Phase 3: Apply decision tree for manuals
+            # Apply decision tree for manuals
             warnings: list[str] = []
             recommendation = None
             duplicates_response = None

@@ -49,7 +49,7 @@ class CHLAPIClient:
         Args:
             base_url: Base URL of the CHL API server
             timeout: Default request timeout in seconds
-            session_id: Optional session ID for Phase 2 session memory.
+            session_id: Optional session ID for session memory.
                        If provided, automatically adds X-CHL-Session header to all requests.
         """
         self.base_url = base_url.rstrip("/")
@@ -57,7 +57,7 @@ class CHLAPIClient:
         self.session_id = session_id
         self.session = requests.Session()
 
-        # Phase 2: Auto-inject session header if session_id provided
+        # Auto-inject session header if session_id provided
         if session_id:
             self.session.headers["X-CHL-Session"] = session_id
 
@@ -445,7 +445,7 @@ class CHLAPIClient:
             timeout=timeout or self.timeout,
         )
 
-    # Phase 2: Session management helpers
+    # Session management helpers
 
     def get_session_info(self, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Get session information (viewed count, last accessed).

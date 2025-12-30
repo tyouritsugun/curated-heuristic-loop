@@ -51,7 +51,7 @@ tenacity>=8.2.0
 markdown>=3.6
 networkx>=3.2.1
 python-louvain>=0.16
-autogen>=0.4.1              # Phase 3 LLM agent
+autogen>=0.4.1              # LLM agent
 autogen-ext[openai]>=0.4.1  # OpenAI-compatible client helpers
 pytest>=7.4.0               # testing
 

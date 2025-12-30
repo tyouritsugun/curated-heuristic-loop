@@ -93,7 +93,7 @@ def parse_args():
     parser.add_argument(
         "--neighbors-file",
         default="data/curation/neighbors.jsonl",
-        help="Path to write neighbors cache for Phase 2 (default on)",
+        help="Path to write neighbors cache (default on)",
     )
     parser.add_argument(
         "--compare-pending",
@@ -370,7 +370,7 @@ def main():
         write_evaluation_log(decisions, evaluation_log_path, args.dry_run)
     print(f"✅ Auto-merged {len(decisions)} duplicates")
 
-    # Emit neighbors cache for Phase 2 by default
+    # Emit neighbors cache by default
     try:
         neighbors_path = Path(args.neighbors_file)
         neighbors_path.parent.mkdir(parents=True, exist_ok=True)

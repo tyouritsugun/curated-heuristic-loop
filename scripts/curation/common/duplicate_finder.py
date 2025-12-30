@@ -244,7 +244,7 @@ class DuplicateFinder:
         4. Return statistics about the curation cycles
         """
         print("Starting iterative curation session...")
-        print("Phase 1: Processing high-similarity items (≥0.92)...")
+        print("Processing high-similarity items (≥0.92)...")
 
         cycle_count = 0
         total_merges = 0

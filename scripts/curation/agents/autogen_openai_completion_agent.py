@@ -45,7 +45,7 @@ def build_llm_config():
 
 def run_smoke_test(prompt_path: str, config_path: str | None = None) -> int:
     llm_config, settings, cfg_path = build_llm_config()
-    agent = AssistantAgent(name="phase3_agent", llm_config=llm_config)
+    agent = AssistantAgent(name="curation_agent", llm_config=llm_config)
 
     with open(prompt_path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}

@@ -314,7 +314,7 @@ def main():
         print("✅ Build complete!")
         print()
         print("Next steps:")
-        print("  1. Run duplicate detection (Phase 1+)")
+        print("  1. Run duplicate detection")
         print("  2. Or export approved data for publishing")
 
         # Commit changes in success case

@@ -92,7 +92,7 @@ class UpdateEntryResponse(BaseModel):
     message: Optional[str] = None
 
 
-# Search models (Phase 1: Unified search)
+# Search models (unified search)
 class DuplicateCheckRequest(BaseModel):
     """Request model for duplicate detection."""
 

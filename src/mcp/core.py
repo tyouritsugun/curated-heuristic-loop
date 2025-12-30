@@ -221,7 +221,7 @@ def build_handshake_payload() -> Dict[str, Any]:
                 ),
                 "duplicate_check": {
                     "overview": (
-                        "Phase 3: create_entry automatically checks for duplicates with 750ms timeout. "
+                        "create_entry automatically checks for duplicates with 750ms timeout. "
                         "All writes proceed (no blocking), but response includes duplicates and recommendations."
                     ),
                     "decision_tree": {
@@ -244,7 +244,7 @@ def build_handshake_payload() -> Dict[str, Any]:
                 },
                 "session_memory": {
                     "overview": (
-                        "Phase 4: Session memory is auto-initialized per MCP process. "
+                        "Session memory is auto-initialized per MCP process. "
                         "The MCP server automatically generates and injects a session_id; viewed entries are tracked "
                         "across all API calls in this process. Use hide_viewed/downrank_viewed to filter results. "
                         "Override with CHL_SESSION_ID env var if needed."

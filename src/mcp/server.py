@@ -118,7 +118,7 @@ def init_server() -> None:
 
     logger.info("Initializing HTTP API client: %s", config.api_base_url)
 
-    # Phase 4: Session ID management - check env override first, then auto-generate
+    # Session ID management - check env override first, then auto-generate
     # This enables automatic session memory without user action
     session_id = os.getenv("CHL_SESSION_ID")
 

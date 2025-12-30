@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-command overnight Phase 3 run (uses defaults from scripts_config.yaml)."""
+"""One-command overnight run (uses defaults from scripts_config.yaml)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def main() -> int:
     user_args = sys.argv[1:]
     is_help = "-h" in user_args or "--help" in user_args
     if not is_help:
-        print("Starting overnight Phase 3 run with defaults...", flush=True)
+        print("Starting overnight run with defaults...", flush=True)
         print("- To adjust behavior, edit scripts/scripts_config.yaml", flush=True)
         print("- To adjust the prompt, edit scripts/curation/agents/prompts/curation_prompt.yaml", flush=True)
 
@@ -35,11 +35,11 @@ def main() -> int:
         args.extend(user_args)
         subprocess.run(args, check=True)
     except subprocess.CalledProcessError as exc:
-        print(f"\n❌ Phase 3 run failed: {exc}")
+        print(f"\n❌ Overnight run failed: {exc}")
         return exc.returncode
 
     if not is_help:
-        print("\n✅ Phase 3 overnight run complete.")
+        print("\n✅ Overnight run complete.")
         print("Check data/curation/morning_report.md in the morning.")
     return 0
 

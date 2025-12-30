@@ -17,13 +17,13 @@ curation:
   approved_output_dir: data/curation/approved
   # State file for resume functionality
   state_file: data/curation/.curation_state.json
-  # Curation loop state (round loop); keeps schema separate from Phase 1/interactive
+  # Curation loop state (round loop); keeps schema separate from interactive flow
   curation_state_file: data/curation/.curation_state_loop.json
   # Other potential curation paths
   faiss_index_dir: data/curation/faiss_index
   audit_log_path: data/curation/merge_audit.csv
   evaluation_log_path: data/curation/evaluation_log.csv
-  # Sparse graph (Phase 2)
+  # Sparse graph
   min_similarity_threshold: 0.72   # edge_keep threshold
   top_k_neighbors: 50
   per_category: true
@@ -43,9 +43,9 @@ curation:
   thresholds:
     edge_keep: 0.72         # keep edge in sparse graph
     community_detect: 0.72  # same as edge_keep unless tuned
-    auto_dedup: 0.98        # Phase 3 merge-without-review
-    high_bucket: 0.92       # Phase 1/interactive high bucket
-    medium_bucket: 0.75     # Phase 1/interactive medium bucket
+    auto_dedup: 0.98        # merge-without-review
+    high_bucket: 0.92       # interactive high bucket
+    medium_bucket: 0.75     # interactive medium bucket
     low_bucket: 0.55        # informational/preview
 
 export:
@@ -66,7 +66,7 @@ import:
 
   verbose: false
 
-# LLM settings for Phase 3 agent (used by scripts/curation/agents/autogen_openai_completion_agent.py)
+# LLM settings for overnight agent (used by scripts/curation/agents/autogen_openai_completion_agent.py)
 # Supports any OpenAI-compatible endpoint (OpenAI, Gemini, or local: Ollama/LM Studio)
 curation_llm:
   # model: gpt-5-mini-2025-08-07        # e.g., gpt-4o-mini, gemini-2.0-flash, claude-3-5-sonnet, qwen2.5:14b

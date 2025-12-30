@@ -1,6 +1,6 @@
 """Session store for tracking viewed entries across search/read operations.
 
-Phase 2: Implements session memory with LRU cache (500 sessions, 60m TTL).
+Implements session memory with LRU cache (500 sessions, 60m TTL).
 """
 
 import time

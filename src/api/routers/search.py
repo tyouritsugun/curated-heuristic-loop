@@ -35,7 +35,7 @@ def unified_search(
     Unified search API v1.1 with snippets, filtering, and session support.
 
     Returns rich results with snippets to reduce token usage for LLM contexts.
-    Supports cross-type search, filtering, and session-based ranking (Phase 2).
+    Supports cross-type search, filtering, and session-based ranking.
     """
     try:
         if search_service is None:
@@ -44,7 +44,7 @@ def unified_search(
         # Session ID resolution: header takes precedence over body
         session_id = x_chl_session or request.session_id
 
-        # Phase 2: Session filtering implementation
+        # Session filtering implementation
         # Get viewed IDs from session store if session_id provided
         viewed_ids = set()
         session_applied = False
@@ -54,7 +54,7 @@ def unified_search(
             viewed_ids = store.get_viewed_ids(session_id)
             session_applied = (request.hide_viewed or request.downrank_viewed) and len(viewed_ids) > 0
 
-        # Phase 2: Backfill logic for hide_viewed
+        # Backfill logic for hide_viewed
         # When hide_viewed is active, fetch extra results to account for filtering
         # Strategy: fetch 2x limit initially, then filter to target limit
         initial_limit = request.limit
@@ -76,7 +76,7 @@ def unified_search(
             filters=request.filters,
         )
 
-        # Phase 2: Apply session filtering to results
+        # Apply session filtering to results
         pre_filter_total = search_result["total"]
         if session_id and viewed_ids:
             results = search_result["results"]
@@ -125,7 +125,7 @@ def unified_search(
             search_result["results"] = results
 
         # Build response with rich metadata and snippets
-        # TODO Phase 3: Consider optimizing N+1 queries here
+        # TODO: Consider optimizing N+1 queries here
         # Current flow: unified_search returns IDs → fetch each entity for snippets
         # With limit=25 max, this is 25 queries (acceptable for local tool)
         # Optimization: batch fetch entities via `WHERE id IN (...)` if needed
@@ -204,7 +204,7 @@ def unified_search(
 
             formatted_results.append(UnifiedSearchResult(**result_dict))
 
-        # Phase 2: Track viewed IDs in session store after building results
+        # Track viewed IDs in session store after building results
         if session_id and formatted_results:
             store = get_session_store()
             viewed_ids_to_add = {r.entity_id for r in formatted_results}

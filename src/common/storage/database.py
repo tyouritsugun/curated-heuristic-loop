@@ -139,7 +139,7 @@ class Database:
         self._initialized = False
 
     def _run_bootstrap_migrations(self):
-        """Apply lightweight SQLite migrations for new Phase 0 columns."""
+        """Apply lightweight SQLite migrations for new bootstrap columns."""
         if self.engine is None or self.engine.url.get_backend_name() != "sqlite":
             return
 
@@ -193,7 +193,7 @@ class Database:
             if not _has_column(conn, "operation_locks", "expires_at"):
                 _add_column("operation_locks", "expires_at", "TEXT")
 
-            # Settings extras used by Phase 0 UI
+            # Settings extras used by the initial UI
             if not _has_column(conn, "settings", "checksum"):
                 _add_column("settings", "checksum", "TEXT")
             if not _has_column(conn, "settings", "notes"):

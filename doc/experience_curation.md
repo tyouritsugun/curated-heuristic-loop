@@ -127,8 +127,8 @@ data/curation/
   evaluation_log.csv       # interactive decisions log
   .curation_state.json     # resume state
   .curation_state_loop.json # curation loop resume state
-  neighbors.jsonl          # Phase 2 cache
-  similarity_graph.pkl     # Phase 2 graph
+  neighbors.jsonl          # neighbors cache
+  similarity_graph.pkl     # similarity graph
   communities.json         # communities
 ```
 

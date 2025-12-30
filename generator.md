@@ -39,7 +39,7 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 - Omit `category_code` to search all categories
 - If top score <0.50, reformulate the SEARCH phrase and retry
 
-**Two-phase query (only when you are searching):** keep it terse:
+**Two-step query (only when you are searching):** keep it terse:
 ```
 [SEARCH] {process + domain}      # e.g., "query performance troubleshooting"
 [TASK] I want to {goal}. Will this help?

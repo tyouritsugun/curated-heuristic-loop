@@ -19,7 +19,7 @@ def write_evaluation_log(decisions: List[Dict], output_path: Path, dry_run: bool
     # Ensure directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Fieldnames based on the Phase 1 document
+    # Fieldnames based on the legacy duplicate-detection doc
     fieldnames = [
         "timestamp", "user", "entry_id", "action",
         "target_id", "was_correct", "notes"

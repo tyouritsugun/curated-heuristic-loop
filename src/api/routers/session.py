@@ -1,4 +1,4 @@
-"""Session management endpoints for Phase 2."""
+"""Session management endpoints."""
 
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional, List, Dict, Any

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 2: Build sparse similarity graph (per-category) and detect communities.
+Build sparse similarity graph (per-category) and detect communities.
 
 Outputs:
   - data/curation/communities.json        (community list + metadata)
@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
         default_max_comm = 50
         default_use_rerank = False
 
-    parser = argparse.ArgumentParser(description="Build sparse similarity graph and detect communities (Phase 2)")
+    parser = argparse.ArgumentParser(description="Build sparse similarity graph and detect communities")
     parser.add_argument("--db-path", default=default_db, help="Path to curation SQLite DB")
     parser.add_argument("--output", default=default_output, help="Output JSON file for community data")
     parser.add_argument("--graph-file", default=default_graph, help="Output pickle file for NetworkX graph")

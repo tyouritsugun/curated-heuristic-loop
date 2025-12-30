@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Phase 3 Stage 2: round-loop orchestration with convergence and dry-run support.
+Stage 2: round-loop orchestration with convergence and dry-run support.
 
-This script consumes Phase 2 community outputs and iterates LLM decisions
+This script consumes community outputs and iterates LLM decisions
 until convergence or a max-round cap.
 """
 
@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
         default_max_comm = 50
         default_algorithm = "louvain"
 
-    parser = argparse.ArgumentParser(description="Phase 3 round loop (Stage 2)")
+    parser = argparse.ArgumentParser(description="Round loop (Stage 2)")
     parser.add_argument("--db-path", default=default_db, help="Path to curation SQLite DB")
     parser.add_argument(
         "--db-copy",
@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--communities", default=default_communities, help="Path to communities JSON")
     parser.add_argument("--neighbors-file", default="data/curation/neighbors.jsonl", help="Neighbor cache JSONL file")
-    parser.add_argument("--state-file", default=default_state, help="Phase 3 state file")
+    parser.add_argument("--state-file", default=default_state, help="Round-loop state file")
     parser.add_argument("--evaluation-log", default=default_eval, help="Evaluation log CSV output")
     parser.add_argument("--prompt", default=None, help="Optional prompt template YAML")
     parser.add_argument("--max-rounds", type=int, default=3)
@@ -591,7 +591,7 @@ def make_state(
     max_rounds: int,
 ) -> Dict[str, Any]:
     return {
-        "run_id": f"phase3-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        "run_id": f"overnight-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
         "db_path": str(db_path),
         "input_checksum": input_checksum,
         "user": user,
@@ -740,7 +740,7 @@ def main() -> int:
         from autogen import AssistantAgent
     except Exception as exc:  # pragma: no cover
         raise SystemExit(f"autogen is required to call LLM: {exc}")
-    agent = AssistantAgent(name="phase3_agent", llm_config=llm_config)
+    agent = AssistantAgent(name="curation_agent", llm_config=llm_config)
 
     warnings: List[str] = []
     rounds_report: List[Dict[str, Any]] = []
@@ -1019,7 +1019,7 @@ def main() -> int:
         dry_run=args.dry_run,
     )
 
-    print(f"✓ Completed Phase 3 rounds: {rounds_run}")
+    print(f"✓ Completed rounds: {rounds_run}")
     return 0
 
 

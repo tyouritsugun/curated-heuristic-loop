@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 3 Stage 1: single-community prompt + validation harness.
+Stage 1: single-community prompt + validation harness.
 
 Purpose
 -------
@@ -94,7 +94,7 @@ def main() -> int:
             from autogen import AssistantAgent
         except Exception as exc:  # pragma: no cover - dependency issue
             raise SystemExit(f"autogen is required to call LLM: {exc}")
-        agent = AssistantAgent(name="phase3_agent", llm_config=llm_config)
+        agent = AssistantAgent(name="curation_agent", llm_config=llm_config)
 
         max_retries = 0
         retry_delays = []

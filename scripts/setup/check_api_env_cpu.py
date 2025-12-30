@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Environment diagnostics for CHL API server - CPU-only backend (Phase B).
+"""Environment diagnostics for CHL API server - CPU-only backend.
 
 This script validates CPU-only environment readiness before installing the API
 server environment. It must be run with the API server stopped.
