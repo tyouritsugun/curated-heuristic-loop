@@ -427,7 +427,7 @@ class SearchService:
         Returns:
             Filtered list of results
         """
-        from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
+        from src.common.storage.repository import ExperienceRepository, CategorySkillRepository
 
         if not filters:
             return results
@@ -441,7 +441,7 @@ class SearchService:
 
         filtered = []
         exp_repo = ExperienceRepository(session)
-        manual_repo = CategoryManualRepository(session)
+        manual_repo = CategorySkillRepository(session)
 
         for result in results:
             # Fetch entity to check filters
@@ -458,7 +458,7 @@ class SearchService:
 
                 filtered.append(result)
 
-            elif result.entity_type == "manual":
+            elif result.entity_type == "skill":
                 entity = manual_repo.get_by_id(result.entity_id)
                 if not entity:
                     continue

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
 
 from src.api.dependencies import get_db_session, get_config
-from src.common.storage.repository import CategoryManualRepository, CategoryRepository
+from src.common.storage.repository import CategorySkillRepository, CategoryRepository
 from src.common.config.config import Config
 
 router = APIRouter(prefix="/api/v1/guidelines", tags=["guidelines"])
@@ -52,7 +52,7 @@ def get_guidelines(
         )
 
     cat_repo = CategoryRepository(session)
-    manual_repo = CategoryManualRepository(session)
+    manual_repo = CategorySkillRepository(session)
 
     category = cat_repo.get_by_code(GUIDELINES_CATEGORY)
     if not category:

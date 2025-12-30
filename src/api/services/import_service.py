@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.common.storage.schema import (
     Category,
-    CategoryManual,
+    CategorySkill,
     Embedding,
     Experience,
     FAISSMetadata,
@@ -42,7 +42,7 @@ class ImportService:
         session: Session,
         categories_rows: List[Dict[str, Any]],
         experiences_rows: List[Dict[str, Any]],
-        manuals_rows: List[Dict[str, Any]],
+        skills_rows: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Import data from Google Sheets format into the database.
 
@@ -55,7 +55,7 @@ class ImportService:
             session: Database session
             categories_rows: List of category dicts from sheets
             experiences_rows: List of experience dicts from sheets
-            manuals_rows: List of manual dicts from sheets
+            skills_rows: List of manual dicts from sheets
 
         Returns:
             Dict with counts of imported items
@@ -74,7 +74,7 @@ class ImportService:
         session.query(Embedding).delete()
         session.query(FAISSMetadata).delete()
         session.query(Experience).delete()
-        session.query(CategoryManual).delete()
+        session.query(CategorySkill).delete()
         session.query(Category).delete()
         session.flush()
 
@@ -123,9 +123,9 @@ class ImportService:
 
         # Import manuals
         manuals_count = 0
-        for row in manuals_rows:
+        for row in skills_rows:
             try:
-                manual = CategoryManual(
+                manual = CategorySkill(
                     id=self._require_value(row, "id", "Manual"),
                     category_code=self._require_value(row, "category_code", "Manual").upper(),
                     title=self._require_value(row, "title", "Manual"),

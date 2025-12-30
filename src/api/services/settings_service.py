@@ -284,7 +284,7 @@ class SettingsService:
 
         categories_cfg = _extract("categories", "category", "Categories")
         experiences_cfg = _extract("experiences", "experience", "Experiences")
-        manuals_cfg = _extract("manuals", "manual", "Manuals")
+        manuals_cfg = _extract("skills", "manual", "Manuals")
 
         payload = {
             "config_path": str(resolved),
@@ -606,7 +606,7 @@ class SettingsService:
             if not settings.experiences_sheet_id:
                 missing.append("experiences")
             if not settings.manuals_sheet_id:
-                missing.append("manuals")
+                missing.append("skills")
             if missing:
                 return DiagnosticStatus(
                     name="sheets",

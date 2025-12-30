@@ -19,7 +19,7 @@ from src.api.services.session_store import get_session_store
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
-    CategoryManualRepository,
+    CategorySkillRepository,
 )
 from src.common.dto.models import ExperienceWritePayload, format_validation_error, normalize_context
 from pydantic import ValidationError as PydanticValidationError
@@ -208,7 +208,7 @@ def read_entries(
                     entries.append(entry)
 
         else:  # manual
-            man_repo = CategoryManualRepository(session)
+            skill_repo = CategorySkillRepository(session)
 
             if request.query:
                 # Semantic search for manuals
@@ -225,7 +225,7 @@ def read_entries(
 
                 entries = []
                 for r in results:
-                    man = man_repo.get_by_id(r.entity_id)
+                    man = skill_repo.get_by_id(r.entity_id)
                     if not man:
                         continue
 
@@ -266,7 +266,7 @@ def read_entries(
                 # ID lookup or list all
                 if request.ids:
                     # ID lookup works globally (IDs contain category prefix)
-                    entities = [man_repo.get_by_id(i) for i in request.ids]
+                    entities = [skill_repo.get_by_id(i) for i in request.ids]
                     entities = [e for e in entities if e is not None]
                 else:
                     # List all requires category_code
@@ -275,7 +275,7 @@ def read_entries(
                             status_code=400,
                             detail="category_code required to list all entries (use query parameter for global search)"
                         )
-                    all_mans = man_repo.get_by_category(request.category_code)
+                    all_mans = skill_repo.get_by_category(request.category_code)
                     entities = all_mans[:limit]
 
                 entries = []
@@ -546,8 +546,8 @@ def create_entry(
                     # Success
                     duplicate_candidates = result_container["candidates"]
 
-            man_repo = CategoryManualRepository(session)
-            new_manual = man_repo.create({
+            skill_repo = CategorySkillRepository(session)
+            new_manual = skill_repo.create({
                 "category_code": request.category_code,
                 "title": title,
                 "content": content,
@@ -703,9 +703,9 @@ def update_entry(
                     detail=f"Unsupported update fields: {', '.join(sorted(invalid))}"
                 )
 
-            man_repo = CategoryManualRepository(session)
+            skill_repo = CategorySkillRepository(session)
             try:
-                updated = man_repo.update(request.entry_id, dict(request.updates))
+                updated = skill_repo.update(request.entry_id, dict(request.updates))
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
@@ -746,11 +746,11 @@ def export_entries(
     for exporting to Google Sheets or other external systems.
     """
     try:
-        from src.common.storage.schema import Experience, CategoryManual, Category
+        from src.common.storage.schema import Experience, CategorySkill, Category
 
         # Fetch all data
         experiences = session.query(Experience).all()
-        manuals = session.query(CategoryManual).all()
+        skills = session.query(CategorySkill).all()
         categories = session.query(Category).all()
 
         # Serialize to dicts
@@ -834,7 +834,7 @@ def export_entries_csv(
     from pathlib import Path
     from fastapi.responses import StreamingResponse
     from src.common.storage.repository import get_author
-    from src.common.storage.schema import Experience, CategoryManual, Category
+    from src.common.storage.schema import Experience, CategorySkill, Category
 
     try:
         # Get username from system
@@ -842,7 +842,7 @@ def export_entries_csv(
 
         # Fetch all data
         experiences = session.query(Experience).all()
-        manuals = session.query(CategoryManual).all()
+        skills = session.query(CategorySkill).all()
         categories = session.query(Category).all()
 
         # Create in-memory zip file
@@ -892,8 +892,8 @@ def export_entries_csv(
                     })
                 zip_file.writestr(f"{username}/experiences.csv", csv_buffer.getvalue())
 
-            # Export manuals
-            if manuals:
+            # Export skills (with backward-compatible manuals.csv copy)
+            if skills:
                 csv_buffer = io.StringIO()
                 writer = csv.DictWriter(csv_buffer, fieldnames=[
                     "id", "category_code", "title", "content", "summary",
@@ -901,33 +901,36 @@ def export_entries_csv(
                     "created_at", "updated_at", "synced_at", "exported_at"
                 ])
                 writer.writeheader()
-                for man in manuals:
+                for skill in skills:
                     writer.writerow({
-                        "id": man.id,
-                        "category_code": man.category_code,
-                        "title": man.title,
-                        "content": man.content,
-                        "summary": man.summary or "",
-                        "source": man.source or "",
-                        "author": man.author or "",
-                        "embedding_status": man.embedding_status or "",
-                        "created_at": man.created_at.isoformat() if man.created_at else "",
-                        "updated_at": man.updated_at.isoformat() if man.updated_at else "",
-                        "synced_at": man.synced_at.isoformat() if man.synced_at else "",
-                        "exported_at": man.exported_at.isoformat() if man.exported_at else "",
+                        "id": skill.id,
+                        "category_code": skill.category_code,
+                        "title": skill.title,
+                        "content": skill.content,
+                        "summary": skill.summary or "",
+                        "source": skill.source or "",
+                        "author": skill.author or "",
+                        "embedding_status": skill.embedding_status or "",
+                        "created_at": skill.created_at.isoformat() if skill.created_at else "",
+                        "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+                        "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
+                        "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
                     })
-                zip_file.writestr(f"{username}/manuals.csv", csv_buffer.getvalue())
+                # Export both filenames for backward compatibility
+                skills_csv = csv_buffer.getvalue()
+                zip_file.writestr(f"{username}/skills.csv", skills_csv)
+                zip_file.writestr(f"{username}/manuals.csv", skills_csv)  # Legacy filename
 
         # Prepare zip for download
         zip_buffer.seek(0)
         filename = f"{username}.zip"
 
         logger.info(
-            "CSV export created for user=%s: %d categories, %d experiences, %d manuals",
+            "CSV export created for user=%s: %d categories, %d experiences, %d skills",
             username,
             len(categories),
             len(experiences),
-            len(manuals),
+            len(skills),
         )
 
         return StreamingResponse(

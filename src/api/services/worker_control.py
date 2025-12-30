@@ -75,17 +75,17 @@ class WorkerControlService:
         return {
             "pending": {
                 "experiences": pending_exp,
-                "manuals": pending_man,
+                "skills": pending_man,
                 "total": pending_exp + pending_man,
             },
             "processing": {
                 "experiences": processing_exp,
-                "manuals": processing_man,
+                "skills": processing_man,
                 "total": processing_exp + processing_man,
             },
             "failed": {
                 "experiences": failed_exp,
-                "manuals": failed_man,
+                "skills": failed_man,
                 "total": failed_exp + failed_man,
             },
         }

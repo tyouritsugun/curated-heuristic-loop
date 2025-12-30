@@ -527,7 +527,7 @@ class OperationsService:
         """Export database entries to Google Sheets."""
         import os
         from pathlib import Path
-        from src.common.storage.schema import Experience, CategoryManual, Category
+        from src.common.storage.schema import Experience, CategorySkill, Category
         from src.common.storage.sheets_client import SheetsClient
         from src.common.config.config import PROJECT_ROOT
 
@@ -558,7 +558,7 @@ class OperationsService:
         # Query all data from database
         categories = session.query(Category).order_by(Category.code).all()
         experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
-        manuals = session.query(CategoryManual).order_by(CategoryManual.updated_at.desc()).all()
+        manuals = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
 
         # Initialize sheets client
         sheets_client = SheetsClient(str(credentials_path))
@@ -763,7 +763,7 @@ class OperationsService:
         import os
         from pathlib import Path
         import pandas as pd
-        from src.common.storage.schema import Experience, CategoryManual, Category
+        from src.common.storage.schema import Experience, CategorySkill, Category
 
         try:
             # Get export path from payload or use default
@@ -781,7 +781,7 @@ class OperationsService:
             # Query all data from database
             categories = session.query(Category).order_by(Category.code).all()
             experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
-            manuals = session.query(CategoryManual).order_by(CategoryManual.updated_at.desc()).all()
+            manuals = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
 
             # Convert to DataFrames
             categories_data = []

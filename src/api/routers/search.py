@@ -16,8 +16,8 @@ from src.api.models import (
 )
 from src.api.services.snippet import generate_snippet, extract_heading
 from src.api.services.session_store import get_session_store
-from src.common.storage.schema import Experience, CategoryManual
-from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
+from src.common.storage.schema import Experience, CategorySkill
+from src.common.storage.repository import ExperienceRepository, CategorySkillRepository
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def unified_search(
         # With limit=25 max, this is 25 queries (acceptable for local tool)
         # Optimization: batch fetch entities via `WHERE id IN (...)` if needed
         exp_repo = ExperienceRepository(session)
-        manual_repo = CategoryManualRepository(session)
+        manual_repo = CategorySkillRepository(session)
 
         formatted_results = []
         for r in search_result["results"]:
@@ -167,7 +167,7 @@ def unified_search(
                 if request.fields and "context" in request.fields:
                     result_dict["context"] = entity.context
 
-            elif r.entity_type == "manual":
+            elif r.entity_type == "skill":
                 entity = manual_repo.get_by_id(r.entity_id)
                 if not entity:
                     continue
@@ -268,31 +268,31 @@ def search_health(
 
     # Totals
     report["totals"]["experiences"] = session.query(Experience).count()
-    report["totals"]["manuals"] = session.query(CategoryManual).count()
+    report["totals"]["manuals"] = session.query(CategorySkill).count()
 
     # Embedding status (entity tables as source of truth)
     pending = (
         session.query(Experience)
         .filter(Experience.embedding_status == "pending")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "pending")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "pending")
         .count()
     )
     embedded = (
         session.query(Experience)
         .filter(Experience.embedding_status == "embedded")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "embedded")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "embedded")
         .count()
     )
     failed = (
         session.query(Experience)
         .filter(Experience.embedding_status == "failed")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "failed")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "failed")
         .count()
     )
     report["embedding_status"] = {
