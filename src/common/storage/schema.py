@@ -56,8 +56,8 @@ class Experience(Base):
     category = relationship("Category", backref="experiences")
 
 
-class CategoryManual(Base):
-    __tablename__ = "category_manuals"
+class CategorySkill(Base):
+    __tablename__ = "category_skills"
 
     id = Column(String(64), primary_key=True)
     category_code = Column(String(16), ForeignKey("categories.code"), nullable=False, index=True)
@@ -73,7 +73,7 @@ class CategoryManual(Base):
     synced_at = Column(DateTime(timezone=True), nullable=True)
     exported_at = Column(DateTime(timezone=True), nullable=True)
 
-    category = relationship("Category", backref="manuals")
+    category = relationship("Category", backref="skills")
 
 
 class Embedding(Base):
@@ -81,7 +81,7 @@ class Embedding(Base):
 
     id = Column(Integer, primary_key=True)
     entity_id = Column(String(64), nullable=False, index=True)
-    entity_type = Column(String(32), nullable=False)  # experience or manual
+    entity_type = Column(String(32), nullable=False)  # experience or skill
     category_code = Column(String(16), nullable=False)
     vector = Column(String, nullable=False)  # stored as space-separated floats
     model_version = Column(String(128), nullable=False)

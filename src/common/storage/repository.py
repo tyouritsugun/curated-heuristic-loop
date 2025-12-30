@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .schema import (
     Category,
     Experience,
-    CategoryManual,
+    CategorySkill,
     Embedding,
     FAISSMetadata,
     JobHistory,
@@ -31,8 +31,11 @@ def generate_experience_id(category_code: str) -> str:
     return f"EXP-{category_code}-{timestamp}"
 
 
-def generate_manual_id(category_code: str) -> str:
-    """Generate manual ID: MNL-{CATEGORY_CODE}-{YYYYMMDD}-{HHMMSSuuuuuu}."""
+def generate_skill_id(category_code: str) -> str:
+    """Generate skill ID: MNL-{CATEGORY_CODE}-{YYYYMMDD}-{HHMMSSuuuuuu}.
+
+    Note: Prefix is MNL- (legacy) for backward compatibility.
+    """
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y%m%d-%H%M%S") + f"{now.microsecond:06d}"
     return f"MNL-{category_code}-{timestamp}"
@@ -164,65 +167,65 @@ class ExperienceRepository:
         return experience
 
 
-class CategoryManualRepository:
-    """Repository for category manual operations."""
+class CategorySkillRepository:
+    """Repository for category skill operations."""
 
     def __init__(self, session: Session):
         self.session = session
 
-    def create(self, manual_data: dict) -> CategoryManual:
-        category_code = manual_data["category_code"]
+    def create(self, skill_data: dict) -> CategorySkill:
+        category_code = skill_data["category_code"]
         now = utc_now()
 
-        manual = CategoryManual(
-            id=generate_manual_id(category_code),
+        skill = CategorySkill(
+            id=generate_skill_id(category_code),
             category_code=category_code,
-            title=manual_data["title"],
-            content=manual_data["content"],
-            summary=manual_data.get("summary"),
-            source=manual_data.get("source", "local"),
-            sync_status=manual_data.get("sync_status", 1),
-            author=manual_data.get("author", get_author()),
-            embedding_status=manual_data.get("embedding_status", "pending"),
+            title=skill_data["title"],
+            content=skill_data["content"],
+            summary=skill_data.get("summary"),
+            source=skill_data.get("source", "local"),
+            sync_status=skill_data.get("sync_status", 1),
+            author=skill_data.get("author", get_author()),
+            embedding_status=skill_data.get("embedding_status", "pending"),
             created_at=now,
             updated_at=now,
-            synced_at=manual_data.get("synced_at"),
+            synced_at=skill_data.get("synced_at"),
         )
-        self.session.add(manual)
+        self.session.add(skill)
         self.session.flush()
-        return manual
+        return skill
 
-    def get_by_id(self, manual_id: str) -> Optional[CategoryManual]:
-        return self.session.query(CategoryManual).filter(CategoryManual.id == manual_id).first()
+    def get_by_id(self, skill_id: str) -> Optional[CategorySkill]:
+        return self.session.query(CategorySkill).filter(CategorySkill.id == skill_id).first()
 
-    def get_by_category(self, category_code: str) -> List[CategoryManual]:
+    def get_by_category(self, category_code: str) -> List[CategorySkill]:
         return (
-            self.session.query(CategoryManual)
-            .filter(CategoryManual.category_code == category_code)
-            .order_by(CategoryManual.created_at.desc())
+            self.session.query(CategorySkill)
+            .filter(CategorySkill.category_code == category_code)
+            .order_by(CategorySkill.created_at.desc())
             .all()
         )
 
     def delete_by_category(self, category_code: str) -> int:
         result = (
-            self.session.query(CategoryManual)
-            .filter(CategoryManual.category_code == category_code)
+            self.session.query(CategorySkill)
+            .filter(CategorySkill.category_code == category_code)
             .delete(synchronize_session=False)
         )
         return result or 0
 
-    def delete(self, manual_id: str) -> int:
+    def delete(self, skill_id: str) -> int:
         result = (
-            self.session.query(CategoryManual)
-            .filter(CategoryManual.id == manual_id)
+            self.session.query(CategorySkill)
+            .filter(CategorySkill.id == skill_id)
             .delete(synchronize_session=False)
         )
         return result or 0
 
-    def update(self, manual_id: str, updates: dict) -> CategoryManual:
-        manual = self.get_by_id(manual_id)
-        if manual is None:
-            raise ValueError(f"Manual not found: {manual_id}")
+    def update(self, skill_id: str, updates: dict) -> CategorySkill:
+        skill = self.get_by_id(skill_id)
+        if skill is None:
+            raise ValueError(f"Skill not found: {skill_id}")
 
         allowed = {"title", "content", "summary"}
         invalid = set(updates) - allowed
@@ -230,18 +233,18 @@ class CategoryManualRepository:
             raise ValueError(f"Unsupported fields: {', '.join(sorted(invalid))}")
 
         if "title" in updates:
-            manual.title = str(updates["title"]).strip()
+            skill.title = str(updates["title"]).strip()
         if "content" in updates:
-            manual.content = str(updates["content"])
+            skill.content = str(updates["content"])
         if "summary" in updates:
             summary = updates["summary"]
-            manual.summary = None if summary is None else str(summary)
+            skill.summary = None if summary is None else str(summary)
 
-        # Any update to a manual should trigger re-embedding.
-        manual.embedding_status = "pending"
-        manual.updated_at = utc_now()
+        # Any update to a skill should trigger re-embedding.
+        skill.embedding_status = "pending"
+        skill.updated_at = utc_now()
         self.session.flush()
-        return manual
+        return skill
 
 
 class EmbeddingRepository:
