@@ -62,7 +62,122 @@ To decide if the changes help:
 - Typical dataset size and GPU budget? (rerank costs scale quickly.)
 - Should we introduce a “split suggestion” output path now, or first just add atomicity guidance?
 
+## Implementation Status (as of 2025-12-30)
+
+### What's Already Implemented
+- ✅ Atomicity guidance in prompt (minimal, needs enhancement)
+- ✅ Reranker client fully integrated with caching
+- ✅ Two-pass capability (manual via `--two-pass` flag)
+- ✅ Evaluation log with `was_correct` field (not analyzed)
+- ✅ Community detection and priority scoring
+- ✅ Early stopping based on improvement threshold
+
+### What's Missing
+- ❌ Concrete atomicity examples and rubric in prompt
+- ❌ Automatic neighbor rebuild cadence (always cached)
+- ❌ Orchestrated two-pass rerank workflow
+- ❌ Split suggestion mechanism in LLM response
+- ❌ Merge quality tracking (precision/recall)
+- ❌ Community stability metrics
+
+---
+
+## Implementation Phases
+
+### Phase 1: Quick Wins (1 day effort, high impact)
+**Goal:** Test core hypotheses with minimal code changes
+
+**Tasks:**
+1. **Enhance atomicity prompt** (30 min)
+   - Add 2-3 concrete examples of atomic vs. non-atomic experiences
+   - Add explicit complexity rule: "If merging makes entry >2x longer, prefer keep_separate"
+   - Add guidance: "Note entries that bundle multiple independent tactics"
+   - File: `scripts/curation/agents/prompts/curation_prompt.yaml`
+
+2. **Implement neighbor rebuild cadence** (2-3 hours)
+   - Add `--rebuild-neighbors-cadence N` flag to `run_curation_loop.py`
+   - Rebuild neighbors every N rounds OR when merge_rate > threshold
+   - Compare graph changes before/after to measure impact
+   - Files: `scripts/curation/run_curation_loop.py`, `scripts/curation/common/neighbor_builder.py`
+
+3. **Add merge quality tracking** (2-3 hours)
+   - Track precision/recall metrics per round
+   - Add to morning report: "Round N: precision X%, recall Y%"
+   - Store in evaluation log for trend analysis
+   - Files: `scripts/curation/common/decision_logging.py`, `scripts/curation/reporting/morning_report.py`
+
+**Success criteria:**
+- Atomicity examples added to prompt
+- Neighbors rebuild at least once per multi-round loop
+- Morning report shows merge quality metrics
+- Can measure before/after impact on merge decisions
+
+**Risks:**
+- Neighbor rebuild may not improve recall if embedding quality is poor
+- Tracking precision requires manual validation (sample-based)
+
+### Phase 2: Orchestration (2-3 days effort, medium complexity)
+**Goal:** Automate two-pass workflow and enable split suggestions
+
+**Tasks:**
+1. **Orchestrate two-pass rerank workflow** (3-4 hours)
+   - Auto-detect when to switch to rerank (e.g., merge_rate > 10% in round 1)
+   - Rebuild communities with rerank automatically
+   - Compare cost vs. precision gain
+   - Files: `run_curation_loop.py`, `build_communities.py`
+
+2. **Add split_suggested to LLM response schema** (1 hour)
+   - Extend response: `{"decision": "...", "merges": [], "split_suggested": [...]}`
+   - Update validation in `prompt_utils.py`
+   - Log split suggestions to evaluation log
+   - Files: `scripts/curation/agents/prompts/curation_prompt.yaml`, `scripts/curation/agents/prompt_utils.py`
+
+3. **Add community stability metrics** (2-3 hours)
+   - Compute Jaccard similarity of community membership between rounds
+   - Track number of communities and avg overlap per round
+   - Use as convergence signal (e.g., "overlap > 95% for 2 rounds → converged")
+   - Files: `scripts/curation/common/convergence.py` (new), `morning_report.py`
+
+**Success criteria:**
+- Two-pass workflow runs automatically based on merge rate
+- LLM can flag entries for potential splits
+- Community stability tracked in morning report
+
+**Risks:**
+- Rerank may be too expensive for large datasets
+- Split suggestions may have high false positive rate
+
+### Phase 3: Evaluation & Iteration (ongoing)
+**Goal:** Validate hypotheses and refine approach
+
+**Tasks:**
+1. **Run A/B experiment** (1-2 days)
+   - Baseline: Current system (cached neighbors, no rerank)
+   - Variant A: Phase 1 changes (rebuild cadence, enhanced prompt)
+   - Variant B: Phase 1 + Phase 2 changes (orchestrated rerank)
+   - Measure: precision, recall, convergence rounds, cost
+
+2. **Manual validation** (ongoing)
+   - Sample 20-30 merge decisions per round
+   - Mark as correct/incorrect in evaluation log
+   - Calculate precision per round
+   - Identify patterns in false positives/negatives
+
+3. **Document findings** (1 day)
+   - Which strategy works best for different dataset sizes?
+   - Cost/benefit tradeoff of rerank
+   - Optimal neighbor rebuild cadence
+   - Update this plan with recommendations
+
+**Success criteria:**
+- Clear data on which refinements improve quality
+- Cost/benefit analysis of rerank documented
+- Recommendations for production deployment
+
+---
+
 ## Next steps (proposal)
-- Draft atomicity rubric + examples for the curation prompt.
-- Decide on neighbor rebuild cadence experiment.
-- If promising, implement a small A/B test run (baseline vs new cadence/rerank order).
+- **Immediate:** Implement Phase 1 (quick wins)
+- **Short-term:** Run small experiment to validate improvements
+- **Medium-term:** Implement Phase 2 if Phase 1 shows promise
+- **Ongoing:** Manual validation and iteration
