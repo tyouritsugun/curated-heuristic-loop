@@ -42,6 +42,11 @@ Idea options:
 - **Option B:** Rebuild neighbors every N rounds (e.g., every 2–3 rounds).
 - **Option C:** Rebuild only if merge rate exceeds a threshold (e.g., >5% of items merged).
 
+Clarifications for Phase 1:
+- **Placement:** Rebuild after merges are applied and before re-detecting communities.
+- **Threshold:** Use the same `--edge-threshold` as graph construction (no new threshold flag in Phase 1).
+- **Cadence start point:** Start with a fixed cadence (e.g., every 2 rounds), then revisit a merge-rate trigger later.
+
 ### 3) Rerank placement
 Idea: use rerank after an initial embed-only pass, to increase precision once broad clusters form.
 
@@ -53,7 +58,7 @@ Possible workflow:
 ## Evaluation plan (lightweight)
 To decide if the changes help:
 - Track merge precision via a small manual sample.
-- Track merge recall via “new merges per round”.
+- Track merge yield via “new merges per round” (explicitly not recall).
 - Track stability via number of communities and overlap between rounds.
 - Track cost/time per round (rerank impact).
 
@@ -80,27 +85,31 @@ To decide if the changes help:
 - ❌ Merge quality tracking (precision/recall)
 - ❌ Community stability metrics
 
+Notes for Phase 1 metrics:
+- Add `round_index` to evaluation log to enable per-round precision.
+- Use active item count (pending items) as the merge-rate denominator.
+
 ---
 
 ## Implementation Phases
 
-### Phase 1: Quick Wins (1 day effort, high impact)
+### Phase 1: Quick Wins (high impact)
 **Goal:** Test core hypotheses with minimal code changes
 
 **Tasks:**
-1. **Enhance atomicity prompt** (30 min)
+1. **Enhance atomicity prompt**
    - Add 2-3 concrete examples of atomic vs. non-atomic experiences
    - Add explicit complexity rule: "If merging makes entry >2x longer, prefer keep_separate"
    - Add guidance: "Note entries that bundle multiple independent tactics"
    - File: `scripts/curation/agents/prompts/curation_prompt.yaml`
 
-2. **Implement neighbor rebuild cadence** (2-3 hours)
+2. **Implement neighbor rebuild cadence**
    - Add `--rebuild-neighbors-cadence N` flag to `run_curation_loop.py`
    - Rebuild neighbors every N rounds OR when merge_rate > threshold
    - Compare graph changes before/after to measure impact
    - Files: `scripts/curation/run_curation_loop.py`, `scripts/curation/common/neighbor_builder.py`
 
-3. **Add merge quality tracking** (2-3 hours)
+3. **Add merge quality tracking**
    - Track precision/recall metrics per round
    - Add to morning report: "Round N: precision X%, recall Y%"
    - Store in evaluation log for trend analysis
@@ -116,23 +125,23 @@ To decide if the changes help:
 - Neighbor rebuild may not improve recall if embedding quality is poor
 - Tracking precision requires manual validation (sample-based)
 
-### Phase 2: Orchestration (2-3 days effort, medium complexity)
+### Phase 2: Orchestration (medium complexity)
 **Goal:** Automate two-pass workflow and enable split suggestions
 
 **Tasks:**
-1. **Orchestrate two-pass rerank workflow** (3-4 hours)
+1. **Orchestrate two-pass rerank workflow**
    - Auto-detect when to switch to rerank (e.g., merge_rate > 10% in round 1)
    - Rebuild communities with rerank automatically
    - Compare cost vs. precision gain
    - Files: `run_curation_loop.py`, `build_communities.py`
 
-2. **Add split_suggested to LLM response schema** (1 hour)
+2. **Add split_suggested to LLM response schema**
    - Extend response: `{"decision": "...", "merges": [], "split_suggested": [...]}`
    - Update validation in `prompt_utils.py`
    - Log split suggestions to evaluation log
    - Files: `scripts/curation/agents/prompts/curation_prompt.yaml`, `scripts/curation/agents/prompt_utils.py`
 
-3. **Add community stability metrics** (2-3 hours)
+3. **Add community stability metrics**
    - Compute Jaccard similarity of community membership between rounds
    - Track number of communities and avg overlap per round
    - Use as convergence signal (e.g., "overlap > 95% for 2 rounds → converged")
@@ -151,7 +160,7 @@ To decide if the changes help:
 **Goal:** Validate hypotheses and refine approach
 
 **Tasks:**
-1. **Run A/B experiment** (1-2 days)
+1. **Run A/B experiment**
    - Baseline: Current system (cached neighbors, no rerank)
    - Variant A: Phase 1 changes (rebuild cadence, enhanced prompt)
    - Variant B: Phase 1 + Phase 2 changes (orchestrated rerank)
@@ -163,7 +172,7 @@ To decide if the changes help:
    - Calculate precision per round
    - Identify patterns in false positives/negatives
 
-3. **Document findings** (1 day)
+3. **Document findings**
    - Which strategy works best for different dataset sizes?
    - Cost/benefit tradeoff of rerank
    - Optimal neighbor rebuild cadence
