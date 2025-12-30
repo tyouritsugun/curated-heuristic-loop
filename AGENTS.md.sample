@@ -9,7 +9,7 @@ Copy/paste the parts below into your code assistant’s common instructions (Cla
 
 ## During Tasks
 - **Clarify task intent first**: When user mentions bugs/errors/problems, don't immediately rush to fix code. Ask yourself: Are they asking to fix, document, file a ticket, or investigate? If unclear, ask: "Would you like me to [fix this / write a bug ticket / investigate further]?"
-- **Ground with KB before drafting**: Once intent is clear, call `read_entries(...)` to load the most relevant manual(s) or experience(s). If nothing useful appears, state the coverage gap before proceeding.
+- **Ground with KB before drafting**: Once intent is clear, call `read_entries(...)` to load the most relevant skill(s) or experience(s). If nothing useful appears, state the coverage gap before proceeding.
 - **Retrieval protocol (per category counts from `list_categories`)**:
   - If category is known and total items < 20: call `read_entries(entity_type=..., category_code=..., fields=['playbook' or 'content'], limit=25)` to load everything directly.
   - If category is known and total items ≥ 20: first load titles/previews (`fields` default), then fetch chosen IDs with `fields=['playbook' or 'content']` in a second call.
@@ -20,7 +20,7 @@ Copy/paste the parts below into your code assistant’s common instructions (Cla
 ## After Tasks (reflection & curation)
 - Prompt the user to summarize outcomes and decide whether to:
   - Add an atomic experience (`create_entry(entity_type="experience", ...)`)
-  - Add a manual (`create_entry(entity_type="manual", ...)`)
+  - Add a manual (`create_entry(entity_type="manual" (skills; legacy name), ...)`)
 - If writing, include `category_code`, concise title, and clean playbook/content; use `check_duplicates(...)` first.
 - Remind the user they can rebuild embeddings/FAISS via `/operations` or scripts if vectors are pending (GPU mode only).
 

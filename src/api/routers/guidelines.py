@@ -1,4 +1,4 @@
-"""Guidelines endpoints for retrieving generator/evaluator workflow manuals."""
+"""Guidelines endpoints for retrieving generator/evaluator workflow guides."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
@@ -28,7 +28,7 @@ def get_guidelines(
     config: Config = Depends(get_config)
 ) -> Dict[str, Any]:
     """
-    Return the generator or evaluator workflow manual from the GLN category.
+    Return the generator or evaluator workflow guide from the GLN category.
 
     In CPU mode, returns CPU-specific evaluator guidelines when guide_type='evaluator'.
 
@@ -67,7 +67,7 @@ def get_guidelines(
         raise HTTPException(
             status_code=404,
             detail=(
-                f"Guideline manual '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
+                f"Guideline '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
                 "'uv run python scripts/seed_default_content.py'."
             )
         )

@@ -17,7 +17,7 @@ Switch to this playbook **only after** the user confirms the Generator's work is
 - Use category filtering to narrow results
 
 1. Stick to one category at a time. Use `read_entries("experience", category_code, query=...)` with **specific literal keywords**.
-2. Re-read the experiences/manuals that were used (or should have been used):
+2. Re-read the experiences/skills that were used (or should have been used):
    - `read_entries("experience", category_code, ids=[...])` for referenced IDs to confirm the playbook still matches reality.
    - `read_entries("manual", category_code, query=...)` with **specific keywords** if broader context is necessary.
 3. If you suspect overlap or a candidate duplicate, run searches with **exact terms** from the proposed entry to find what already exists.
@@ -30,7 +30,7 @@ Switch to this playbook **only after** the user confirms the Generator's work is
 
 ### 3. Deliver the evaluation report
 Structure your response so the user (and future readers) can scan it quickly:
-- **What worked**: Tie concrete successes to experience IDs or manual sections.
+- **What worked**: Tie concrete successes to experience IDs or skill sections.
 - **What struggled**: Call out blockers, regressions, or misalignments with existing guidance. Note if keyword search limitations prevented finding relevant entries.
 - **Recommendations**: Suggest follow-up actions for humans (e.g., "pair with UX", "review API contract").
 - **Library gaps**: Bullet candidate insights that the library is missing or outdated entries that need revision.
@@ -41,7 +41,7 @@ Structure your response so the user (and future readers) can scan it quickly:
 Decide how to capture each insight:
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
 - **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and keep `context` empty for useful/harmful entries.
-- **Manual adjustments (`create_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the manual becomes too long, consider splitting it and note the recommendation for curators.
+- **Skill adjustments (`create_entry` / `update_entry` with `entity_type="manual" (skills; "manual" is legacy parameter name)`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the skill becomes too long, consider splitting it and note the recommendation for curators.
 
 Before writing:
 1. Manually check for duplicates: use multiple keyword `read_entries` calls in the target category (previews are fine) and scan titles/contents yourself; `check_duplicates` is not reliable/available in CPU mode.
@@ -62,7 +62,7 @@ If you cannot safely modify the library (tool unavailable, unsure about the edit
 
 ### Decision checklist
 - Does the insight belong in CHL, or is it purely project-specific noise?
-- Is it best captured as a single atomic experience, a manual addition, or an update to something that already exists?
+- Is it best captured as a single atomic experience, a skill addition, or an update to something that already exists?
 - Did you search with **multiple keyword variations and synonym bundles** to check for duplicates?
 - Are your titles and summaries keyword-rich (include synonyms/aliases) for future discoverability?
 - Are you leaving behind a clear audit trail (citations, motivations, next steps)?

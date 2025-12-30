@@ -24,12 +24,12 @@ SERVER_VERSION = "1.1.0"
 TOOL_INDEX = [
     {
         "name": "list_categories",
-        "description": "List all available category shelves with entry counts. Returns experience_count, manual_count, and total_count for each category. Use these counts to decide loading strategy: <20 entries = load all at once, >=20 = load previews first.",
+        "description": "List all available category shelves with entry counts. Returns experience_count, skill_count, and total_count for each category. Use these counts to decide loading strategy: <20 entries = load all at once, >=20 = load previews first.",
         "example": {},
     },
     {
         "name": "read_entries",
-        "description": "Fetch experiences or manuals. Category-first: small shelves (<20) load full bodies via fields=['playbook']; large shelves (>=20) load previews, then fetch chosen IDs with fields=['playbook'] (ID lookup works globally, no category_code needed). Use global search only when the category is unclear: omit category_code and pass query='[SEARCH] ... [TASK] ...'. Default responses are previews unless fields include full bodies.",
+        "description": "Fetch experiences or skills. Category-first: small shelves (<20) load full bodies via fields=['playbook']; large shelves (>=20) load previews, then fetch chosen IDs with fields=['playbook'] (ID lookup works globally, no category_code needed). Use global search only when the category is unclear: omit category_code and pass query='[SEARCH] ... [TASK] ...'. Default responses are previews unless fields include full bodies.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
@@ -38,7 +38,7 @@ TOOL_INDEX = [
     },
     {
         "name": "create_entry",
-        "description": "Create a new experience or manual in a category. Prefer calling check_duplicates first to inspect similar entries.",
+        "description": "Create a new experience or skill in a category. Prefer calling check_duplicates first to inspect similar entries.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",
@@ -51,7 +51,7 @@ TOOL_INDEX = [
     },
     {
         "name": "update_entry",
-        "description": "Update an existing experience or manual by id.",
+        "description": "Update an existing experience or skill by id.",
         "example": {
             "entity_type": "manual",
             "category_code": "PGS",
@@ -61,12 +61,12 @@ TOOL_INDEX = [
     },
     {
         "name": "get_guidelines",
-        "description": "Return the generator or evaluator workflow manual seeded in GLN.",
+        "description": "Return the generator or evaluator workflow guide seeded in GLN.",
         "example": {"guide_type": "generator"},
     },
     {
         "name": "check_duplicates",
-        "description": "Check for potential duplicate entries before calling create_entry. Unavailable in CPU mode; fall back to manual comparison via read_entries.",
+        "description": "Check for potential duplicate entries before calling create_entry. Unavailable in CPU mode; fall back to comparison via read_entries.",
         "example": {
             "entity_type": "experience",
             "category_code": "PGS",

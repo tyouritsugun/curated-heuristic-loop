@@ -603,7 +603,7 @@ def create_entry(
                 recommendation=recommendation,
                 warnings=warnings or None,
                 message=(
-                    "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Skill created successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )
@@ -724,7 +724,7 @@ def update_entry(
                 entry_id=updated.id,
                 entry=manual_dict,
                 message=(
-                    "Manual updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Skill updated successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )

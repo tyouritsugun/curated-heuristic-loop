@@ -13,8 +13,8 @@ class CategoryResponse(BaseModel):
     description: Optional[str] = None
     created_at: Optional[str] = None
     experience_count: Optional[int] = Field(None, description="Number of experiences in this category")
-    manual_count: Optional[int] = Field(None, description="Number of manuals in this category")
-    total_count: Optional[int] = Field(None, description="Total entries (experiences + manuals)")
+    manual_count: Optional[int] = Field(None, description="Number of skills in this category")
+    total_count: Optional[int] = Field(None, description="Total entries (experiences + skills)")
 
 
 class ListCategoriesResponse(BaseModel):
@@ -25,7 +25,7 @@ class ListCategoriesResponse(BaseModel):
 # Entry models
 class ReadEntriesRequest(BaseModel):
     """Request model for reading entries."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'manual' (skills; 'manual' is legacy parameter name)")
     category_code: Optional[str] = Field(default=None, description="Category code to filter by (None for global search)")
     query: Optional[str] = None
     ids: Optional[List[str]] = None
@@ -38,14 +38,14 @@ class ReadEntriesRequest(BaseModel):
 
 class WriteEntryRequest(BaseModel):
     """Request model for creating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'manual' (skills; 'manual' is legacy parameter name)")
     category_code: str
     data: Dict[str, Any]
 
 
 class UpdateEntryRequest(BaseModel):
     """Request model for updating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'manual' (skills; 'manual' is legacy parameter name)")
     category_code: str
     entry_id: str
     updates: Dict[str, Any]
@@ -96,7 +96,7 @@ class UpdateEntryResponse(BaseModel):
 class DuplicateCheckRequest(BaseModel):
     """Request model for duplicate detection."""
 
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'manual' (skills; 'manual' is legacy parameter name)")
     category_code: Optional[str] = None
     title: str
     content: str
@@ -193,7 +193,7 @@ class UnifiedSearchRequest(BaseModel):
     query: str = Field(..., description="Search query text")
     types: List[str] = Field(
         default=["experience", "manual"],
-        description="Entity types to search (experience, manual, or both)"
+        description="Entity types to search (experience, manual/skills, or both)"
     )
     category: Optional[str] = Field(None, description="Filter to specific category code")
     limit: int = Field(10, ge=1, le=25, description="Maximum results to return (capped at 25)")
