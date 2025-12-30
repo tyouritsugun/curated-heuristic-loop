@@ -270,7 +270,7 @@ The authoritative per-user store. Contains tables for:
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
 
-- `category_manuals` - Long-form context and domain knowledge (Note: table name is legacy; now called "skills" in documentation)
+- `skills` - Long-form context and domain knowledge (legacy table name: `category_manuals`)
   - Fields: `id`, `category_code`, `title`, `content`, `summary`
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
@@ -284,7 +284,7 @@ The authoritative per-user store. Contains tables for:
 
 ### 4.2. Local FAISS Index (GPU Mode Only)
 
-Performance layer for efficient vector search. Index is keyed by `experience_id` and `manual_id` (Note: `manual_id` is legacy naming; refers to skills) and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
+Performance layer for efficient vector search. Index is keyed by `experience_id` and `skill_id` (legacy: `manual_id`) and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
 
 **Mode-Specific Behavior:**
 - **CPU Mode**: No FAISS index, search uses SQLite `LIKE` queries

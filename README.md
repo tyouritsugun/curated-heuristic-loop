@@ -497,7 +497,7 @@ Both dashboards share the same process as the API server, so every change is log
 ## Advanced References
 
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
-- [Operator guide](doc/manual.md) (setup, skills/experiences, API details)
+- [Operator guide](doc/manual.md) (setup, skills/experiences, API details; file name is legacy)
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
 - Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
 

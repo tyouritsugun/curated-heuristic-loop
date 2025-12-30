@@ -111,7 +111,7 @@ This test shows how CHL enforces project-specific conventions.
    You: "I found a bug in DataPipe, here's the error: [paste same error]"
    ```
 
-   **Expected behavior:** LLM calls `read_entries(entity_type='manual', category_code='TMG', query='bug report')` (note: 'manual' is legacy parameter name for skills) and asks:
+   **Expected behavior:** LLM calls `read_entries(entity_type='skill', category_code='TMG', query='bug report')` and asks:
    ```
    "I see the error. Would you like me to:
     1. Fix it immediately
