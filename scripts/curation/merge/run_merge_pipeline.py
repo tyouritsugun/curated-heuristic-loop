@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the curation merge pipeline (steps 2–5) with one command."""
+"""Run the curation merge pipeline with one command."""
 
 from __future__ import annotations
 

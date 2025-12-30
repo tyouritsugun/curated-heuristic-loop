@@ -104,6 +104,11 @@ python scripts/curation/overnight/run_curation_loop.py --two-pass
 
 </details>
 
+## Rerank note (`--with-rerank`)
+- `--with-rerank` applies only when building communities (merge pipeline / `build_communities.py`).
+- It changes how neighbor scores are computed (reranker-only scoring), which affects the community graph files used by the overnight loop.
+- Once communities are built, the overnight rounds do **not** rerank again; they just consume the existing communities JSON.
+
 ## 4) Review and Publish (Spreadsheet)
 - Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
 - If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
