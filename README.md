@@ -2,7 +2,7 @@
 
 Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
-For the full workflow philosophy see [doc/concept.md](doc/concept.md). For the operator guide (setup, skills/experiences, workflows) see [doc/manual.md](doc/manual.md).
+For the full workflow philosophy see [doc/concept.md](doc/concept.md). For setup, skills/experiences, and workflows, see the [operator guide](doc/manual.md).
 For the overnight curation overview, see [doc/experience_curation.md](doc/experience_curation.md).
 
 ## Architecture Overview
@@ -472,7 +472,7 @@ CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. 
 - `SEC` / `security_review` - Security review patterns and vulnerability checks
 - `ONC` / `oncall_runbook` - Incident response and on-call procedures
 
-**Full instructions:** See [Managing Categories](doc/manual.md#62-managing-categories) in the Operator Guide for detailed steps, best practices, and troubleshooting.
+**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
 
 
 ## Web Dashboards
@@ -497,7 +497,7 @@ Both dashboards share the same process as the API server, so every change is log
 ## Advanced References
 
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
-- Operator guide (setup, skills/experiences, API details): [doc/manual.md](doc/manual.md)
+- [Operator guide](doc/manual.md) (setup, skills/experiences, API details)
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
 - Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
 

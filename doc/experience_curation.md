@@ -22,7 +22,7 @@ The overnight wrapper defaults to a **DB copy**:
 
 ## Core loop (high level)
 1) Auto‑dedup high‑confidence pairs (>= `auto_dedup` threshold).
-2) LLM decides per community: `merge_all`, `merge_subset`, `keep_separate`, `manual_review`.
+2) LLM decides per community: `merge_all`, `merge_subset`, `keep_separate`, `manual_review` (human curator review).
 3) Apply decisions → rebuild communities (no FAISS re‑query).
 4) Stop when progress is low or max rounds reached.
 
