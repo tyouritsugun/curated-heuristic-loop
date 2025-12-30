@@ -1,6 +1,6 @@
-# CHL Operator's Manual
+# CHL Operator Guide
 
-This manual covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
+This guide covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
 
 > **Note:** CHL uses the term "skill" to refer to comprehensive workflow procedures. In earlier versions, these were called "manuals." If you see legacy references to "manual" in code or older documentation, they refer to the same concept now called "skill."
 
@@ -9,7 +9,7 @@ This manual covers the setup, daily workflows, and operational tasks for the Cur
 This section guides you through the first-time setup of the CHL environment.
 
 ### 1.1. Quick Start
-For step-by-step installation, follow the **Quick Start** in [README.md](../README.md). This manual focuses on day-to-day operations; only a condensed install summary is included here.
+For step-by-step installation, follow the **Quick Start** in [README.md](../README.md). This guide focuses on day-to-day operations; only a condensed install summary is included here.
 
 **Choose your installation mode:**
 
