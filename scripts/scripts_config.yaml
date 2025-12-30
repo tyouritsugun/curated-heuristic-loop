@@ -52,7 +52,7 @@ export:
   worksheets:
     categories: Categories
     experiences: Experiences
-    manuals: Manuals
+    skills: Skills
 
   # Set to true to preview counts without writing to Google Sheets.
   dry_run: false
@@ -62,7 +62,7 @@ import:
   worksheets:
     categories: Categories
     experiences: Experiences
-    manuals: Manuals
+    skills: Skills
 
   verbose: false
 

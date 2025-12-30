@@ -6,12 +6,9 @@ from datetime import datetime
 
 
 def normalize_entity_type(value: str) -> str:
-    """Normalize entity_type for backward compatibility.
-
-    Accepts both 'manual' (legacy) and 'skill' (current), returns 'skill'.
-    """
+    """Normalize entity_type for current API usage."""
     if value == "manual":
-        return "skill"
+        raise ValueError("entity_type 'manual' is deprecated; use 'skill'")
     return value
 
 
@@ -24,7 +21,6 @@ class CategoryResponse(BaseModel):
     created_at: Optional[str] = None
     experience_count: Optional[int] = Field(None, description="Number of experiences in this category")
     skill_count: Optional[int] = Field(None, description="Number of skills in this category")
-    manual_count: Optional[int] = Field(None, description="Number of skills (legacy alias for skill_count)")
     total_count: Optional[int] = Field(None, description="Total entries (experiences + skills)")
 
 
@@ -36,7 +32,7 @@ class ListCategoriesResponse(BaseModel):
 # Entry models
 class ReadEntriesRequest(BaseModel):
     """Request model for reading entries."""
-    entity_type: str = Field(..., description="'experience' or 'skill' (accepts 'manual' for backward compatibility)")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: Optional[str] = Field(default=None, description="Category code to filter by (None for global search)")
     query: Optional[str] = None
     ids: Optional[List[str]] = None
@@ -54,7 +50,7 @@ class ReadEntriesRequest(BaseModel):
 
 class WriteEntryRequest(BaseModel):
     """Request model for creating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'skill' (accepts 'manual' for backward compatibility)")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: str
     data: Dict[str, Any]
 
@@ -66,7 +62,7 @@ class WriteEntryRequest(BaseModel):
 
 class UpdateEntryRequest(BaseModel):
     """Request model for updating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'skill' (accepts 'manual' for backward compatibility)")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: str
     entry_id: str
     updates: Dict[str, Any]
@@ -122,7 +118,7 @@ class UpdateEntryResponse(BaseModel):
 class DuplicateCheckRequest(BaseModel):
     """Request model for duplicate detection."""
 
-    entity_type: str = Field(..., description="'experience' or 'skill' (accepts 'manual' for backward compatibility)")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: Optional[str] = None
     title: str
     content: str
@@ -224,7 +220,7 @@ class UnifiedSearchRequest(BaseModel):
     query: str = Field(..., description="Search query text")
     types: List[str] = Field(
         default=["experience", "skill"],
-        description="Entity types to search: 'experience', 'skill' (accepts 'manual' for compatibility)"
+        description="Entity types to search: 'experience', 'skill'"
     )
     category: Optional[str] = Field(None, description="Filter to specific category code")
     limit: int = Field(10, ge=1, le=25, description="Maximum results to return (capped at 25)")
@@ -242,6 +238,11 @@ class UnifiedSearchRequest(BaseModel):
     hide_viewed: bool = Field(False, description="Remove previously viewed entries")
     downrank_viewed: bool = Field(True, description="Apply score penalty (0.5x) to viewed entries")
     session_id: Optional[str] = Field(None, description="Session ID for tracking (prefer X-CHL-Session header)")
+
+    @field_validator('types')
+    @classmethod
+    def normalize_types(cls, v: List[str]) -> List[str]:
+        return [normalize_entity_type(item) for item in v]
 
 
 class UnifiedSearchResult(BaseModel):

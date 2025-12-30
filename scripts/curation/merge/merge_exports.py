@@ -6,7 +6,7 @@ This script:
 1. Reads member exports from data/curation/members/{username}/ directories
 2. Merges categories (validates uniqueness by code)
 3. Merges experiences (handles ID collisions by appending _{username} suffix)
-4. Merges manuals (handles ID collisions by appending _{username} suffix)
+4. Merges skills (handles ID collisions by appending _{username} suffix)
 5. Outputs merged CSVs to data/curation/merged/
 6. Logs merge audit trail to data/curation/merge_audit.csv
 
@@ -72,12 +72,14 @@ def parse_args():
             for sub in members_path.iterdir():
                 if sub.is_dir():
                     # Check if this subdirectory has the expected CSV files (lowercase or capitalized)
-                    csv_files = ["categories.csv", "experiences.csv", "manuals.csv"]
-                    alt_csv_files = ["Categories.csv", "Experiences.csv", "Manuals.csv"]
+                    lowercase_base = all((sub / csv_file).exists() for csv_file in ["categories.csv", "experiences.csv"])
+                    capitalized_base = all((sub / csv_file).exists() for csv_file in ["Categories.csv", "Experiences.csv"])
+                    lowercase_skills = (sub / "skills.csv").exists() or (sub / "manuals.csv").exists()
+                    capitalized_skills = (sub / "Skills.csv").exists() or (sub / "Manuals.csv").exists()
 
-                    # Check if all lowercase files exist OR all capitalized files exist
-                    lowercase_exist = all((sub / csv_file).exists() for csv_file in csv_files)
-                    capitalized_exist = all((sub / csv_file).exists() for csv_file in alt_csv_files)
+                    # Check if all base files exist and a skills/manuals file is present
+                    lowercase_exist = lowercase_base and lowercase_skills
+                    capitalized_exist = capitalized_base and capitalized_skills
 
                     if lowercase_exist or capitalized_exist:
                         valid_members.append(str(sub))
@@ -85,7 +87,11 @@ def parse_args():
             if valid_members:
                 args.inputs = valid_members
             else:
-                parser.error(f"No valid member directories found in {default_members_dir} (directories must contain categories.csv, experiences.csv, and manuals.csv). Please specify --inputs explicitly.")
+                parser.error(
+                    f"No valid member directories found in {default_members_dir} "
+                    "(directories must contain categories.csv, experiences.csv, and skills.csv). "
+                    "Please specify --inputs explicitly."
+                )
         else:
             parser.error(f"Default members directory {default_members_dir} does not exist. Please specify --inputs explicitly.")
 
@@ -94,10 +100,10 @@ def parse_args():
 
 MIN_CATEGORY_COLUMNS = {"code", "name", "description"}
 MIN_EXPERIENCE_COLUMNS = {"id", "category_code", "section", "title", "playbook"}
-MIN_MANUAL_COLUMNS = {"id", "category_code", "title", "content"}
+MIN_SKILL_COLUMNS = {"id", "category_code", "title", "content"}
 
 OPTIONAL_EXPERIENCE_COLUMNS = {"context", "expected_action"}
-OPTIONAL_MANUAL_COLUMNS = {"summary"}
+OPTIONAL_SKILL_COLUMNS = {"summary"}
 
 
 def default_timestamp() -> str:
@@ -119,7 +125,7 @@ EXPERIENCE_DEFAULTS = {
     "exported_at": "",
     "expected_action": "",
 }
-MANUAL_DEFAULTS = {
+SKILL_DEFAULTS = {
     "summary": "",
     "source": "local",
     "sync_status": "0",
@@ -273,43 +279,43 @@ def merge_experiences(
     return merged, collision_ids, warnings
 
 
-def merge_manuals(
+def merge_skills(
     member_data: Dict[str, List[Dict]]
 ) -> Tuple[List[Dict], List[str], List[str]]:
     """
-    Merge manuals from multiple members.
+    Merge skills from multiple members.
 
-    Uses manual ID as unique key. On collision, appends _{username} suffix
+    Uses skill ID as unique key. On collision, appends _{username} suffix
     to the colliding ID and logs to audit trail.
 
     Returns:
-        (merged_manuals, collision_ids, warnings)
+        (merged_skills, collision_ids, warnings)
     """
-    manuals_by_id: Dict[str, Dict] = {}
+    skills_by_id: Dict[str, Dict] = {}
     collision_ids = []
     warnings = []
 
-    for username, manuals in member_data.items():
-        for manual in manuals:
-            original_id = manual["id"]
+    for username, skills in member_data.items():
+        for skill in skills:
+            original_id = skill["id"]
 
-            if original_id in manuals_by_id:
+            if original_id in skills_by_id:
                 # Collision detected - append username suffix
                 new_id = f"{original_id}_{username}"
-                manual["id"] = new_id
+                skill["id"] = new_id
                 collision_ids.append(new_id)
                 warnings.append(
-                    f"Manual ID collision: '{original_id}' from {username} "
+                    f"Skill ID collision: '{original_id}' from {username} "
                     f"renamed to '{new_id}'"
                 )
 
             # Override author field with folder name (source of truth)
-            manual["author"] = username
+            skill["author"] = username
 
-            manuals_by_id[manual["id"]] = manual
+            skills_by_id[skill["id"]] = skill
 
     # Return sorted by id
-    merged = sorted(manuals_by_id.values(), key=lambda x: x["id"])
+    merged = sorted(skills_by_id.values(), key=lambda x: x["id"])
     return merged, collision_ids, warnings
 
 
@@ -317,7 +323,7 @@ def write_audit_log(
     output_dir: Path,
     usernames: List[str],
     experience_collisions: List[str],
-    manual_collisions: List[str],
+    skill_collisions: List[str],
     warnings: List[str],
 ):
     """Write merge audit log to CSV."""
@@ -338,7 +344,7 @@ def write_audit_log(
             "input_files",
             "output_dir",
             "experience_collisions",
-            "manual_collisions",
+            "skill_collisions",
             "collision_count",
             "warnings",
         ]
@@ -347,7 +353,7 @@ def write_audit_log(
         if not file_exists:
             writer.writeheader()
 
-        all_collisions = experience_collisions + manual_collisions
+        all_collisions = experience_collisions + skill_collisions
 
         writer.writerow({
             "run_id": run_id,
@@ -356,7 +362,7 @@ def write_audit_log(
             "input_files": ",".join(usernames),
             "output_dir": str(output_dir),
             "experience_collisions": ",".join(experience_collisions),
-            "manual_collisions": ",".join(manual_collisions),
+            "skill_collisions": ",".join(skill_collisions),
             "collision_count": len(all_collisions),
             "warnings": "; ".join(warnings) if warnings else "",
         })
@@ -383,7 +389,7 @@ def main():
     # Read all member data
     categories_data = {}
     experiences_data = {}
-    manuals_data = {}
+    skills_data = {}
     schema_errors: List[str] = []
 
     for input_dir in input_dirs:
@@ -391,7 +397,10 @@ def main():
 
         categories, category_fields = read_csv(input_dir / "categories.csv")
         experiences, experience_fields = read_csv(input_dir / "experiences.csv")
-        manuals, manual_fields = read_csv(input_dir / "manuals.csv")
+        skills_path = input_dir / "skills.csv"
+        if not skills_path.exists():
+            skills_path = input_dir / "manuals.csv"
+        skills, skill_fields = read_csv(skills_path)
 
         schema_errors.extend(
             validate_columns(
@@ -413,19 +422,19 @@ def main():
         )
         schema_errors.extend(
             validate_columns(
-                manual_fields,
-                MIN_MANUAL_COLUMNS,
-                "Manuals",
+                skill_fields,
+                MIN_SKILL_COLUMNS,
+                "Skills",
                 username,
-                input_dir / "manuals.csv",
+                skills_path,
             )
         )
 
         categories_data[username] = normalize_rows(categories, CATEGORY_DEFAULTS)
         experiences_data[username] = normalize_rows(experiences, EXPERIENCE_DEFAULTS)
-        manuals_data[username] = normalize_rows(manuals, MANUAL_DEFAULTS)
+        skills_data[username] = normalize_rows(skills, SKILL_DEFAULTS)
 
-        print(f"  {username}: {len(categories)} categories, {len(experiences)} experiences, {len(manuals)} manuals")
+        print(f"  {username}: {len(categories)} categories, {len(experiences)} experiences, {len(skills)} skills")
 
     print()
 
@@ -463,14 +472,14 @@ def main():
             print(f"    • {collision_id}")
     print()
 
-    # Merge manuals
-    merged_manuals, man_collisions, man_warnings = merge_manuals(manuals_data)
+    # Merge skills
+    merged_skills, skill_collisions, skill_warnings = merge_skills(skills_data)
 
-    total_man_count = sum(len(mans) for mans in manuals_data.values())
-    print(f"✓ Manuals: {len(merged_manuals)} total ({total_man_count} from members)")
-    if man_collisions:
-        print(f"  - {len(man_collisions)} ID collisions detected and resolved (suffix appended)")
-        for collision_id in man_collisions:
+    total_skill_count = sum(len(skills) for skills in skills_data.values())
+    print(f"✓ Skills: {len(merged_skills)} total ({total_skill_count} from members)")
+    if skill_collisions:
+        print(f"  - {len(skill_collisions)} ID collisions detected and resolved (suffix appended)")
+        for collision_id in skill_collisions:
             print(f"    • {collision_id}")
     print()
 
@@ -507,10 +516,10 @@ def main():
             ],
         )
 
-    if merged_manuals:
+    if merged_skills:
         write_csv(
-            output_dir / "manuals.csv",
-            merged_manuals,
+            output_dir / "skills.csv",
+            merged_skills,
             [
                 "id",
                 "category_code",
@@ -531,17 +540,17 @@ def main():
     print(f"✓ Output written to: {output_dir}/")
     print(f"  - categories.csv ({len(merged_categories)} rows)")
     print(f"  - experiences.csv ({len(merged_experiences)} rows)")
-    print(f"  - manuals.csv ({len(merged_manuals)} rows)")
+    print(f"  - skills.csv ({len(merged_skills)} rows)")
     print()
 
     # Write audit log
-    all_warnings = exp_warnings + man_warnings
+    all_warnings = exp_warnings + skill_warnings
     usernames = [d.name for d in input_dirs]
     write_audit_log(
         output_dir,
         usernames,
         exp_collisions,
-        man_collisions,
+        skill_collisions,
         all_warnings,
     )
 

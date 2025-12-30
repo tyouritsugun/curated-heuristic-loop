@@ -250,8 +250,8 @@ def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
         Experience.embedding_status == 'failed'
     ).update({"embedding_status": "pending"})
 
-    # Reset manuals
-    man_count = session.query(CategorySkill).filter(
+    # Reset skills
+    skill_count = session.query(CategorySkill).filter(
         CategorySkill.embedding_status == 'failed'
     ).update({"embedding_status": "pending"})
 
@@ -260,7 +260,7 @@ def retry_failed(session: Session = Depends(get_db_session)) -> Dict[str, Any]:
     return {
         "retried": {
             "experiences": exp_count,
-            "manuals": man_count,
-            "total": exp_count + man_count,
+            "skills": skill_count,
+            "total": exp_count + skill_count,
         }
     }

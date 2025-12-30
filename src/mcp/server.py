@@ -223,7 +223,7 @@ def init_server() -> None:
             entity_type = "experience"
             fields = ["playbook", "section", "title"]
         elif upper.startswith("MNL-"):
-            entity_type = "manual"  # Note: "manual" is legacy term; now called "skill" in documentation
+            entity_type = "skill"
             fields = ["content", "summary", "title"]
         else:
             raise MCPError("entry_id must start with EXP- or MNL-")
@@ -236,10 +236,10 @@ def init_server() -> None:
 
     @mcp.resource("chl://category/{category_code}/latest{?entity_type,limit}")
     def resource_category_latest(category_code: str, entity_type: str = "experience", limit: int = 10) -> str:
-        """Latest entries in a category (previews unless fields requested). entity_type: 'experience' or 'manual' (skills)."""
+        """Latest entries in a category (previews unless fields requested). entity_type: 'experience' or 'skill'."""
         entity_type = entity_type or "experience"
-        if entity_type not in {"experience", "manual"}:  # Note: "manual" is legacy term; now called "skill"
-            raise MCPError("entity_type must be 'experience' or 'manual'")
+        if entity_type not in {"experience", "skill"}:
+            raise MCPError("entity_type must be 'experience' or 'skill'")
         limit_int = int(limit)
         resp = read_entries(entity_type=entity_type, category_code=category_code, limit=limit_int)
         return json.dumps(resp, ensure_ascii=False, indent=2)

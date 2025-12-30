@@ -93,7 +93,7 @@ def read_entries(
         snippet_len = request.snippet_len if request.snippet_len is not None else 320
         use_preview = _should_use_preview(request.fields)
 
-        if request.entity_type not in {"experience", "manual"}:
+        if request.entity_type not in {"experience", "skill"}:
             raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
         if request.entity_type == "experience":
@@ -207,18 +207,18 @@ def read_entries(
 
                     entries.append(entry)
 
-        else:  # manual
+        elif request.entity_type == "skill":
             skill_repo = CategorySkillRepository(session)
 
             if request.query:
-                # Semantic search for manuals
+                # Semantic search for skills
                 if search_service is None:
                     raise HTTPException(status_code=503, detail="Search service not initialized")
 
                 results = search_service.search(
                     session=session,
                     query=request.query,
-                    entity_type='manual',
+                    entity_type='skill',
                     category_code=request.category_code,
                     top_k=limit,
                 )
@@ -308,7 +308,10 @@ def read_entries(
 
                     entries.append(entry)
 
-            # Track viewed entries in session store
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
+
+        # Track viewed entries in session store
         session_id = x_chl_session or request.session_id
         if session_id and entries:
             store = get_session_store()
@@ -482,7 +485,7 @@ def create_entry(
                 ),
             )
 
-        else:  # manual
+        elif request.entity_type == "skill":
             # Basic validation
             title = request.data.get("title")
             content = request.data.get("content")
@@ -507,7 +510,7 @@ def create_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Auto-run duplicate check for manuals with hard 750ms timeout
+            # Auto-run duplicate check for skills with hard 750ms timeout
             import threading
             duplicate_candidates = []
             duplicate_check_timeout = False
@@ -522,7 +525,7 @@ def create_entry(
                             session=session,
                             title=title,
                             content=content,
-                            entity_type="manual",
+                            entity_type="skill",
                             category_code=request.category_code,
                             exclude_id=None,
                             threshold=0.50,
@@ -547,25 +550,25 @@ def create_entry(
                     duplicate_candidates = result_container["candidates"]
 
             skill_repo = CategorySkillRepository(session)
-            new_manual = skill_repo.create({
+            new_skill = skill_repo.create({
                 "category_code": request.category_code,
                 "title": title,
                 "content": content,
                 "summary": summary,
             })
-            manual_id = new_manual.id
+            skill_id = new_skill.id
 
-            manual_dict = {
-                "id": new_manual.id,
-                "title": new_manual.title,
-                "content": new_manual.content,
-                "summary": new_manual.summary,
-                "embedding_status": getattr(new_manual, "embedding_status", None),
-                "updated_at": new_manual.updated_at,
-                "author": new_manual.author,
+            skill_dict = {
+                "id": new_skill.id,
+                "title": new_skill.title,
+                "content": new_skill.content,
+                "summary": new_skill.summary,
+                "embedding_status": getattr(new_skill, "embedding_status", None),
+                "updated_at": new_skill.updated_at,
+                "author": new_skill.author,
             }
 
-            # Apply decision tree for manuals
+            # Apply decision tree for skills
             warnings: list[str] = []
             recommendation = None
             duplicates_response = None
@@ -597,8 +600,8 @@ def create_entry(
 
             return WriteEntryResponse(
                 success=True,
-                entry_id=manual_id,
-                entry=manual_dict,
+                entry_id=skill_id,
+                entry=skill_dict,
                 duplicates=duplicates_response,
                 recommendation=recommendation,
                 warnings=warnings or None,
@@ -607,6 +610,8 @@ def create_entry(
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
     except HTTPException:
         raise
@@ -692,7 +697,7 @@ def update_entry(
                 ),
             )
 
-        else:  # manual
+        elif request.entity_type == "skill":
             allowed_fields = {"title", "content", "summary"}
             if not request.updates:
                 raise HTTPException(status_code=400, detail="No updates provided")
@@ -709,7 +714,7 @@ def update_entry(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-            manual_dict = {
+            skill_dict = {
                 "id": updated.id,
                 "title": updated.title,
                 "content": updated.content,
@@ -722,12 +727,14 @@ def update_entry(
             return UpdateEntryResponse(
                 success=True,
                 entry_id=updated.id,
-                entry=manual_dict,
+                entry=skill_dict,
                 message=(
                     "Skill updated successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
     except HTTPException:
         raise
@@ -773,22 +780,22 @@ def export_entries(
                 "exported_at": exp.exported_at,
             })
 
-        manuals_data = []
-        for man in manuals:
-            manuals_data.append({
-                "id": man.id,
-                "category_code": man.category_code,
-                "title": man.title,
-                "content": man.content,
-                "summary": man.summary,
-                "source": man.source,
-                "sync_status": man.sync_status,
-                "author": man.author,
-                "embedding_status": man.embedding_status,
-                "created_at": man.created_at,
-                "updated_at": man.updated_at,
-                "synced_at": man.synced_at,
-                "exported_at": man.exported_at,
+        skills_data = []
+        for skill in skills:
+            skills_data.append({
+                "id": skill.id,
+                "category_code": skill.category_code,
+                "title": skill.title,
+                "content": skill.content,
+                "summary": skill.summary,
+                "source": skill.source,
+                "sync_status": skill.sync_status,
+                "author": skill.author,
+                "embedding_status": skill.embedding_status,
+                "created_at": skill.created_at,
+                "updated_at": skill.updated_at,
+                "synced_at": skill.synced_at,
+                "exported_at": skill.exported_at,
             })
 
         categories_data = []
@@ -802,11 +809,11 @@ def export_entries(
 
         return {
             "experiences": experiences_data,
-            "manuals": manuals_data,
+            "skills": skills_data,
             "categories": categories_data,
             "count": {
                 "experiences": len(experiences_data),
-                "manuals": len(manuals_data),
+                "skills": len(skills_data),
                 "categories": len(categories_data),
             }
         }
@@ -825,7 +832,7 @@ def export_entries_csv(
     Returns a zip file named {username}.export.zip containing:
     - {username}/categories.csv
     - {username}/experiences.csv
-    - {username}/manuals.csv (skills; filename is legacy)
+    - {username}/skills.csv
     """
     import csv
     import io
@@ -892,7 +899,7 @@ def export_entries_csv(
                     })
                 zip_file.writestr(f"{username}/experiences.csv", csv_buffer.getvalue())
 
-            # Export skills (with backward-compatible manuals.csv copy)
+            # Export skills
             if skills:
                 csv_buffer = io.StringIO()
                 writer = csv.DictWriter(csv_buffer, fieldnames=[
@@ -916,10 +923,7 @@ def export_entries_csv(
                         "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
                         "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
                     })
-                # Export both filenames for backward compatibility
-                skills_csv = csv_buffer.getvalue()
-                zip_file.writestr(f"{username}/skills.csv", skills_csv)
-                zip_file.writestr(f"{username}/manuals.csv", skills_csv)  # Legacy filename
+                zip_file.writestr(f"{username}/skills.csv", csv_buffer.getvalue())
 
         # Prepare zip for download
         zip_buffer.seek(0)

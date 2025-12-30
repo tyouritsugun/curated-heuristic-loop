@@ -4,7 +4,7 @@ Export approved data from curation database to TSV/CSV files.
 
 This script exports data from the curation database to approved TSV/CSV files,
 excluding rejected entries (sync_status=2) by default. Creates the same
-structure as member exports (categories.csv, experiences.csv, manuals.csv) plus experiences.tsv by default.
+structure as member exports (categories.csv, experiences.csv, skills.csv) plus experiences.tsv by default.
 
 Usage:
     # Default export (TSV)
@@ -85,7 +85,7 @@ def parse_args():
     parser.add_argument(
         "--csv",
         action="store_true",
-        help="Also write categories.csv/experiences.csv/manuals.csv",
+        help="Also write categories.csv/experiences.csv/skills.csv",
     )
     return parser.parse_args()
 
@@ -140,11 +140,11 @@ def main():
         ).all()
         print(f"Experiences: {len(experiences)} (from filter: {sync_filter})")
 
-        # Query manuals with sync_status filter
-        manuals = session.query(CategorySkill).filter(
+        # Query skills with sync_status filter
+        skills = session.query(CategorySkill).filter(
             CategorySkill.sync_status.in_(sync_filter)
         ).all()
-        print(f"Manuals: {len(manuals)} (from filter: {sync_filter})")
+        print(f"Skills: {len(skills)} (from filter: {sync_filter})")
         print()
 
         # Prepare data for CSV export
@@ -176,22 +176,22 @@ def main():
                 "exported_at": format_datetime(exp.exported_at),
             })
 
-        manuals_data = []
-        for manual in manuals:
-            manuals_data.append({
-                "id": manual.id,
-                "category_code": manual.category_code,
-                "title": manual.title,
-                "content": manual.content,
-                "summary": manual.summary or "",
-                "source": manual.source,
-                "author": manual.author or "",
-                "sync_status": manual.sync_status,
-                "embedding_status": manual.embedding_status or "",
-                "created_at": format_datetime(manual.created_at),
-                "updated_at": format_datetime(manual.updated_at),
-                "synced_at": format_datetime(manual.synced_at),
-                "exported_at": format_datetime(manual.exported_at),
+        skills_data = []
+        for skill in skills:
+            skills_data.append({
+                "id": skill.id,
+                "category_code": skill.category_code,
+                "title": skill.title,
+                "content": skill.content,
+                "summary": skill.summary or "",
+                "source": skill.source,
+                "author": skill.author or "",
+                "sync_status": skill.sync_status,
+                "embedding_status": skill.embedding_status or "",
+                "created_at": format_datetime(skill.created_at),
+                "updated_at": format_datetime(skill.updated_at),
+                "synced_at": format_datetime(skill.synced_at),
+                "exported_at": format_datetime(skill.exported_at),
             })
 
         # Write CSVs (if not dry run)
@@ -200,7 +200,7 @@ def main():
             if args.csv:
                 print(f"  - categories.csv ({len(categories_data)} rows)")
                 print(f"  - experiences.csv ({len(experiences_data)} rows)")
-                print(f"  - manuals.csv ({len(manuals_data)} rows)")
+                print(f"  - skills.csv ({len(skills_data)} rows)")
             print(f"  - experiences.tsv ({len(experiences_data)} rows)")
         else:
             # Create output directory
@@ -245,10 +245,10 @@ def main():
                         writer.writerows(experiences_data)
                     print(f"✓ Wrote experiences.csv: {len(experiences_data)} rows")
 
-                # Write manuals
-                if manuals_data:
-                    manuals_file = output_dir / "manuals.csv"
-                    with open(manuals_file, "w", encoding="utf-8", newline="") as f:
+                # Write skills
+                if skills_data:
+                    skills_file = output_dir / "skills.csv"
+                    with open(skills_file, "w", encoding="utf-8", newline="") as f:
                         fieldnames = [
                             "id", "category_code", "title", "content", "summary",
                             "source", "author", "sync_status", "embedding_status",
@@ -256,8 +256,8 @@ def main():
                         ]
                         writer = csv.DictWriter(f, fieldnames=fieldnames)
                         writer.writeheader()
-                        writer.writerows(manuals_data)
-                    print(f"✓ Wrote manuals.csv: {len(manuals_data)} rows")
+                        writer.writerows(skills_data)
+                    print(f"✓ Wrote skills.csv: {len(skills_data)} rows")
 
         print()
         print("✅ Export complete!")

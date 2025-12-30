@@ -303,7 +303,7 @@ class EmbeddingRepository:
         return result or 0
 
     def count_by_status(self) -> dict:
-        """Aggregate embedding_status counts across experiences and manuals."""
+        """Aggregate embedding_status counts across experiences and skills."""
         counts: dict[str, int] = {}
 
         exp_rows = (

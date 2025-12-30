@@ -130,7 +130,7 @@ def unified_search(
         # With limit=25 max, this is 25 queries (acceptable for local tool)
         # Optimization: batch fetch entities via `WHERE id IN (...)` if needed
         exp_repo = ExperienceRepository(session)
-        manual_repo = CategorySkillRepository(session)
+        skill_repo = CategorySkillRepository(session)
 
         formatted_results = []
         for r in search_result["results"]:
@@ -168,7 +168,7 @@ def unified_search(
                     result_dict["context"] = entity.context
 
             elif r.entity_type == "skill":
-                entity = manual_repo.get_by_id(r.entity_id)
+                entity = skill_repo.get_by_id(r.entity_id)
                 if not entity:
                     continue
 
@@ -180,7 +180,7 @@ def unified_search(
                     "entity_id": r.entity_id,
                     "entity_type": r.entity_type,
                     "title": entity.title,
-                    "section": None,  # Manuals don't have sections
+                    "section": None,  # Skills don't have sections
                     "score": r.score or 0.0,
                     "rank": r.rank,
                     "reason": getattr(r.reason, "value", str(r.reason)),
@@ -246,14 +246,14 @@ def search_health(
     Return search stack health information.
 
     Mirrors the information previously produced by `scripts/ops/search_health.py`:
-    - Total counts for experiences/manuals
+    - Total counts for experiences/skills
     - Embedding status summary
     - FAISS availability and basic stats (GPU mode only)
     - Warnings for pending/failed embeddings or missing FAISS
     """
     # Base report structure
     report: Dict[str, Any] = {
-        "totals": {"experiences": 0, "manuals": 0},
+        "totals": {"experiences": 0, "skills": 0},
         "embedding_status": {"pending": 0, "embedded": 0, "failed": 0},
         "faiss": {
             "available": False,
@@ -268,7 +268,7 @@ def search_health(
 
     # Totals
     report["totals"]["experiences"] = session.query(Experience).count()
-    report["totals"]["manuals"] = session.query(CategorySkill).count()
+    report["totals"]["skills"] = session.query(CategorySkill).count()
 
     # Embedding status (entity tables as source of truth)
     pending = (

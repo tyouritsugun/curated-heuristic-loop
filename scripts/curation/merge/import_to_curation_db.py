@@ -3,7 +3,7 @@
 Import merged CSVs into curation database.
 
 This script reads the merged CSV files (categories.csv, experiences.csv,
-manuals.csv) and imports them into the curation database. All entries are
+skills.csv) and imports them into the curation database. All entries are
 marked with embedding_status='pending' for later processing.
 
 Usage:
@@ -106,11 +106,14 @@ def main():
 
     categories_data = read_csv(input_dir / "categories.csv")
     experiences_data = read_csv(input_dir / "experiences.csv")
-    manuals_data = read_csv(input_dir / "manuals.csv")
+    skills_path = input_dir / "skills.csv"
+    if not skills_path.exists():
+        skills_path = input_dir / "manuals.csv"
+    skills_data = read_csv(skills_path)
 
     print(f"  Categories: {len(categories_data)} rows")
     print(f"  Experiences: {len(experiences_data)} rows")
-    print(f"  Manuals: {len(manuals_data)} rows")
+    print(f"  Skills: {len(skills_data)} rows")
     print()
 
     # Create database session
@@ -160,10 +163,10 @@ def main():
         print(f"  All marked as embedding_status='pending'")
         print()
 
-        # Import manuals
-        print("Importing manuals...")
-        for row in manuals_data:
-            manual = CategorySkill(
+        # Import skills
+        print("Importing skills...")
+        for row in skills_data:
+            skill = CategorySkill(
                 id=row["id"],
                 category_code=row["category_code"],
                 title=row["title"],
@@ -178,10 +181,10 @@ def main():
                 synced_at=parse_datetime(row.get("synced_at")),
                 exported_at=parse_datetime(row.get("exported_at")),
             )
-            session.add(manual)
+            session.add(skill)
 
         session.commit()
-        print(f"✓ Imported {len(manuals_data)} manuals")
+        print(f"✓ Imported {len(skills_data)} skills")
         print(f"  All marked as embedding_status='pending'")
         print()
 

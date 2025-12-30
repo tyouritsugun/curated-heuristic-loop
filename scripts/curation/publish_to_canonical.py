@@ -3,7 +3,7 @@
 Publish approved CSVs to canonical Google Sheet.
 
 This script uploads the approved CSV files (categories.csv, experiences.csv,
-manuals.csv) to the canonical Google Sheet. Performs schema validation and
+skills.csv) to the canonical Google Sheet. Performs schema validation and
 duplicate checking as safety measures.
 
 Usage:
@@ -138,11 +138,11 @@ def main():
 
     categories_data = read_csv(input_dir / "categories.csv")
     experiences_data = read_csv(input_dir / "experiences.csv") 
-    manuals_data = read_csv(input_dir / "manuals.csv")
+    skills_data = read_csv(input_dir / "skills.csv")
 
     print(f"  Categories: {len(categories_data)} rows")
     print(f"  Experiences: {len(experiences_data)} rows")
-    print(f"  Manuals: {len(manuals_data)} rows")
+    print(f"  Skills: {len(skills_data)} rows")
     print()
 
     # Schema validation
@@ -156,7 +156,7 @@ def main():
         "source", "author", "sync_status", "embedding_status",
         "created_at", "updated_at", "synced_at", "exported_at"
     }
-    expected_manuals = {
+    expected_skills = {
         "id", "category_code", "title", "content", "summary",
         "source", "author", "sync_status", "embedding_status",
         "created_at", "updated_at", "synced_at", "exported_at"
@@ -164,7 +164,7 @@ def main():
     
     schema_warnings.extend(validate_schema(categories_data, expected_categories, "Categories"))
     schema_warnings.extend(validate_schema(experiences_data, expected_experiences, "Experiences"))
-    schema_warnings.extend(validate_schema(manuals_data, expected_manuals, "Manuals"))
+    schema_warnings.extend(validate_schema(skills_data, expected_skills, "Skills"))
     
     if schema_warnings:
         print("❌ Schema validation failed:")
@@ -182,7 +182,7 @@ def main():
     duplicate_warnings = []
     duplicate_warnings.extend(check_duplicates(categories_data, "code", "Categories"))
     duplicate_warnings.extend(check_duplicates(experiences_data, "id", "Experiences"))
-    duplicate_warnings.extend(check_duplicates(manuals_data, "id", "Manuals"))
+    duplicate_warnings.extend(check_duplicates(skills_data, "id", "Skills"))
     
     if duplicate_warnings:
         print("❌ Duplicate detection failed:")
@@ -198,11 +198,11 @@ def main():
     # Calculate checksums for change detection
     categories_checksum = calculate_checksum(categories_data)
     experiences_checksum = calculate_checksum(experiences_data)
-    manuals_checksum = calculate_checksum(manuals_data)
+    skills_checksum = calculate_checksum(skills_data)
     
     print(f"Categories checksum: {categories_checksum[:12]}...")
     print(f"Experiences checksum: {experiences_checksum[:12]}...")
-    print(f"Manuals checksum: {manuals_checksum[:12]}...")
+    print(f"Skills checksum: {skills_checksum[:12]}...")
     print()
 
     # If dry run, just show the plan
@@ -213,7 +213,7 @@ def main():
         print(f"  Sheet ID: {args.sheet_id}")
         print(f"  Categories: {len(categories_data)} rows (checksum: {categories_checksum[:12]}...)")
         print(f"  Experiences: {len(experiences_data)} rows (checksum: {experiences_checksum[:12]}...)")
-        print(f"  Manuals: {len(manuals_data)} rows (checksum: {manuals_checksum[:12]}...)")
+        print(f"  Skills: {len(skills_data)} rows (checksum: {skills_checksum[:12]}...)")
         print()
         print("✅ Dry run completed - no changes made to Google Sheet")
         return
@@ -241,11 +241,11 @@ def main():
             rows = [[row.get(h, "") for h in headers] for row in experiences_data]
             client.write_worksheet(args.sheet_id, "Experiences", headers, rows)
 
-        if manuals_data:
-            print(f"  Uploading Manuals ({len(manuals_data)} rows)...")
-            headers = list(manuals_data[0].keys()) if manuals_data else []
-            rows = [[row.get(h, "") for h in headers] for row in manuals_data]
-            client.write_worksheet(args.sheet_id, "Manuals", headers, rows)
+        if skills_data:
+            print(f"  Uploading Skills ({len(skills_data)} rows)...")
+            headers = list(skills_data[0].keys()) if skills_data else []
+            rows = [[row.get(h, "") for h in headers] for row in skills_data]
+            client.write_worksheet(args.sheet_id, "Skills", headers, rows)
         
         print()
         print(f"✅ Successfully published to Google Sheet: {args.sheet_id}")

@@ -380,16 +380,16 @@ def get_model_change_modal(
     request: Request,
     session: Session = Depends(get_db_session),
 ):
-    from src.common.storage.repository import ExperienceRepository, ManualRepository
+    from src.common.storage.repository import ExperienceRepository, CategorySkillRepository
 
     current_models = _get_model_info()
 
     exp_repo = ExperienceRepository(session)
-    manual_repo = ManualRepository(session)
+    skill_repo = CategorySkillRepository(session)
 
     experience_count = exp_repo.count()
-    manual_count = manual_repo.count()
-    total_items = experience_count + manual_count
+    skill_count = skill_repo.count()
+    total_items = experience_count + skill_count
 
     estimated_seconds = total_items * 2
     if estimated_seconds < 60:
@@ -401,7 +401,7 @@ def get_model_change_modal(
 
     impact_estimate = {
         "experience_count": experience_count,
-        "manual_count": manual_count,
+        "skill_count": skill_count,
         "total_items": total_items,
         "estimated_time": estimated_time,
     }

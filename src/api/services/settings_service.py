@@ -41,8 +41,8 @@ class SheetSettings:
     category_worksheet: str
     experiences_sheet_id: str
     experiences_worksheet: str
-    manuals_sheet_id: str
-    manuals_worksheet: str
+    skills_sheet_id: str
+    skills_worksheet: str
     validated_at: Optional[str]
 
 
@@ -284,7 +284,7 @@ class SettingsService:
 
         categories_cfg = _extract("categories", "category", "Categories")
         experiences_cfg = _extract("experiences", "experience", "Experiences")
-        manuals_cfg = _extract("skills", "manual", "Manuals")
+        skills_cfg = _extract("skills", "manuals", "Skills")
 
         payload = {
             "config_path": str(resolved),
@@ -295,8 +295,8 @@ class SettingsService:
             "category_worksheet": categories_cfg["worksheet"],
             "experiences_sheet_id": experiences_cfg["sheet_id"],
             "experiences_worksheet": experiences_cfg["worksheet"],
-            "manuals_sheet_id": manuals_cfg["sheet_id"],
-            "manuals_worksheet": manuals_cfg["worksheet"],
+            "skills_sheet_id": skills_cfg["sheet_id"],
+            "skills_worksheet": skills_cfg["worksheet"],
         }
 
         record = self._upsert_setting(
@@ -476,6 +476,8 @@ class SettingsService:
             payload = json.loads(record.value_json)
         except json.JSONDecodeError:
             return None
+        skills_sheet_id = payload.get("skills_sheet_id") or payload.get("manuals_sheet_id") or ""
+        skills_worksheet = payload.get("skills_worksheet") or payload.get("manuals_worksheet") or ""
         return SheetSettings(
             config_path=str(payload.get("config_path") or ""),
             config_checksum=str(payload.get("config_checksum") or ""),
@@ -485,8 +487,8 @@ class SettingsService:
             category_worksheet=str(payload.get("category_worksheet") or ""),
             experiences_sheet_id=str(payload.get("experiences_sheet_id") or ""),
             experiences_worksheet=str(payload.get("experiences_worksheet") or ""),
-            manuals_sheet_id=str(payload.get("manuals_sheet_id") or ""),
-            manuals_worksheet=str(payload.get("manuals_worksheet") or ""),
+            skills_sheet_id=str(skills_sheet_id),
+            skills_worksheet=str(skills_worksheet),
             validated_at=record.updated_at,
         )
 
@@ -605,7 +607,7 @@ class SettingsService:
                 missing.append("categories")
             if not settings.experiences_sheet_id:
                 missing.append("experiences")
-            if not settings.manuals_sheet_id:
+            if not settings.skills_sheet_id:
                 missing.append("skills")
             if missing:
                 return DiagnosticStatus(

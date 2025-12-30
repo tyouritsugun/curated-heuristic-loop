@@ -6,14 +6,14 @@ Usage:
 
 Output (JSON):
 {
-  "totals": {"experiences": N, "manuals": M},
+  "totals": {"experiences": N, "skills": M},
   "embedding_status": {"pending": X, "embedded": Y, "failed": Z},
   "faiss": {
     "available": true,
     "model": "Qwen/Qwen3-Embedding-0.6B",
     "dimension": 1024,
     "vectors": 0,
-    "by_type": {"experience": 0, "manual": 0},
+    "by_type": {"experience": 0, "skill": 0},
     "index_path": "data/faiss_index/unified_...index",
     "last_updated": "2025-10-26T23:59:59Z"
   },
@@ -67,14 +67,14 @@ def main():
     db.init_database()
 
     report = {
-        "totals": {"experiences": 0, "manuals": 0},
+        "totals": {"experiences": 0, "skills": 0},
         "embedding_status": {"pending": 0, "embedded": 0, "failed": 0},
         "faiss": {
             "available": False,
             "model": getattr(config, "embedding_model", None),
             "dimension": None,
             "vectors": 0,
-            "by_type": {"experience": 0, "manual": 0},
+            "by_type": {"experience": 0, "skill": 0},
             "index_path": None,
             "last_updated": None,
         },
@@ -84,7 +84,7 @@ def main():
     with db.session_scope() as session:
         # Totals
         report["totals"]["experiences"] = session.query(Experience).count()
-        report["totals"]["manuals"] = session.query(CategorySkill).count()
+        report["totals"]["skills"] = session.query(CategorySkill).count()
 
         # Embedding status counts (across both types)
         emb_repo = EmbeddingRepository(session)

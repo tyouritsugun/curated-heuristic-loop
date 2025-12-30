@@ -1,4 +1,4 @@
-"""Embedding generation service for experiences and manuals."""
+"""Embedding generation service for experiences and skills."""
 
 import logging
 import time
@@ -38,7 +38,7 @@ class EmbeddingService:
 
         self.emb_repo = EmbeddingRepository(session)
         self.exp_repo = ExperienceRepository(session)
-        self.manual_repo = CategorySkillRepository(session)
+        self.skill_repo = CategorySkillRepository(session)
 
     def _is_sqlite_lock_error(self, exc: Exception) -> bool:
         msg = str(getattr(exc, "orig", exc)).lower()
@@ -155,20 +155,20 @@ class EmbeddingService:
                 pass
             return False
 
-    def generate_for_manual(self, manual_id: str) -> bool:
+    def generate_for_skill(self, skill_id: str) -> bool:
         try:
-            manual = self.manual_repo.get_by_id(manual_id)
-            if not manual:
-                logger.error("Manual not found: %s", manual_id)
+            skill = self.skill_repo.get_by_id(skill_id)
+            if not skill:
+                logger.error("Skill not found: %s", skill_id)
                 return False
 
             try:
-                manual.embedding_status = "processing"
+                skill.embedding_status = "processing"
                 self._with_lock_retry(
-                    lambda: self.session.flush(), desc="flush manual -> processing"
+                    lambda: self.session.flush(), desc="flush skill -> processing"
                 )
                 self._with_lock_retry(
-                    lambda: self.session.commit(), desc="commit manual -> processing"
+                    lambda: self.session.commit(), desc="commit skill -> processing"
                 )
             except Exception:
                 try:
@@ -176,37 +176,37 @@ class EmbeddingService:
                 except Exception:
                     pass
 
-            content = manual.content
+            content = skill.content
             try:
                 embedding = self.embedding_client.encode_single(content)
             except EmbeddingClientError as exc:
-                logger.error("Failed to generate embedding for %s: %s", manual_id, exc)
-                manual.embedding_status = "failed"
+                logger.error("Failed to generate embedding for %s: %s", skill_id, exc)
+                skill.embedding_status = "failed"
                 self.session.flush()
                 return False
 
             def _upsert():
                 self.emb_repo.create(
-                    entity_id=manual_id,
-                    entity_type="manual",
-                    category_code=manual.category_code,
+                    entity_id=skill_id,
+                    entity_type="skill",
+                    category_code=skill.category_code,
                     vector=embedding,
                     model_version=self.embedding_client.get_model_version(),
                 )
 
-            self._with_lock_retry(_upsert, desc="embedding upsert (manual)")
+            self._with_lock_retry(_upsert, desc="embedding upsert (skill)")
 
-            manual.embedding_status = "embedded"
+            skill.embedding_status = "embedded"
             self._with_lock_retry(
-                lambda: self.session.flush(), desc="flush manual status"
+                lambda: self.session.flush(), desc="flush skill status"
             )
 
             try:
                 self._with_lock_retry(
-                    lambda: self.session.commit(), desc="commit manual embedding"
+                    lambda: self.session.commit(), desc="commit skill embedding"
                 )
             except Exception as exc:
-                logger.error("Failed to commit embedding for %s: %s", manual_id, exc)
+                logger.error("Failed to commit embedding for %s: %s", skill_id, exc)
                 try:
                     self.session.rollback()
                 except Exception:
@@ -216,8 +216,8 @@ class EmbeddingService:
             if self.faiss_index_manager:
                 try:
                     self.faiss_index_manager.add(
-                        entity_ids=[manual_id],
-                        entity_types=["manual"],
+                        entity_ids=[skill_id],
+                        entity_types=["skill"],
                         embeddings=embedding.reshape(1, -1),
                     )
                 except Exception as exc:
@@ -225,14 +225,14 @@ class EmbeddingService:
                         "Failed to update FAISS index (embedding saved): %s", exc
                     )
 
-            logger.info("Generated embedding for manual: %s", manual_id)
+            logger.info("Generated embedding for skill: %s", skill_id)
             return True
         except Exception as exc:
-            logger.error("Failed to generate embedding for manual %s: %s", manual_id, exc)
+            logger.error("Failed to generate embedding for skill %s: %s", skill_id, exc)
             try:
-                manual = self.manual_repo.get_by_id(manual_id)
-                if manual:
-                    manual.embedding_status = "failed"
+                skill = self.skill_repo.get_by_id(skill_id)
+                if skill:
+                    skill.embedding_status = "failed"
                     self.session.flush()
             except Exception:
                 pass
@@ -248,7 +248,7 @@ class EmbeddingService:
             .all()
         )
 
-    def get_pending_manuals(self) -> List[CategorySkill]:
+    def get_pending_skills(self) -> List[CategorySkill]:
         return (
             self.session.query(CategorySkill)
             .filter(
@@ -265,7 +265,7 @@ class EmbeddingService:
             .all()
         )
 
-    def get_failed_manuals(self) -> List[CategorySkill]:
+    def get_failed_skills(self) -> List[CategorySkill]:
         return (
             self.session.query(CategorySkill)
             .filter(CategorySkill.embedding_status == "failed")
@@ -276,10 +276,10 @@ class EmbeddingService:
         stats = {"processed": 0, "succeeded": 0, "failed": 0}
 
         pending_exp = self.get_pending_experiences()
-        pending_man = self.get_pending_manuals()
+        pending_skills = self.get_pending_skills()
 
         all_pending = [("experience", exp.id) for exp in pending_exp] + [
-            ("manual", man.id) for man in pending_man
+            ("skill", skill.id) for skill in pending_skills
         ]
 
         if max_count:
@@ -289,7 +289,7 @@ class EmbeddingService:
             if entity_type == "experience":
                 success = self.generate_for_experience(entity_id)
             else:
-                success = self.generate_for_manual(entity_id)
+                success = self.generate_for_skill(entity_id)
 
             stats["processed"] += 1
             if success:
@@ -309,10 +309,10 @@ class EmbeddingService:
         stats = {"retried": 0, "succeeded": 0, "failed": 0}
 
         failed_exp = self.get_failed_experiences()
-        failed_man = self.get_failed_manuals()
+        failed_skills = self.get_failed_skills()
 
         all_failed = [("experience", exp.id) for exp in failed_exp] + [
-            ("manual", man.id) for man in failed_man
+            ("skill", skill.id) for skill in failed_skills
         ]
 
         if max_count:
@@ -322,7 +322,7 @@ class EmbeddingService:
             if entity_type == "experience":
                 success = self.generate_for_experience(entity_id)
             else:
-                success = self.generate_for_manual(entity_id)
+                success = self.generate_for_skill(entity_id)
 
             stats["retried"] += 1
             if success:

@@ -2,7 +2,7 @@
 """
 Build embeddings and FAISS index for curation database.
 
-This script generates embeddings for all pending experiences and manuals in the
+This script generates embeddings for all pending experiences and skills in the
 curation database, then builds a FAISS index for similarity search.
 
 IMPORTANT: The API server must be stopped before running this script to avoid
@@ -148,20 +148,20 @@ def main():
         print("✓ Model loaded")
         print()
 
-        # Get pending experiences and manuals
+        # Get pending experiences and skills
         pending_experiences = session.query(Experience).filter(
             Experience.embedding_status == "pending"
         ).all()
 
-        pending_manuals = session.query(CategorySkill).filter(
+        pending_skills = session.query(CategorySkill).filter(
             CategorySkill.embedding_status == "pending"
         ).all()
 
-        total_pending = len(pending_experiences) + len(pending_manuals)
+        total_pending = len(pending_experiences) + len(pending_skills)
 
         if total_pending > 0:
             print(f"Found {len(pending_experiences)} pending experiences")
-            print(f"Found {len(pending_manuals)} pending manuals")
+            print(f"Found {len(pending_skills)} pending skills")
             print(f"Total: {total_pending} entries to process")
             print()
         else:
@@ -212,45 +212,45 @@ def main():
             print(f"✓ Embeddings generated for {len(pending_experiences)} experiences")
             print()
 
-        # Process manuals
-        if pending_manuals:
-            print(f"Processing manuals: 0/{len(pending_manuals)}", end="", flush=True)
-            for i, manual in enumerate(pending_manuals, 1):
-                content = f"{manual.title}\n\n{manual.content}"
+        # Process skills
+        if pending_skills:
+            print(f"Processing skills: 0/{len(pending_skills)}", end="", flush=True)
+            for i, skill in enumerate(pending_skills, 1):
+                content = f"{skill.title}\n\n{skill.content}"
 
                 try:
                     # Mark as processing
-                    manual.embedding_status = "processing"
+                    skill.embedding_status = "processing"
                     session.flush()
 
                     # Generate embedding
                     embedding_vector = embedding_client.encode_single(content)
 
                     # Delete any existing embedding to avoid duplicates on re-embed
-                    emb_repo.delete_by_entity(manual.id, "manual")
+                    emb_repo.delete_by_entity(skill.id, "skill")
 
                     # Save new embedding
                     emb_repo.create(
-                        entity_id=manual.id,
-                        entity_type="manual",
-                        category_code=manual.category_code,
+                        entity_id=skill.id,
+                        entity_type="skill",
+                        category_code=skill.category_code,
                         vector=embedding_vector,
                         model_version=config.embedding_model,
                     )
 
                     # Update status to embedded (not "synced")
-                    manual.embedding_status = "embedded"
+                    skill.embedding_status = "embedded"
 
                 except Exception as e:
-                    print(f"\n❌ Error processing manual {manual.id}: {e}")
-                    manual.embedding_status = "failed"
+                    print(f"\n❌ Error processing skill {skill.id}: {e}")
+                    skill.embedding_status = "failed"
 
                 # Progress update
-                print(f"\rProcessing manuals: {i}/{len(pending_manuals)}", end="", flush=True)
+                print(f"\rProcessing skills: {i}/{len(pending_skills)}", end="", flush=True)
 
             session.commit()
             print()  # New line after progress
-            print(f"✓ Embeddings generated for {len(pending_manuals)} manuals")
+            print(f"✓ Embeddings generated for {len(pending_skills)} skills")
             print()
 
         # Build FAISS index

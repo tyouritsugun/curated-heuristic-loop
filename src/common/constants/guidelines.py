@@ -1,4 +1,4 @@
-"""Shared constants for generator/evaluator guideline manuals."""
+"""Shared constants for generator/evaluator guideline skills."""
 
 GUIDELINES_CATEGORY_CODE = "GLN"
 GENERATOR_GUIDE_TITLE = "Generator workflow guidelines"

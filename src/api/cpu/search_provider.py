@@ -49,8 +49,8 @@ class SQLiteTextProvider(SearchProvider):
             if entity_type in (None, "experience"):
                 results.extend(self._search_experiences(session, query, category_code, top_k))
 
-            if entity_type in (None, "manual"):
-                results.extend(self._search_manuals(session, query, category_code, top_k))
+            if entity_type in (None, "skill"):
+                results.extend(self._search_skills(session, query, category_code, top_k))
 
             # Sort by updated_at DESC (most recent first)
             results.sort(key=lambda x: x[1], reverse=True)
@@ -62,7 +62,7 @@ class SQLiteTextProvider(SearchProvider):
                     entity_type_str = "experience"
                 else:
                     entity_id = entity.id
-                    entity_type_str = "manual"
+                    entity_type_str = "skill"
 
                 search_results.append(
                     SearchResult(
@@ -110,14 +110,14 @@ class SQLiteTextProvider(SearchProvider):
 
         return q.limit(limit).all()
 
-    def _search_manuals(
+    def _search_skills(
         self,
         session: Session,
         query: str,
         category_code: Optional[str],
         limit: int,
     ) -> List[tuple]:
-        """Search manuals using LIKE matching."""
+        """Search skills using LIKE matching."""
         pattern = f"%{query}%"
         tokens = self._tokenize(query)
 
@@ -162,8 +162,8 @@ class SQLiteTextProvider(SearchProvider):
                 return self._find_experience_duplicates(
                     session, title, content, category_code, exclude_id
                 )
-            if entity_type == "manual":
-                return self._find_manual_duplicates(
+            if entity_type == "skill":
+                return self._find_skill_duplicates(
                     session, title, content, category_code, exclude_id
                 )
             raise ValueError(f"Invalid entity_type: {entity_type}")
@@ -229,7 +229,7 @@ class SQLiteTextProvider(SearchProvider):
 
         return candidates
 
-    def _find_manual_duplicates(
+    def _find_skill_duplicates(
         self,
         session: Session,
         title: str,
@@ -245,16 +245,16 @@ class SQLiteTextProvider(SearchProvider):
         if exclude_id:
             q = q.filter(CategorySkill.id != exclude_id)
 
-        for manual in q.all():
+        for skill in q.all():
             candidates.append(
                 DuplicateCandidate(
-                    entity_id=manual.id,
-                    entity_type="manual",
+                    entity_id=skill.id,
+                    entity_type="skill",
                     score=1.0,
                     reason=SearchReason.TEXT_DUPLICATE,
                     provider="sqlite_text",
-                    title=manual.title,
-                    summary=manual.summary or (manual.content[:200] if manual.content else None),
+                    title=skill.title,
+                    summary=skill.summary or (skill.content[:200] if skill.content else None),
                 )
             )
 
@@ -266,16 +266,16 @@ class SQLiteTextProvider(SearchProvider):
             if exclude_id:
                 q = q.filter(CategorySkill.id != exclude_id)
 
-            for manual in q.limit(5).all():
+            for skill in q.limit(5).all():
                 candidates.append(
                     DuplicateCandidate(
-                        entity_id=manual.id,
-                        entity_type="manual",
+                        entity_id=skill.id,
+                        entity_type="skill",
                         score=0.75,
                         reason=SearchReason.TEXT_DUPLICATE,
                         provider="sqlite_text",
-                        title=manual.title,
-                        summary=manual.summary or (manual.content[:200] if manual.content else None),
+                        title=skill.title,
+                        summary=skill.summary or (skill.content[:200] if skill.content else None),
                     )
                 )
 

@@ -313,7 +313,7 @@ class CHLAPIClient:
         limit: Optional[int] = None,
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Read entries (experiences or manuals).
+        """Read entries (experiences or skills).
 
         category_code is optional to enable global search. For category-scoped
         calls, pass the code; for global search omit it and provide a query.
@@ -438,7 +438,7 @@ class CHLAPIClient:
     # Entry operations
 
     def export_entries(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Export all entries (experiences, manuals, categories) from the database."""
+        """Export all entries (experiences, skills, categories) from the database."""
         return self.request(
             "GET",
             "/api/v1/entries/export",

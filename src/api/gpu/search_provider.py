@@ -107,10 +107,15 @@ class VectorFAISSProvider(SearchProvider):
             for internal_id, score in zip(internal_ids, scores):
                 mapping = self.index_manager.get_entity_id(int(internal_id))
                 if mapping:
+                    entity_type = str(mapping.get("entity_type"))
+                    if entity_type == "manual":
+                        entity_type = "skill"
+                    if entity_type not in ("experience", "skill"):
+                        continue
                     entity_mappings.append(
                         {
                             "entity_id": mapping["entity_id"],
-                            "entity_type": mapping["entity_type"],
+                            "entity_type": entity_type,
                             "score": float(score),
                         }
                     )
@@ -200,11 +205,16 @@ class VectorFAISSProvider(SearchProvider):
                 mapping = self.index_manager.get_entity_id(int(internal_id))
                 if not mapping:
                     continue
+                entity_type = str(mapping.get("entity_type"))
+                if entity_type == "manual":
+                    entity_type = "skill"
+                if entity_type not in ("experience", "skill"):
+                    continue
                 if exclude_id and mapping["entity_id"] == exclude_id:
                     continue
 
                 entity = self._fetch_entity(
-                    session, mapping["entity_id"], mapping["entity_type"]
+                    session, mapping["entity_id"], entity_type
                 )
                 if not entity:
                     continue
@@ -221,7 +231,7 @@ class VectorFAISSProvider(SearchProvider):
                 candidates.append(
                     {
                         "entity_id": mapping["entity_id"],
-                        "entity_type": mapping["entity_type"],
+                        "entity_type": entity_type,
                         "score": float(score),
                         "title": entity.title,
                         "summary": summary,

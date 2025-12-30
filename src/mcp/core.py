@@ -53,7 +53,7 @@ TOOL_INDEX = [
         "name": "update_entry",
         "description": "Update an existing experience or skill by id.",
         "example": {
-            "entity_type": "manual",
+            "entity_type": "skill",
             "category_code": "PGS",
             "entry_id": "MNL-PGS-20250115-104200123456",
             "updates": {"summary": "Adds audit checklist step."},
@@ -84,7 +84,7 @@ WORKFLOW_MODE_PAYLOAD = {
         "switch to evaluator deliberately when reflecting on completed work."
     ),
     "guidelines": {
-        "generator": "Use guide_type='generator' to fetch the authoring manual.",
+        "generator": "Use guide_type='generator' to fetch the authoring guide.",
         "evaluator": "Use guide_type='evaluator' only after generator work is done.",
     },
 }
