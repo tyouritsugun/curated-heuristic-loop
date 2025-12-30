@@ -6,7 +6,7 @@ Usage (smoke test):
     python -m scripts.curation.agents.autogen_openai_completion_agent \
         --prompt scripts/curation/agents/prompts/curation_prompt.yaml
 
-Relies on scripts/scripts_config.yaml (curation.llm or curation_llm) and env vars:
+Relies on scripts/scripts_config.yaml (curation.llm or curation_llm) and .env vars:
   OPENAI_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / ANTHROPIC_API_KEY / LLM_API_KEY
 """
 
@@ -25,7 +25,7 @@ def build_llm_config():
     if not settings.api_key:
         raise RuntimeError(
             "Missing API key for OpenAI-compatible provider. "
-            "Set OPENAI_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY/LLM_API_KEY) in your environment or .env."
+            "Set OPENAI_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY/LLM_API_KEY) in your .env."
         )
     cfg = {
         "config_list": [

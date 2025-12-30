@@ -743,6 +743,7 @@ def main() -> int:
     agent = AssistantAgent(name="curation_agent", llm_config=llm_config)
 
     warnings: List[str] = []
+    errors: List[str] = []
     rounds_report: List[Dict[str, Any]] = []
     manual_queue: List[str] = []
     below_threshold_streak = 0
@@ -798,7 +799,6 @@ def main() -> int:
 
                 merges_this_round = 0
                 manual_this_round = 0
-                decisions_for_log: List[dict] = []
 
                 for idx, comm in enumerate(selected, start=1):
                     if args.max_runtime_seconds is not None:
@@ -823,57 +823,34 @@ def main() -> int:
                         prompt_path=prompt_path,
                     )
 
-                max_retries = 0
-                retry_delays: List[int] = []
-                retry_backoff = "exponential"
+                    max_retries = 0
+                    retry_delays: List[int] = []
+                    retry_backoff = "exponential"
 
-                ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
-                    agent,
-                    messages,
-                    allowed_ids=comm.get("members", []),
-                    max_retries=max_retries,
-                    retry_delays=retry_delays,
-                    retry_backoff=retry_backoff,
-                )
-                if warn and args.verbose:
-                    for w in warn:
-                        print(f"[round {round_index}] {community_id} warning: {w}", flush=True)
-                decision_label = normalized.get("decision") if ok else None
-                merge_count = len(normalized.get("merges", []) or []) if ok else 0
-                decision_msg = decision_label or ("invalid" if not ok else "unknown")
-                if args.verbose:
-                    print(
-                        f"[round {round_index}] LLM response for {community_id}: {decision_msg} merges={merge_count}",
-                        flush=True,
+                    ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
+                        agent,
+                        messages,
+                        allowed_ids=comm.get("members", []),
+                        max_retries=max_retries,
+                        retry_delays=retry_delays,
+                        retry_backoff=retry_backoff,
                     )
+                    if warn and args.verbose:
+                        for w in warn:
+                            print(f"[round {round_index}] {community_id} warning: {w}", flush=True)
+                    decision_label = normalized.get("decision") if ok else None
+                    merge_count = len(normalized.get("merges", []) or []) if ok else 0
+                    decision_msg = decision_label or ("invalid" if not ok else "unknown")
+                    if args.verbose:
+                        print(
+                            f"[round {round_index}] LLM response for {community_id}: {decision_msg} merges={merge_count}",
+                            flush=True,
+                        )
 
-                if not ok:
-                    warnings.extend(errs)
-                    manual_this_round += 1
-                    manual_queue.append(community_id)
-                    decisions_for_log.extend(
-                        add_decision_note(
-                            session,
-                            comm.get("members", []),
-                            action="manual_review",
-                            user=args.user,
-                            notes="llm failure",
-                            dry_run=args.dry_run,
-                        )
-                    )
-                else:
-                    warnings.extend(warn)
-                    decision = normalized.get("decision")
-                    if decision in {"merge_all", "merge_subset"}:
-                        merged_count, merge_decisions = apply_merges(
-                            session,
-                            normalized.get("merges", []),
-                            user=args.user,
-                            dry_run=args.dry_run,
-                        )
-                        merges_this_round += merged_count
-                        decisions_for_log.extend(merge_decisions)
-                    elif decision == "manual_review":
+                    decisions_for_log: List[dict] = []
+                    if not ok:
+                        warnings.extend(errs)
+                        errors.extend(errs)
                         manual_this_round += 1
                         manual_queue.append(community_id)
                         decisions_for_log.extend(
@@ -882,32 +859,56 @@ def main() -> int:
                                 comm.get("members", []),
                                 action="manual_review",
                                 user=args.user,
-                                notes=normalized.get("notes") or "manual review",
+                                notes="llm failure",
                                 dry_run=args.dry_run,
                             )
                         )
                     else:
-                        decisions_for_log.extend(
-                            add_decision_note(
+                        warnings.extend(warn)
+                        decision = normalized.get("decision")
+                        if decision in {"merge_all", "merge_subset"}:
+                            merged_count, merge_decisions = apply_merges(
                                 session,
-                                comm.get("members", []),
-                                action="keep_separate",
+                                normalized.get("merges", []),
                                 user=args.user,
-                                notes=normalized.get("notes") or "keep separate",
                                 dry_run=args.dry_run,
                             )
-                        )
+                            merges_this_round += merged_count
+                            decisions_for_log.extend(merge_decisions)
+                        elif decision == "manual_review":
+                            manual_this_round += 1
+                            manual_queue.append(community_id)
+                            decisions_for_log.extend(
+                                add_decision_note(
+                                    session,
+                                    comm.get("members", []),
+                                    action="manual_review",
+                                    user=args.user,
+                                    notes=normalized.get("notes") or "manual review",
+                                    dry_run=args.dry_run,
+                                )
+                            )
+                        else:
+                            decisions_for_log.extend(
+                                add_decision_note(
+                                    session,
+                                    comm.get("members", []),
+                                    action="keep_separate",
+                                    user=args.user,
+                                    notes=normalized.get("notes") or "keep separate",
+                                    dry_run=args.dry_run,
+                                )
+                            )
 
-                    state.setdefault("communities_resolved", []).append(community_id)
+                        state.setdefault("communities_resolved", []).append(community_id)
 
-                    if not args.dry_run:
-                        session.commit()
+                        if not args.dry_run:
+                            session.commit()
 
-                    StateManager.save_state(state, state_file, dry_run=args.dry_run)
+                        StateManager.save_state(state, state_file, dry_run=args.dry_run)
 
-                # Write evaluation log for the round
-                if decisions_for_log:
-                    write_eval_log(decisions_for_log, eval_log_path, dry_run=args.dry_run)
+                    if decisions_for_log:
+                        write_eval_log(decisions_for_log, eval_log_path, dry_run=args.dry_run)
 
                 # Rebuild communities using neighbor cache
                 items = load_items(session)
@@ -1018,6 +1019,14 @@ def main() -> int:
         warnings=warnings,
         dry_run=args.dry_run,
     )
+
+    if warnings:
+        print("Warnings:")
+        for warning in warnings:
+            print(f"- {warning}")
+    if errors:
+        print("Errors encountered; exiting with failure status.")
+        return 2
 
     print(f"✓ Completed rounds: {rounds_run}")
     return 0

@@ -77,7 +77,8 @@ curation_llm:
                                       #   Claude (OpenAI-compat): https://api.anthropic.com/v1/
                                       #   Local (Ollama): http://localhost:11434/v1
                                       #   Local (LM Studio): http://localhost:1234/v1
-  # api_key: null                     # Set via env: OPENAI_API_KEY, GEMINI_API_KEY, or LLM_API_KEY
+  # NOTE: Keys are read from .env only. Avoid setting multiple keys there; keep just one.
+  # api_key: null                     # Set via .env: OPENAI_API_KEY, GEMINI_API_KEY, or LLM_API_KEY
   llm_response_timeout: 120           # seconds per LLM call
                                       # Note: expected per-call latency varies by model/provider.
                                       # Use a short value for fast hosted models (e.g., Gemini Flash),

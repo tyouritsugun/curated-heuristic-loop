@@ -89,7 +89,7 @@ python scripts/curation/overnight/run_curation_loop.py \
   --improvement-threshold 0.05 \
   --dry-run
 ```
-- Real run (uses `curation_llm` config or env `LLM_MODEL`/`LLM_API_BASE`/`LLM_API_KEY`):
+- Real run (uses `curation_llm` config or `.env` `LLM_MODEL`/`LLM_API_BASE`/`LLM_API_KEY`):
 ```bash
 python scripts/curation/overnight/run_curation_loop.py --max-rounds 3
 ```
