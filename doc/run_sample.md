@@ -38,7 +38,7 @@ The demo requires TMG (Ticket Management) category data with DataPipe bug report
 1. Make sure that you set `IMPORT_SPREADSHEET_ID` in your `.env`, which value is same as in `.env.sample`. 
 2. Import your database via Settings → "Import Spreadsheet". Note, this will reset your local data with the data in the spreadsheet.
 3. Check the Experiences worksheet - you should see 10 TMG entries about bug reporting
-4. Check the Manuals worksheet - you should see the "Bug Report Template" entry
+4. Check the Skills worksheet - you should see the "Bug Report Template" entry
 
 ## Running the Demo
 
@@ -163,10 +163,10 @@ After running the demo:
 
 2. **Work with the LLM normally**: With categories in place, keep using CHL in everyday tasks; the assistant will pull existing guidance as you go.
 
-3. **Close the loop at conversation end**: Ask the LLM to summarize the session and propose domain-agnostic manuals or atomic experiences. After a quick human review, have the LLM call `write_entries` to save them to SQLite.
+3. **Close the loop at conversation end**: Ask the LLM to summarize the session and propose domain-agnostic skills or atomic experiences. After a quick human review, have the LLM call `write_entries` to save them to SQLite.
    - **Experiences** stay short and action-oriented (e.g., "Always check X before doing Y", "When Z happens, look at W first").
-   - **Manuals** stitch related experiences into a concise process overview.
+   - **Skills** stitch related experiences into a concise process overview.
 
-4. **Share when it’s ripe**: Once the library has real depth, export to Google Sheets to share and trade the strongest manuals/experiences with the team.
+4. **Share when it's ripe**: Once the library has real depth, export to Google Sheets to share and trade the strongest skills/experiences with the team.
 
 5. **Keep refining**: Repeat the loop—apply guidance, capture learnings, curate, and redistribute—so the knowledge base stays sharp and relevant.

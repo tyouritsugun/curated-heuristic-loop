@@ -41,7 +41,7 @@ def read_entries(
     fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Retrieve experiences or manuals.
+    Retrieve experiences or skills.
 
     USAGE PATTERNS:
 
@@ -111,10 +111,10 @@ def create_entry(
     data: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Create a new experience or manual entry via the API.
+    Create a new experience or skill entry via the API.
 
     Args:
-        entity_type: Either 'experience' or 'manual'
+        entity_type: Either 'experience' or 'manual' (skills; 'manual' is legacy parameter name)
         category_code: Category shelf code (e.g., 'PGS', 'GLN')
         data: Entry payload
     """
@@ -139,11 +139,11 @@ def update_entry(
     force_contextual: bool = False,
 ) -> Dict[str, Any]:
     """
-    Update an existing experience or manual entry by id.
+    Update an existing experience or skill entry by id.
 
     Allowed fields:
         - experience: title, playbook, context, section (use force_contextual=true to set section='contextual')
-        - manual: title, content, summary
+        - skill (entity_type='manual'): title, content, summary
     """
     try:
         payload = {
@@ -172,7 +172,7 @@ def check_duplicates(
     Check for potential duplicate entries before writing.
 
     Args:
-        entity_type: 'experience' or 'manual'
+        entity_type: 'experience' or 'manual' (skills; 'manual' is legacy parameter name)
         category_code: Category shelf code (e.g., 'PGS')
         title: Proposed entry title
         content: Proposed playbook/content body

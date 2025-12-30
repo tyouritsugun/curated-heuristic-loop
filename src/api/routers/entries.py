@@ -1,4 +1,4 @@
-"""Entry endpoints for experiences and manuals."""
+"""Entry endpoints for experiences and skills."""
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
@@ -742,7 +742,7 @@ def export_entries(
 ) -> Dict[str, Any]:
     """Export all entries for Sheets/backup clients.
 
-    Returns all experiences, manuals, and categories in a format suitable
+    Returns all experiences, skills, and categories in a format suitable
     for exporting to Google Sheets or other external systems.
     """
     try:
@@ -825,7 +825,7 @@ def export_entries_csv(
     Returns a zip file named {username}.export.zip containing:
     - {username}/categories.csv
     - {username}/experiences.csv
-    - {username}/manuals.csv
+    - {username}/manuals.csv (skills; filename is legacy)
     """
     import csv
     import io

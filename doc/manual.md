@@ -2,6 +2,8 @@
 
 This manual covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
 
+> **Note:** CHL uses the term "skill" to refer to comprehensive workflow procedures. In earlier versions, these were called "manuals." If you see legacy references to "manual" in code or older documentation, they refer to the same concept now called "skill."
+
 ## 1. Initial Setup
 
 This section guides you through the first-time setup of the CHL environment.
@@ -81,11 +83,11 @@ This operation imports all data from the configured Google Sheet, including:
 
 ## 2. Understanding CHL's Knowledge Structure
 
-Before diving into workflows, it's essential to understand how CHL organizes knowledge using three core concepts: **categories**, **manuals**, and **experiences**.
+Before diving into workflows, it's essential to understand how CHL organizes knowledge using three core concepts: **categories**, **skills**, and **experiences**.
 
 ### 2.1. Categories: Knowledge Boundaries
 
-Categories are organizational "shelves" that isolate knowledge by domain or workflow type. Think of them like library sections—each category contains manuals and experiences relevant to a specific area of work.
+Categories are organizational "shelves" that isolate knowledge by domain or workflow type. Think of them like library sections—each category contains skills and experiences relevant to a specific area of work.
 
 **Examples:**
 - `TMG` (Ticket Management): Bug reporting, issue tracking conventions
@@ -105,9 +107,9 @@ Categories are organizational "shelves" that isolate knowledge by domain or work
 
 See [Managing Categories](#62-managing-categories) for how to add custom categories.
 
-### 2.2. Manuals: Workflow-Level Guidance
+### 2.2. Skills: Workflow-Level Guidance
 
-Manuals are **process-oriented playbooks** that describe complete workflows or multi-step procedures. They answer "How do we do X from start to finish?"
+Skills are **process-oriented playbooks** that describe complete workflows or multi-step procedures. They answer "How do we do X from start to finish?"
 
 **Characteristics:**
 - Cover end-to-end processes (e.g., "Bug Report Template", "API Design Review Checklist")
@@ -130,7 +132,7 @@ Manuals are **process-oriented playbooks** that describe complete workflows or m
 - Body: Include Run ID, logs, reproduction steps
 ```
 
-**When to write a manual:**
+**When to write a skill:**
 - You're documenting a repeatable process
 - The workflow has multiple steps or decision points
 - New team members need a reference guide
@@ -160,16 +162,16 @@ Experiences are **single, actionable heuristics**—small lessons learned from r
 
 ### 2.4. How They Work Together
 
-**Category** → Contains both manuals and experiences about a specific domain
+**Category** → Contains both skills and experiences about a specific domain
 
-**Manual** → References or is informed by multiple experiences
+**Skill** → References or is informed by multiple experiences
 
-**Experience** → Atomic building blocks that can later be synthesized into manuals
+**Experience** → Atomic building blocks that can later be synthesized into skills
 
 **Example hierarchy:**
 ```
 Category: TMG (Ticket Management)
-├── Manual: "Bug Report Template"
+├── Skill: "Bug Report Template"
 │   └── Synthesized from experiences about required artifacts, formatting, etc.
 ├── Experience: "Always check for Run ID in metadata JSON"
 ├── Experience: "Clarify user intent before rushing to fix code"
@@ -179,7 +181,7 @@ Category: TMG (Ticket Management)
 **User Story:**
 
 1. During tasks, assistant captures **experiences** (atomic learnings)
-2. Over time, related experiences are synthesized into **manuals** (playbooks)
+2. Over time, related experiences are synthesized into **skills** (playbooks)
 3. Both are organized by **category** (domain boundaries)
 4. Curator reviews and publishes the highest-quality entries
 5. Team imports published knowledge into their local databases
@@ -190,7 +192,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 
 ### 3.1. End-to-End Workflow
 
-1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`create_entry`), capturing new insights as either atomic experiences or updates to manuals. These new entries are saved to the local SQLite database with a `pending` status.
+1.  **Capture (Developer & Assistant):** During a work session, the assistant uses existing knowledge (`read_entries`). Afterwards, the assistant reflects on the session (`create_entry`), capturing new insights as either atomic experiences or updates to skills. These new entries are saved to the local SQLite database with a `pending` status.
 2.  **Vector Refresh (Operator):** To keep search fast and accurate, an operator periodically regenerates the vector index. This is done via the **Web UI** or by running `scripts/ops/rebuild_index.py`. This process generates embeddings for all `pending` entries.
 3.  **Export for Review (Curator):** A curator exports all `pending` entries from the team's local databases into a shared Google Sheet using the API server's Operations dashboard (or `GET /api/v1/entries/export` for automation).
 4.  **Curate (Curator):** The curator reviews the submitted entries in Google Sheets, merging duplicates, editing for clarity, and approving the highest-quality insights.
@@ -201,7 +203,7 @@ The CHL workflow is designed for developers, AI assistants, and curators to coll
 1.  **Startup:** The MCP service loads its configuration and advertises available categories via `list_categories`.
 2.  **Generator Mode:** The assistant queries for relevant entries using `read_entries(query=...)`.
 3.  **Evaluator Mode:** The assistant writes new knowledge using `create_entry(...)`, which returns similarity scores to help decide whether to create, update, or refactor an entry.
-4.  **Knowledge scope:** CHL stores manuals and experiences (shared heuristics), not domain- or product-specific content (e.g., no customer-specific page designs). Treat the KB as generic process/UX/code heuristics organized by category.
+4.  **Knowledge scope:** CHL stores skills and experiences (shared heuristics), not domain- or product-specific content (e.g., no customer-specific page designs). Treat the KB as generic process/UX/code heuristics organized by category.
 
 ### 3.3. Review and Governance
 
@@ -261,7 +263,7 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Managing Categories
 
-Categories define the organizational "shelves" where experiences and manuals are stored. The 12 default categories above are seeded during setup, but you can add custom categories for your team's specific workflows.
+Categories define the organizational "shelves" where experiences and skills are stored. The 12 default categories above are seeded during setup, but you can add custom categories for your team's specific workflows.
 
 #### Adding New Categories
 

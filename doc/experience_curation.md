@@ -139,4 +139,4 @@ data/curation/
 
 ## Notes
 - `sync_status`: `0=PENDING`, `1=SYNCED`, `2=REJECTED`.
-- Communities are per-category; manuals stay out of the loop by default.
+- Communities are per-category; skills stay out of the loop by default.
