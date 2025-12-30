@@ -37,7 +37,7 @@ class ExperienceWritePayload(BaseModel):
     )
     context: Dict[str, Any] | None = Field(
         None,
-        description="Additional context metadata (required for contextual section, ignored for useful/harmful)",
+        description="Additional context metadata (required for contextual section; optional otherwise)",
     )
 
     @model_validator(mode="before")
@@ -50,12 +50,6 @@ class ExperienceWritePayload(BaseModel):
         if section == "contextual" and not data.get("context"):
             raise ValueError("Contextual entries require non-empty context metadata")
         return data
-
-    @model_validator(mode="after")
-    def _normalize_context(self) -> "ExperienceWritePayload":
-        if self.section in {"useful", "harmful"}:
-            self.context = None
-        return self
 
 
 class SkillWritePayload(BaseModel):
@@ -112,4 +106,3 @@ def normalize_context(raw_context: Any) -> Any:
             return raw_context
 
     return raw_context
-

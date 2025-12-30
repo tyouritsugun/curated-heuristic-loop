@@ -56,7 +56,7 @@ Issue 2–3 variants if top score <0.50.
 4. **CPU mode:** if `read_entries` meta shows `search_mode='cpu'`, skip `check_duplicates`; instead load relevant entries in that category via keyword `read_entries` and manually compare before writing.
 
 ### 5. Layer skills only when they change the plan
-- Use `entity_type=\"manual\"` (skills; "manual" is legacy parameter name) when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
+- Use `entity_type=\"skill\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
 - Limit yourself to the top 1–2 skills; if nothing useful appears, treat it as a knowledge gap and flag it later.
 
 ### 6. Check coverage and gaps

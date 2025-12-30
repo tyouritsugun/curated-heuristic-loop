@@ -71,12 +71,27 @@ class ImportService:
 
         # Clear existing data
         logger.info("Clearing existing categories, experiences, skills, and embeddings")
-        session.query(Embedding).delete()
-        session.query(FAISSMetadata).delete()
-        session.query(Experience).delete()
-        session.query(CategorySkill).delete()
-        session.query(Category).delete()
-        session.flush()
+        from sqlalchemy import text
+
+        try:
+            # Use raw deletes to avoid ORM state sync and FK ordering issues.
+            session.execute(text("DELETE FROM embeddings"))
+            session.execute(text("DELETE FROM faiss_metadata"))
+            session.execute(text("DELETE FROM experiences"))
+            session.execute(text("DELETE FROM category_skills"))
+            session.execute(text("DELETE FROM categories"))
+            session.flush()
+        except Exception:
+            # Retry with FK checks temporarily disabled if SQLite is enforcing aggressively.
+            session.rollback()
+            session.execute(text("PRAGMA foreign_keys=OFF"))
+            session.execute(text("DELETE FROM embeddings"))
+            session.execute(text("DELETE FROM faiss_metadata"))
+            session.execute(text("DELETE FROM experiences"))
+            session.execute(text("DELETE FROM category_skills"))
+            session.execute(text("DELETE FROM categories"))
+            session.execute(text("PRAGMA foreign_keys=ON"))
+            session.flush()
 
         now_iso = utc_now()
 

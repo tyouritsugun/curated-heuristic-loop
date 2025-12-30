@@ -100,7 +100,7 @@ class WriteEntryResponse(BaseModel):
     # Potential duplicates surfaced at write-time with guidance
     duplicates: Optional[List[Dict[str, Any]]] = None
     recommendation: Optional[str] = None
-    # Optional human-readable notes (e.g., context ignored for non-contextual sections)
+    # Optional human-readable notes about processing.
     warnings: Optional[List[str]] = None
     message: Optional[str] = None
 

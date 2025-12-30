@@ -19,7 +19,7 @@ Switch to this playbook **only after** the user confirms the Generator's work is
 1. Stick to one category at a time. Use `read_entries("experience", category_code, query=...)` with **specific literal keywords**.
 2. Re-read the experiences/skills that were used (or should have been used):
    - `read_entries("experience", category_code, ids=[...])` for referenced IDs to confirm the playbook still matches reality.
-   - `read_entries("manual", category_code, query=...)` with **specific keywords** if broader context is necessary.
+- `read_entries("skill", category_code, query=...)` with **specific keywords** if broader context is necessary.
 3. If you suspect overlap or a candidate duplicate, run searches with **exact terms** from the proposed entry to find what already exists.
 
 **Example search strategies:**
@@ -40,8 +40,8 @@ Structure your response so the user (and future readers) can scan it quickly:
 
 Decide how to capture each insight:
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
-- **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and keep `context` empty for useful/harmful entries.
-- **Skill adjustments (`create_entry` / `update_entry` with `entity_type="manual"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. Note: "manual" is the legacy parameter name for skills. If the skill becomes too long, consider splitting it and note the recommendation for curators.
+- **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and update title/playbook/context as needed.
+- **Skill adjustments (`create_entry` / `update_entry` with `entity_type="skill"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the skill becomes too long, consider splitting it and note the recommendation for curators.
 
 Before writing:
 1. Manually check for duplicates: use multiple keyword `read_entries` calls in the target category (previews are fine) and scan titles/contents yourself; `check_duplicates` is not reliable/available in CPU mode.

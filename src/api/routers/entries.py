@@ -430,11 +430,6 @@ def create_entry(
             }
 
             warnings: list[str] = []
-            raw_context = request.data.get("context")
-            if raw_context and validated.section in {"useful", "harmful"}:
-                warnings.append(
-                    "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
-                )
 
             # Apply decision tree based on duplicate check results
             recommendation = None
@@ -657,16 +652,10 @@ def update_entry(
                     detail=f"Entry '{request.entry_id}' not found"
                 )
 
-            effective_section = request.updates.get("section") or existing.section
             if request.updates.get("section") == "contextual" and not request.force_contextual:
                 raise HTTPException(
                     status_code=400,
                     detail="Changing section to 'contextual' requires force_contextual=true"
-                )
-            if effective_section in {"useful", "harmful"} and request.updates.get("context"):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Context must be empty for '{effective_section}' entries"
                 )
 
             try:
