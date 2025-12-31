@@ -111,6 +111,20 @@ class CurationDecision(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class ExperienceSplitProvenance(Base):
+    __tablename__ = "experience_split_provenance"
+
+    id = Column(Integer, primary_key=True)
+    source_experience_id = Column(String(64), nullable=False, index=True)
+    split_experience_id = Column(String(64), nullable=True, index=True)
+    split_group_id = Column(String(64), nullable=False, index=True)
+    decision = Column(String(16), nullable=False)  # split or atomic
+    model = Column(String(255), nullable=True)
+    prompt_path = Column(String(255), nullable=True)
+    raw_response = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class JobHistory(Base):
     __tablename__ = "job_history"
 

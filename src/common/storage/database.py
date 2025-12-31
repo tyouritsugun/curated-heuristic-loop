@@ -147,6 +147,13 @@ class Database:
             rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
             return any(row[1] == column for row in rows)
 
+        def _has_table(conn, table: str) -> bool:
+            row = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+                {"name": table},
+            ).fetchone()
+            return row is not None
+
         with self.engine.begin() as conn:
             def _add_column(table: str, column: str, ddl: str, fill_sql: str | None = None):
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
@@ -220,6 +227,44 @@ class Database:
                     "recorded_at",
                     "TEXT",
                     "UPDATE telemetry_samples SET recorded_at = created_at WHERE recorded_at IS NULL",
+                )
+
+            # Experience split provenance table
+            if not _has_table(conn, "experience_split_provenance"):
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE experience_split_provenance (
+                            id INTEGER PRIMARY KEY,
+                            source_experience_id TEXT NOT NULL,
+                            split_experience_id TEXT,
+                            split_group_id TEXT NOT NULL,
+                            decision TEXT NOT NULL,
+                            model TEXT,
+                            prompt_path TEXT,
+                            raw_response TEXT,
+                            created_at TEXT NOT NULL
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX experience_split_provenance_source_idx "
+                        "ON experience_split_provenance(source_experience_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX experience_split_provenance_split_idx "
+                        "ON experience_split_provenance(split_experience_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX experience_split_provenance_group_idx "
+                        "ON experience_split_provenance(split_group_id)"
+                    )
                 )
 
             # Worker metrics upgraded schema
