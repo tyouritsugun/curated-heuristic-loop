@@ -9,6 +9,7 @@ until convergence or a max-round cap.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import shutil
 import sys
@@ -22,6 +23,11 @@ import networkx as nx
 import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+try:
+    from tqdm import tqdm  # type: ignore
+except Exception:  # pragma: no cover - optional
+    tqdm = None
 
 # Add project root to sys.path
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -97,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--improvement-threshold", type=float, default=0.05)
     parser.add_argument("--batch-size", type=int, default=0, help="Communities per round (0 = all)")
     parser.add_argument("--verbose", action="store_true", help="Verbose per-community logging")
+    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress output")
     parser.add_argument(
         "--llm-timeout",
         type=int,
@@ -415,7 +422,7 @@ def auto_dedup(
                     "action": "merge",
                     "target_id": anchor_id,
                     "was_correct": None,
-                    "notes": f"auto-merge {member_id} -> {anchor_id}",
+                    "notes": f"auto-dedup {member_id} -> {anchor_id}",
                 }
             )
             merged += 1
@@ -426,7 +433,7 @@ def auto_dedup(
                         entry_id=member_id,
                         action="merge",
                         target_id=anchor_id,
-                        notes="auto-merge high similarity",
+                        notes="auto-dedup",
                         user=user,
                     )
                 )
@@ -480,6 +487,10 @@ def write_morning_report(
     lines.append(f"- Reduction: {summary.get('reduction_pct'):.2%}")
     lines.append(f"- Rounds run: {summary.get('rounds_run')}")
     lines.append(f"- Stop reason: {summary.get('stop_reason')}")
+    if summary.get("auto_dedup_merges") is not None:
+        lines.append(f"- Auto-dedup merges: {summary.get('auto_dedup_merges')}")
+    if summary.get("llm_merge_decisions") is not None:
+        lines.append(f"- LLM merge decisions: {summary.get('llm_merge_decisions')}")
     if summary.get("estimated_max_runtime_seconds") is not None:
         lines.append(f"- Estimated max runtime (seconds): {summary.get('estimated_max_runtime_seconds')}")
         if summary.get("estimated_llm_calls") is not None:
@@ -548,6 +559,7 @@ def main() -> int:
 
     cfg, _ = load_scripts_config()
     cur_cfg = cfg.get("curation", {})
+    llm_cfg = cur_cfg.get("llm", {}) or cfg.get("curation_llm", {})
     per_category = bool(cur_cfg.get("per_category", True))
     min_comm_size = int(cur_cfg.get("min_community_size", 2))
 
@@ -622,8 +634,7 @@ def main() -> int:
             write_eval_log(auto_decisions, eval_log_path, dry_run=args.dry_run)
             if not args.dry_run:
                 session.commit()
-        if merged_auto:
-            print(f"✓ Auto-dedup merged {merged_auto} entries")
+        auto_dedup_count = merged_auto
 
         try:
             for round_index in range(state.get("current_round", 1), args.max_rounds + 1):
@@ -656,7 +667,10 @@ def main() -> int:
                 merges_this_round = 0
                 manual_this_round = 0
 
-                for idx, comm in enumerate(selected, start=1):
+                iterable = selected
+                if tqdm is not None and not args.no_progress:
+                    iterable = tqdm(selected, desc=f"Round {round_index} communities", unit="comm")
+                for idx, comm in enumerate(iterable, start=1):
                     if args.max_runtime_seconds is not None:
                         elapsed = time.time() - start_time
                         if elapsed >= args.max_runtime_seconds:
@@ -679,9 +693,9 @@ def main() -> int:
                         prompt_path=prompt_path,
                     )
 
-                    max_retries = 0
-                    retry_delays: List[int] = []
-                    retry_backoff = "exponential"
+                    max_retries = int(llm_cfg.get("max_retries", 3))
+                    retry_delays = list(llm_cfg.get("retry_delays", []) or [])
+                    retry_backoff = str(llm_cfg.get("retry_backoff", "exponential"))
 
                     ok, errs, warn, normalized, raw_reply = call_llm_with_retries(
                         agent,
@@ -820,6 +834,10 @@ def main() -> int:
                         "comms_delta_pct": comms_delta_pct,
                     }
                 )
+                print(
+                    f"[round {round_index}] communities={comms_now} items={pending_now} "
+                    f"merges={merges_this_round} manual={manual_this_round}"
+                )
 
                 state["current_round"] = round_index + 1
                 state["progress_history"].append(
@@ -883,6 +901,39 @@ def main() -> int:
     if errors:
         print("Errors encountered; exiting with failure status.")
         return 2
+
+    # LLM decision summary (from evaluation log)
+    if eval_log_path.exists():
+        try:
+            with eval_log_path.open("r", encoding="utf-8") as fh:
+                reader = csv.DictReader(fh)
+                counts: Dict[str, int] = {}
+                total = 0
+                auto_dedup_merges = 0
+                llm_merges = 0
+                for row in reader:
+                    action = (row.get("action") or "").strip()
+                    if not action:
+                        continue
+                    counts[action] = counts.get(action, 0) + 1
+                    notes = (row.get("notes") or "").strip().lower()
+                    if action == "merge":
+                        if notes.startswith("auto-dedup"):
+                            auto_dedup_merges += 1
+                        else:
+                            llm_merges += 1
+                    total += 1
+            if total:
+                ordered = ", ".join(f"{k}={counts[k]}" for k in sorted(counts))
+                print(f"LLM decision summary: {ordered}")
+                if auto_dedup_merges:
+                    print(f"Auto-dedup merges: {auto_dedup_merges}")
+                if llm_merges:
+                    print(f"LLM merges: {llm_merges}")
+            summary["auto_dedup_merges"] = auto_dedup_merges
+            summary["llm_merge_decisions"] = llm_merges
+        except Exception:
+            pass
 
     print(f"✓ Completed rounds: {rounds_run}")
     return 0

@@ -267,8 +267,8 @@ def main():
         else:
             print(f"Approved data exported to: {output_dir}/")
             print()
-            print("Next step: Publish to canonical sheet")
-            print(f"  python scripts/curation/publish_to_canonical.py --input {output_dir}")
+            print("Next step: Review the TSV in Excel or Google Sheets")
+            print(f"  {output_dir / 'experiences.tsv'}")
 
     except Exception as e:
         print(f"❌ Error during export: {e}", file=sys.stderr)

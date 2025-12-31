@@ -252,8 +252,6 @@ def main():
 
         print("✅ Import complete!")
         print()
-        print("Next step: Build embeddings and FAISS index")
-        print(f"  python scripts/curation/merge/build_curation_index.py --db-path {db_path}")
 
     except Exception as e:
         session.rollback()

@@ -18,39 +18,23 @@ Run Phase 2 using existing code paths: rebuild embeddings/FAISS, build communiti
   - This one-command wrapper overlaps with the new explicit steps (merge exports → import → prepass → rebuild index → build communities).
   - Keep file if useful for legacy workflows, but **do not reference it in docs**.
 
-## Phase 2 Flow (Explicit Steps)
-1. **Merge member exports**
+## Phase 2 Flow (Wrapped)
+1. **Merge exports + import DB (wrapped)**
    ```bash
-   python scripts/curation/merge/merge_exports.py
+   python scripts/curation/merge/merge2db.py
    ```
-2. **Import into curation DB** (resets DB and artifacts by default)
-   ```bash
-   python scripts/curation/merge/import_to_curation_db.py
-   ```
-3. **Atomicity pre-pass** (Phase 1 output)
-   ```bash
-   python scripts/curation/prepass/atomicity_split_prepass.py
-   ```
-4. **Rebuild embeddings + FAISS**
-   ```bash
-   python scripts/curation/merge/build_curation_index.py
-   ```
-5. **Auto-dedup + LLM bucket routing**
-   - Auto-dedup uses `auto_dedup` threshold.
-   - High/medium bucket pairs are routed for review/LLM decisions.
-   ```bash
-   python scripts/curation/merge/find_pending_dups.py
-   ```
-6. **Rebuild communities (optional rerank)**
-   ```bash
-   python scripts/curation/merge/build_communities.py --with-rerank
-   ```
-7. **Run overnight curation loop**
+   - Includes LLM health check using `scripts/curation/agents/prompts/curation_prompt_test.yaml`.
+
+2. **Overnight pipeline (steps 3–8 wrapped)**
    ```bash
    python scripts/curation/overnight/run_curation_overnight.py
    ```
+   - Runs: atomicity pre-pass → build index → auto-dedup → build communities → LLM loop → export TSV.
+   - If incoming data is already atomic: add `--skip-atomicity-pre-pass`.
 
 ## Notes
+- No backward compatibility required for Phase 2. Treat the pipeline as a fresh start and avoid legacy constraints.
+- Reuse existing code wherever possible. If a component is redundant after the new flow, remove it rather than keep it.
 - Phase 2 assumes Phase 1 (atomicity split) has already run and marked originals inactive.
 - **LLM behavior in Phase 2**: NO SPLITTING (Phase 1 already did that). LLM only merges experiences.
   - **Merge criteria**: Same atomic action with different conditions/contexts (e.g., same technique applicable to different scenarios).

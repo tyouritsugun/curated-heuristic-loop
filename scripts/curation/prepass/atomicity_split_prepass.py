@@ -269,7 +269,7 @@ def main() -> int:
                         source="atomic_split",
                         sync_status=0,
                         author=get_author(),
-                        embedding_status=None,
+                        embedding_status="pending",
                         created_at=utc_now(),
                         updated_at=utc_now(),
                     )
