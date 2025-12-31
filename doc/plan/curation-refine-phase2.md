@@ -52,6 +52,10 @@ Run Phase 2 using existing code paths: rebuild embeddings/FAISS, build communiti
 
 ## Notes
 - Phase 2 assumes Phase 1 (atomicity split) has already run and marked originals inactive.
+- **LLM behavior in Phase 2**: NO SPLITTING (Phase 1 already did that). LLM only merges experiences.
+  - **Merge criteria**: Same atomic action with different conditions/contexts (e.g., same technique applicable to different scenarios).
+  - **Keep separate**: Different atomic actions, even if related (preserves atomicity).
+  - The prompt explicitly forbids creating multi-step/non-atomic experiences during merge.
 - The dedup buckets and thresholds are already implemented and should be reused (no new logic needed).
 - If we later want cadence-based neighbor rebuilds or split suggestions, add those as Phase 3 enhancements.
 

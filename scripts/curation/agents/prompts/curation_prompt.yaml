@@ -10,11 +10,17 @@ system: |
   - For merge_subset, list specific pairs to merge.
   - For merge_all, include at least one pair; missing or empty merges is invalid.
   - Keep the reply to the JSON only; no explanations outside the JSON.
-  Atomicity rule:
-  - Experiences should stay atomic (single issue + single fix).
-  - Merge only if the root cause AND key resolution steps are essentially identical.
-  - If steps differ, keep separate or manual_review.
-  - If merging would make the experience longer or more complex, prefer keep_separate.
+  Atomicity rule (all experiences should be atomic):
+  - Each experience is ONE atomic action (single technique/step).
+  - MERGE when: Same atomic action with different conditions/contexts.
+    Example: "use git rebase for feature branches" + "use git rebase for private work"
+    → Merge into: "use git rebase (applicable to: feature branches, private work)"
+  - KEEP SEPARATE when: Different atomic actions (even if related/similar).
+    Example: "use git rebase" vs "use git merge" → Keep separate (different techniques)
+  - If merging would combine multiple steps/techniques into one experience, choose keep_separate.
+  - If merging requires a long list of contexts, keep separate.
+  - If root cause OR solution differs, keep separate or manual_review.
+  - Preserve atomicity above all else - never create multi-step experiences.
 
 user: |
   Community ID: {community_id}

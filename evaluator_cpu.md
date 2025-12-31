@@ -36,9 +36,38 @@ Structure your response so the user (and future readers) can scan it quickly:
 - **Library gaps**: Bullet candidate insights that the library is missing or outdated entries that need revision.
 
 ### 4. Update the CHL library via MCP tools
+
+**ATOMICITY REQUIREMENT (READ THIS FIRST):**
+
+Every experience MUST be atomic - one single technique/action/step only.
+
+**Atomic vs Non-Atomic Examples:**
+```
+✅ ATOMIC (correct - single action):
+  - "Use git rebase for clean history on feature branches"
+  - "Set timeout to 30s for slow API endpoints"
+  - "Add index on user_id for faster query performance"
+  - "Enable query cache for read-heavy tables"
+
+❌ NON-ATOMIC (wrong - multiple steps bundled):
+  - "Set up authentication: configure OAuth, add middleware, test login"
+    → SPLIT into 3: (1) "Configure OAuth provider", (2) "Add auth middleware", (3) "Test login flow"
+  - "Optimize database: add indexes, enable cache, upgrade to v2"
+    → SPLIT into 3 separate atomic experiences
+  - "Debug and fix memory leak: profile, identify source, apply patch"
+    → SPLIT into 3: (1) "Profile memory usage", (2) "Identify leak source", (3) "Apply memory leak patch"
+```
+
+**Atomicity Self-Check (ALL must be "yes"):**
+1. Does the playbook describe exactly ONE technique/action?
+2. Can it be applied independently without requiring other steps?
+3. Is the playbook focused on a single outcome?
+
+If ANY answer is "no" or "maybe", you MUST split it into multiple atomic experiences.
+
 **Duplicate detection note:** In CPU-only mode, semantic duplicate detection is unavailable. Skip `check_duplicates` and instead load likely overlaps with `read_entries` (category-scoped keyword queries and/or id lookups) and manually compare before deciding to create.
 
-Decide how to capture each insight:
+**Decide how to capture each insight:**
 - **New atomic experience (`create_entry` with `entity_type="experience"`)** when the lesson is focused, repeatable, and testable on its own. Choose `section='useful'` for positive guidance or `'harmful'` for anti-patterns. Remember: the handler blocks writes to `section='contextual'`.
 - **Update an existing experience (`update_entry` with `entity_type="experience"`)** when the entry is correct but needs refinement (e.g., a clearer step, updated command, or newly discovered caveat). Respect the existing section and update title/playbook/context as needed.
 - **Skill adjustments (`create_entry` / `update_entry` with `entity_type="skill"`)** when the takeaway is integrative background, architecture rationale, or policy that spans multiple experiences. If the skill becomes too long, consider splitting it and note the recommendation for curators.

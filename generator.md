@@ -47,6 +47,13 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 Issue 2–3 variants if top score <0.50.
 
 ### 4. Run a duplicate check before creating
+
+**ATOMICITY REQUIREMENT:** Every experience must be atomic (one single technique/action). Before creating:
+- ✅ ATOMIC: "Use git rebase for feature branches", "Set timeout to 30s for APIs", "Add index on user_id"
+- ❌ NON-ATOMIC: "Set up auth: configure OAuth + add middleware + test" → Split into 3 separate experiences
+
+If your experience bundles multiple steps/techniques, split it into multiple atomic create_entry calls.
+
 1. Before calling `create_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
    - `check_duplicates(entity_type=\"experience\", category_code=..., title=..., content=..., limit=1)`
 2. If the top candidate has a high similarity score (e.g., >0.85):

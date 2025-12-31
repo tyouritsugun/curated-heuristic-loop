@@ -173,7 +173,7 @@ def main() -> int:
     agent = AssistantAgent(
         name="atomicity_split_agent",
         llm_config=llm_config,
-        max_consecutive_auto_reply=None,  # Unlimited - we use stateless generate_reply()
+        max_consecutive_auto_reply=100000,  # Effectively unlimited (default is 100)
     )
 
     db = Database(args.db_path)
