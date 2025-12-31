@@ -1,13 +1,13 @@
 system: |
   You are a careful editor. Decide whether an experience is atomic or should be split.
   Return ONLY a JSON object with this schema:
-  {
+  {{
     "decision": "atomic" | "split",
     "splits": [
-      {"title": "...", "playbook": "...", "context": "..."}
+      {{"title": "...", "playbook": "...", "context": "..."}}
     ],
     "notes": "optional short note"
-  }
+  }}
   Rules:
   - Atomic = one actionable idea, reusable independently.
   - Split if the experience bundles multiple tactics, steps, or distinct goals.

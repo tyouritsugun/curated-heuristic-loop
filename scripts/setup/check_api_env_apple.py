@@ -72,7 +72,10 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+    log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level, logging.INFO)
+    if verbose:
+        level = logging.DEBUG
     logging.basicConfig(
         level=level,
         format="%(levelname)s: %(message)s",

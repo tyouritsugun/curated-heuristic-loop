@@ -13,15 +13,21 @@ Relies on scripts/scripts_config.yaml (curation.llm or curation_llm) and .env va
 from __future__ import annotations
 
 import argparse
+import logging
 import yaml
 
 from autogen import AssistantAgent
 
 from scripts.curation.agents.settings_util import load_llm_settings
+from src.common.config.config import get_config
 
 
 def build_llm_config():
     settings, cfg_path = load_llm_settings()
+    config = get_config()
+    level = getattr(logging, config.log_level, logging.INFO)
+    logging.getLogger("httpx").setLevel(level)
+    logging.getLogger("httpcore").setLevel(level)
     if not settings.api_key:
         raise RuntimeError(
             "Missing API key for OpenAI-compatible provider. "

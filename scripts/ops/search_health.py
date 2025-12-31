@@ -39,7 +39,9 @@ from src.common.storage.schema import Experience, CategorySkill, FAISSMetadata
 from src.common.storage.repository import EmbeddingRepository
 
 log = logging.getLogger("search_health")
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
+logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
 
 
 def iso_utc(ts: float) -> str:

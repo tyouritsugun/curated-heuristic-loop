@@ -8,6 +8,7 @@ This script now delegates rebuild work to `/api/v1/operations/rebuild-index`.
 The API server must be running and configured with GPU/FAISS support.
 """
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -18,8 +19,10 @@ ensure_project_root_on_sys_path()
 from src.common.api_client.client import CHLAPIClient, APIOperationError, APIConnectionError
 
 # Configure logging
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

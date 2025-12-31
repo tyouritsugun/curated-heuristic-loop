@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -142,10 +143,11 @@ def pick_threshold(scores: Dict[str, float], labels: Dict[str, int], target_prec
 
 def main() -> int:
     args = parse_args()
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO)
-    else:
-        logging.basicConfig(level=logging.WARNING)
+    log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level, logging.INFO)
+    if args.verbose and level > logging.INFO:
+        level = logging.INFO
+    logging.basicConfig(level=level)
 
     cfg = get_config()
     reranker = RerankerClient(

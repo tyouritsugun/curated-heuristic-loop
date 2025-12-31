@@ -43,6 +43,7 @@ import sys
 import json
 import argparse
 import logging
+import os
 import subprocess
 import shutil
 import platform
@@ -86,8 +87,10 @@ except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirement
     raise SystemExit(1) from exc
 
 # Configure logging
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=level,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)

@@ -32,6 +32,7 @@ import os
 import sys
 import json
 import logging
+import os
 from pathlib import Path
 
 # Ensure repo root is on sys.path
@@ -54,8 +55,10 @@ from src.common.storage.repository import (
 from src.common.storage.schema import Experience, CategorySkill
 
 # Configure logging
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=level,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)

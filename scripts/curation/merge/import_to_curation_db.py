@@ -19,6 +19,7 @@ Usage:
 import argparse
 import csv
 import sys
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +29,7 @@ sys.path.insert(0, str(repo_root))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from src.common.storage.database import Database
 from src.common.storage.schema import Category, Experience, CategorySkill
 from scripts._config_loader import load_scripts_config
 
@@ -89,16 +91,38 @@ def main():
 
     input_dir = Path(args.input)
     db_path = Path(args.db_path)
+    curation_root = db_path.parent
 
     # Validate inputs
     if not input_dir.exists():
         print(f"❌ Error: Input directory does not exist: {input_dir}", file=sys.stderr)
         sys.exit(1)
 
-    if not db_path.exists():
-        print(f"❌ Error: Database does not exist: {db_path}", file=sys.stderr)
-        print("   Run init_curation_db.py first")
-        sys.exit(1)
+    # Reset curation DB and related artifacts by default
+    if db_path.exists():
+        db_path.unlink()
+        print(f"✓ Deleted curation DB: {db_path}")
+
+    artifacts = [
+        curation_root / "faiss_index",
+        curation_root / "neighbors.jsonl",
+        curation_root / "similarity_graph.pkl",
+        curation_root / "communities.json",
+        curation_root / "communities_rerank.json",
+        curation_root / "merge_audit.csv",
+        curation_root / "evaluation_log.csv",
+        curation_root / "morning_report.md",
+        curation_root / ".curation_state.json",
+        curation_root / ".curation_state_loop.json",
+        curation_root / "rerank_cache",
+    ]
+    for path in artifacts:
+        if path.exists():
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            print(f"✓ Removed artifact: {path}")
 
     # Read CSVs
     print(f"Reading merged CSVs from: {input_dir}")
@@ -123,7 +147,9 @@ def main():
     print(f"  Skills: {len(skills_data)} rows")
     print()
 
-    # Create database session
+    # Create database session (ensure schema exists)
+    db = Database(str(db_path))
+    db.init_database()
     engine = create_engine(f"sqlite:///{db_path}")
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -131,28 +157,45 @@ def main():
     try:
         # Import categories
         print("Importing categories...")
+        skipped_categories = 0
         for row in categories_data:
+            code = (row.get("code") or "").strip()
+            name = (row.get("name") or "").strip()
+            if not code or not name:
+                skipped_categories += 1
+                continue
             category = Category(
-                code=row["code"],
-                name=row["name"],
+                code=code,
+                name=name,
                 description=row.get("description") or None,
                 created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
             )
             session.add(category)
 
         session.commit()
-        print(f"✓ Imported {len(categories_data)} categories")
+        print(f"✓ Imported {len(categories_data) - skipped_categories} categories")
+        if skipped_categories:
+            print(f"  Skipped {skipped_categories} empty/invalid category rows")
         print()
 
         # Import experiences
         print("Importing experiences...")
+        skipped_experiences = 0
         for row in experiences_data:
+            exp_id = (row.get("id") or "").strip()
+            category_code = (row.get("category_code") or "").strip()
+            section = (row.get("section") or "").strip()
+            title = (row.get("title") or "").strip()
+            playbook = (row.get("playbook") or "").strip()
+            if not exp_id or not category_code or not section or not title or not playbook:
+                skipped_experiences += 1
+                continue
             experience = Experience(
-                id=row["id"],
-                category_code=row["category_code"],
-                section=row["section"],
-                title=row["title"],
-                playbook=row["playbook"],
+                id=exp_id,
+                category_code=category_code,
+                section=section,
+                title=title,
+                playbook=playbook,
                 context=row.get("context") or None,
                 source=row.get("source") or "local",
                 sync_status=0,  # Always set to 0 (PENDING) for curation regardless of source value
@@ -166,18 +209,28 @@ def main():
             session.add(experience)
 
         session.commit()
-        print(f"✓ Imported {len(experiences_data)} experiences")
+        print(f"✓ Imported {len(experiences_data) - skipped_experiences} experiences")
         print(f"  All marked as embedding_status='pending'")
+        if skipped_experiences:
+            print(f"  Skipped {skipped_experiences} empty/invalid experience rows")
         print()
 
         # Import skills
         print("Importing skills...")
+        skipped_skills = 0
         for row in skills_data:
+            skill_id = (row.get("id") or "").strip()
+            category_code = (row.get("category_code") or "").strip()
+            title = (row.get("title") or "").strip()
+            content = (row.get("content") or "").strip()
+            if not skill_id or not category_code or not title or not content:
+                skipped_skills += 1
+                continue
             skill = CategorySkill(
-                id=row["id"],
-                category_code=row["category_code"],
-                title=row["title"],
-                content=row["content"],
+                id=skill_id,
+                category_code=category_code,
+                title=title,
+                content=content,
                 summary=row.get("summary") or None,
                 source=row.get("source") or "local",
                 sync_status=0,  # Always set to 0 (PENDING) for curation regardless of source value
@@ -191,8 +244,10 @@ def main():
             session.add(skill)
 
         session.commit()
-        print(f"✓ Imported {len(skills_data)} skills")
+        print(f"✓ Imported {len(skills_data) - skipped_skills} skills")
         print(f"  All marked as embedding_status='pending'")
+        if skipped_skills:
+            print(f"  Skipped {skipped_skills} empty/invalid skill rows")
         print()
 
         print("✅ Import complete!")

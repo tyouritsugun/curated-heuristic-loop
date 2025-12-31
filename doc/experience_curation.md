@@ -51,14 +51,30 @@ Short sample flow for Alice, Bob, and a curator (Carlos) using the semi-auto cur
 - Start CHL, open Operations, click "Export CSV".
 - Each sends `{user}.export.zip` to the curator.
 
-## 2) Curator Merge + Prep (one command)
+## 2) Curator Merge + Atomicity Pre-pass
 After unzipping member exports into `data/curation/members/`, run:
 ```bash
-python scripts/curation/merge/run_merge_pipeline.py --force-db
-```
-This wraps steps 2–5 (merge → init DB → import → build embeddings/FAISS → auto-merge → rebuild → communities).
+# Merge member exports into data/curation/merged
+python scripts/curation/merge/merge_exports.py
 
-## 3) Run Overnight Curation (one command)
+# Import merged CSVs into the curation DB
+python scripts/curation/merge/import_to_curation_db.py
+
+# Split non-atomic experiences before curation
+python scripts/curation/prepass/atomicity_split_prepass.py
+```
+Note: Embedding + reranking integration is handled in Phase 2 (Step 3).
+
+## 3) Build Embeddings + Communities (Phase 2)
+```bash
+# Build embeddings + FAISS index for the curation DB
+python scripts/curation/merge/build_curation_index.py
+
+# Build communities (optionally with rerank)
+python scripts/curation/merge/build_communities.py --with-rerank
+```
+
+## 4) Run Overnight Curation (Phase 2)
 - Defaults are in `scripts/scripts_config.yaml` and the prompt in `scripts/curation/agents/prompts/curation_prompt.yaml`.
 - If you need to override behavior, edit those files instead of CLI flags.
 ```bash
@@ -109,7 +125,7 @@ python scripts/curation/overnight/run_curation_loop.py --two-pass
 - It changes how neighbor scores are computed (reranker-only scoring), which affects the community graph files used by the overnight loop.
 - Once communities are built, the overnight rounds do **not** rerank again; they just consume the existing communities JSON.
 
-## 4) Review and Publish (Spreadsheet)
+## 5) Review and Publish (Spreadsheet)
 - Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
 - If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
   - Note: Importing via the UI/Excel always resets `embedding_status` to `pending` on the server and rebuilds embeddings; any `embedded` values in the TSV are ignored.
