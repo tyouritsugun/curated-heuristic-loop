@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Process all experiences except rejected (sync_status != 2)",
     )
-    parser.add_argument("--sleep", type=float, default=0.0, help="Sleep between calls (seconds)")
+    parser.add_argument("--sleep", type=float, default=1.0, help="Sleep between calls (seconds)")
     parser.add_argument(
         "--no-progress",
         action="store_true",
@@ -170,7 +170,11 @@ def main() -> int:
     template = load_prompt(prompt_path)
 
     llm_config, settings, cfg_path = build_llm_config()
-    agent = AssistantAgent(name="atomicity_split_agent", llm_config=llm_config)
+    agent = AssistantAgent(
+        name="atomicity_split_agent",
+        llm_config=llm_config,
+        max_consecutive_auto_reply=None,  # Unlimited - we use stateless generate_reply()
+    )
 
     db = Database(args.db_path)
     db.init_database()

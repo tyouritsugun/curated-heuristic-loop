@@ -1,55 +1,62 @@
-# Experience Curation Refinement - Phase 1 (Concise)
+# Experience Curation Refinement - Phase 2 (Pipeline Reuse)
 
 ## Goal
-Improve curation quality and stability with minimal code changes by tightening atomicity guidance, refreshing neighbors during multi-round loops, and adding lightweight quality metrics.
+Run Phase 2 using existing code paths: rebuild embeddings/FAISS, build communities, auto-dedup high similarity, and route high-bucket pairs to LLM decisions.
 
-## Scope
-- Prompt improvements for atomicity (examples + clarity)
-- Neighbor rebuild cadence during multi-round curation
-- Merge quality metrics in reporting
+## What We Reuse (Existing Code)
+- **Embeddings + FAISS rebuild**: `scripts/curation/merge/build_curation_index.py`
+- **Communities build (with rerank option)**: `scripts/curation/merge/build_communities.py`
+- **Auto-dedup + bucketization**: `scripts/curation/merge/find_pending_dups.py`
+  - Uses thresholds from `scripts/scripts_config.yaml`:
+    - `auto_dedup` (merge without review)
+    - `high_bucket`, `medium_bucket`, `low_bucket` (interactive buckets)
+- **LLM merge loop over communities**: `scripts/curation/overnight/run_curation_overnight.py`
+  - Includes `auto_dedup` pass via `auto_dedup()` in `scripts/curation/overnight/run_curation_loop.py`
 
-## Task 1: Atomicity Prompt
-**Why:** Current guidance is too vague.
-**Change:** Add 2–3 atomic and non-atomic examples plus an explicit complexity rule.
-**File:** `scripts/curation/agents/prompts/curation_prompt.yaml`
-**Done when:** Examples included; complexity rule is explicit.
+## What We Remove / Avoid (Now Redundant)
+- **`scripts/curation/merge/run_merge_pipeline.py`**
+  - This one-command wrapper overlaps with the new explicit steps (merge exports → import → prepass → rebuild index → build communities).
+  - Keep file if useful for legacy workflows, but **do not reference it in docs**.
 
-## Task 2: Neighbor Rebuild Cadence
-**Why:** Cached neighbors go stale after merges.
-**Change:** Add a rebuild cadence flag and refresh neighbors at configured intervals.
-**Files:** `scripts/curation/overnight/run_curation_loop.py`, `scripts/curation/common/neighbor_builder.py`
-**Done when:** Flag works; rebuilds occur on schedule; logs show old/new edge counts.
+## Phase 2 Flow (Explicit Steps)
+1. **Merge member exports**
+   ```bash
+   python scripts/curation/merge/merge_exports.py
+   ```
+2. **Import into curation DB** (resets DB and artifacts by default)
+   ```bash
+   python scripts/curation/merge/import_to_curation_db.py
+   ```
+3. **Atomicity pre-pass** (Phase 1 output)
+   ```bash
+   python scripts/curation/prepass/atomicity_split_prepass.py
+   ```
+4. **Rebuild embeddings + FAISS**
+   ```bash
+   python scripts/curation/merge/build_curation_index.py
+   ```
+5. **Auto-dedup + LLM bucket routing**
+   - Auto-dedup uses `auto_dedup` threshold.
+   - High/medium bucket pairs are routed for review/LLM decisions.
+   ```bash
+   python scripts/curation/merge/find_pending_dups.py
+   ```
+6. **Rebuild communities (optional rerank)**
+   ```bash
+   python scripts/curation/merge/build_communities.py --with-rerank
+   ```
+7. **Run overnight curation loop**
+   ```bash
+   python scripts/curation/overnight/run_curation_overnight.py
+   ```
 
-## Task 3: Merge Quality Metrics
-**Why:** No feedback loop on merge quality.
-**Change:** Add merge rate and optional precision (when validation exists) to reporting.
-**Files:** `scripts/curation/common/decision_logging.py`, `scripts/curation/reporting/morning_report.py`
-**Done when:** Morning report shows merge rate and precision if available.
-
-## Clarifications (tightened)
-- **Rebuild placement:** After merges are applied and before communities are re-detected for the next round.
-- **Cadence choice:** Start with fixed `--rebuild-neighbors-cadence 2` (every other round). Add merge-rate-based rebuild later if needed.
-- **Threshold naming:** Use existing `--edge-threshold` consistently for graph construction; neighbor rebuild should use the same effective threshold (no new threshold flag in Phase 1).
-- **Merge rate denominator:** Use the active item count for the round (`pending_now` from `compute_counts`), not total historical items.
-- **Evaluation log round context:** Add and populate `round_index` so precision can be computed per round.
-
-## Metrics (Phase 1)
-- Merge rate per round (using active item count)
-- Precision from validated samples (if any)
-- Merge yield per round: “new merges per round” (explicitly not recall)
-
-## Open Questions
-- None blocking Phase 1. Revisit cadence heuristics after baseline metrics.
-
-## Risks
-- Rebuild cost may be too high on large datasets
-- Prompt examples may over-constrain merges
-- Precision depends on manual validation
+## Notes
+- Phase 2 assumes Phase 1 (atomicity split) has already run and marked originals inactive.
+- The dedup buckets and thresholds are already implemented and should be reused (no new logic needed).
+- If we later want cadence-based neighbor rebuilds or split suggestions, add those as Phase 3 enhancements.
 
 ## Success Criteria
-- Prompt includes atomic/non-atomic examples and a clear complexity rule
-- Neighbors rebuild at least once in a multi-round run
-- Morning report shows merge rate and precision (if validation data exists)
-
-## Next Step
-Proceed with Phase 1 changes; revisit Phase 2 only after metrics show improvement.
+- Embeddings and FAISS rebuild complete successfully.
+- Auto-dedup merges apply to `>= auto_dedup` pairs only.
+- High-bucket pairs are surfaced for LLM decisions via existing flow.
+- Communities build without errors and the overnight loop runs end-to-end.
