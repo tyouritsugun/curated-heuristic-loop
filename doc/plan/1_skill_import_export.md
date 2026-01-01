@@ -3,6 +3,8 @@
 ## Goal
 Import external skills (Claude Code, Codex) into CHL and export skills for team curation and distribution.
 
+**⚠️ Phase Requirement**: This entire phase requires `CHL_SKILLS_ENABLED=true`. The import pipeline depends on CHL database for storing processed metadata (outlines, categories, embeddings) needed for duplicate detection and team curation. Users with `ENABLED=false` cannot participate in skill import or curation.
+
 ## Inputs
 - Claude Code: `~/.claude/skills/` or `.claude/skills/` with `SKILL.md` per directory.
 - Codex: `~/.codex/skills/` with JSON skill files.
@@ -12,7 +14,7 @@ Import external skills (Claude Code, Codex) into CHL and export skills for team 
 1. Discover and parse
    - Detect source type and extract title, content, summary, tags, and raw metadata.
 2. Generate outline
-   - LLM generates structured outline from content.
+   - LLM generates structured outline from content using scripts/curation/agents/prompts/skill_outline_generation.yaml
    - Outline format (defined in prompt):
      ```
      Purpose: [1-2 sentence summary]
@@ -23,16 +25,19 @@ Import external skills (Claude Code, Codex) into CHL and export skills for team 
      Examples: [brief example scenarios if applicable]
      ```
 3. Category mapping
-   - LLM chooses best-fit category from complete predefined category list.
+   - LLM chooses best-fit category from complete predefined category list using scripts/curation/agents/prompts/skill_category_mapping.yaml
    - Input: skill title, content, outline + all category codes/names/descriptions.
    - LLM must pick one category (no UNCAT fallback); chooses nearest match.
    - Thresholds: >=0.90 auto-assign, 0.70-0.89 flag for review, <0.70 require manual override.
    - If category not found in local taxonomy, import must block and emit a remediation list.
 4. Duplicate screening
-   - Generate embedding for outline (not full content).
+   - Generate embedding for outline (not full content) to focus on conceptual similarity and reduce noise from implementation details.
    - Search existing skills in target category using outline embedding.
    - Rerank candidates using reranker on outline pairs.
-   - If top match score >=0.85, feed both skill contents to LLM for merge decision.
+   - Threshold-based workflow:
+     * Score >=0.85: Feed both skill contents to LLM for merge decision (scripts/curation/agents/prompts/skill_merge_decision.yaml)
+     * Score 0.70-0.84: Flag as potential duplicate for manual review
+     * Score <0.70: Treat as distinct skill
    - LLM returns: should_merge (bool), confidence, reasoning, merged_content (if applicable).
    - Fallback to title/keyword similarity in CPU mode.
 5. Review bundle
@@ -49,39 +54,43 @@ Import external skills (Claude Code, Codex) into CHL and export skills for team 
 ## Source-of-truth modes
 User selects one mode at setup (default: Option A for Claude/ChatGPT users):
 
-**Option A: CHL is source-of-truth** (default)
-- Enable CHL skill tools in MCP.
+**Option A: CHL is source-of-truth** (default, `CHL_SKILLS_MODE=chl`)
+- Enable CHL skill tools in MCP (full read/write).
 - Imported skills set `sync_status=1` (synced/active).
 - User creates/edits skills via MCP → stored in `chl.db`.
-- Export for curation: from `chl.db` to curation DB.
+- Export for curation: from `chl.db` to curation CSV.
 - Bidirectional export: CHL → external formats (for sharing with external tool users).
 
-**Option B: External is source-of-truth** (Claude Code or Codex)
-- Disable CHL skill tools in MCP (read-only access).
+**Option B: External is source-of-truth** (Claude Code or Codex, `CHL_SKILLS_MODE=external`)
+- CHL skill tools in MCP provide read-only access.
 - Imported skills set `sync_status=0` (pending/draft).
 - User creates/edits skills in external tool only.
-- Export for curation: from external source (re-import) to curation DB.
+- CHL database acts as **read-only cache** for curation processing.
+- Export for curation: from `chl.db` (cached copy) to curation CSV.
+  - Before export: Re-import from external source to sync latest changes.
 - Bidirectional export: CHL curation results → external formats (round-trip).
 
-**Configuration**:
-- Add env var: `CHL_SKILLS_MODE=chl|external` (default: `chl`).
-- When `external`: MCP skill write tools return "read-only" error.
-- Add env var: `CHL_SKILLS_ENABLED=true|false` (default: `true`).
-- When `false`: disable skill read/write/retrieve via MCP and block skill import/export entirely.
+**Configuration** (see doc/config/skills_access_control.md for details):
+- `CHL_SKILLS_ENABLED=true|false` (default: `true`, from Phase 0).
+  - When `false`: All skill operations blocked (read, write, import, export, curation).
+  - When `true`: Skills enabled, access controlled by CHL_SKILLS_MODE.
+- `CHL_SKILLS_MODE=chl|external` (default: `chl`).
+  - When `chl` (Option A): Full read/write access via MCP, CHL is source-of-truth.
+  - When `external` (Option B): Read-only MCP access, external tool is source-of-truth.
 
 ## Export paths
 
 **For curation** (member exports):
-- Option A users: `GET /api/v1/entries/export-csv` from `chl.db` → produces `categories.csv`, `experiences.csv`, `skills.csv`.
-- Option B users: Re-parse external skills → export to CSV format.
+- Option A users (MODE=chl): `GET /api/v1/entries/export-csv` from `chl.db` → produces `categories.csv`, `experiences.csv`, `skills.csv`.
+- Option B users (MODE=external): Export from `chl.db` (already imported skills), not re-parsed from external source.
+  - Rationale: Skills already imported during setup; export reflects current CHL state.
+  - If external source modified: Re-import first, then export.
 - All exports go to `data/curation/members/<user>/` for merge.
-- If `CHL_SKILLS_ENABLED=false`: skip skill export (no `skills.csv`).
 
 **For team distribution** (after curation):
 - Curated skills exported via `/operations` to Google Sheets.
 - Team imports via `/operations` → updates `chl.db`.
 - Option B users: Also export from Sheets to external format for manual sync.
-- If `CHL_SKILLS_ENABLED=false`: skip skill sheets entirely in both import and export.
 
 ## sync_status semantics (legacy field)
 `sync_status` values for skills:
@@ -89,25 +98,42 @@ User selects one mode at setup (default: Option A for Claude/ChatGPT users):
 - `1` (SYNCED): Active, approved skill available for search/retrieval.
 - `2` (REJECTED/SUPERSEDED): Skill replaced by merge, split, or manual deletion; kept for audit trail.
 
+**Workflow by mode**:
+- **Option A (chl mode)**: Imported skills → `sync_status=1` (active immediately).
+  - User creates/edits via MCP → always `sync_status=1`.
+  - After team curation: Curated skills remain `sync_status=1`.
+- **Option B (external mode)**: Imported skills → `sync_status=0` (pending).
+  - Skills stay `sync_status=0` until team curation completes.
+  - After team curation: Update approved skills to `sync_status=1`.
+  - Rationale: External source is primary; CHL copy is secondary until team validates.
+
 Note: This is a legacy field inherited from experiences. For skills, it primarily distinguishes active (1) from inactive (0, 2).
 
 ## Category governance
-- Categories are team-owned and published via shared Sheets.
+- Categories are team-owned and published via shared Sheets by team admin (Carlos).
 - Categories must be complete and predefined before import.
 - LLM always chooses nearest category from existing list (no UNCAT).
-- If new category needed: Carlos adds to category list → publishes → users sync → re-import with new category.
+- If new category needed: Admin adds to category list → publishes to Sheets → users sync via `/operations` → re-import skills with new category.
 - Recommendation: Start with comprehensive category taxonomy covering all expected skill domains.
-- Category import/export should be removed or admin-only; end users map to existing categories.
+- **Category operations**:
+  - **Creation**: Admin-only (via category management interface)
+  - **Export to Sheets**: Admin-only (publishes team taxonomy)
+  - **Import/sync from Sheets**: All users (downloads published taxonomy)
+  - **Skill mapping**: All users (map skills to existing categories during import)
 
 ## Required system changes
-- Add outline generation step to import pipeline (LLM call).
+- ✅ Add `CHL_SKILLS_MODE` env var (completed in config.py).
+- ✅ Add `CHL_SKILLS_ENABLED` env var (completed in Phase 0).
+- ✅ Create LLM prompt templates (completed in scripts/curation/agents/prompts/).
+- ✅ Document toggle hierarchy (completed in doc/config/skills_access_control.md).
+- Add outline generation step to import pipeline (LLM call using scripts/curation/agents/prompts/skill_outline_generation.yaml).
 - Store outline in `category_skills.summary` field.
-- Add `CHL_SKILLS_MODE` env var and disable MCP skill write tools when `mode=external`.
-- Add `CHL_SKILLS_ENABLED` env var and gate skill read/write/retrieve, import/export, and sheet validation.
+- Disable MCP skill write tools when `skills_mode=external` (update handlers to check config.skills_write_allowed()).
+- Gate skill import/export based on `skills_enabled` flag.
 - Validate category codes during import; emit actionable remediation if missing.
-- Implement LLM-based merge decision for high-similarity duplicates.
+- Implement LLM-based merge decision for high-similarity duplicates (using scripts/curation/agents/prompts/skill_merge_decision.yaml).
 - Add bidirectional converters (implementation details in separate spec).
-- Extend export logic to handle Option B users (re-parse from external source).
+- Implement category mapping with confidence thresholds (using scripts/curation/agents/prompts/skill_category_mapping.yaml).
 
 ## Risks and constraints
 - LLM outline generation requires network access; cache results.

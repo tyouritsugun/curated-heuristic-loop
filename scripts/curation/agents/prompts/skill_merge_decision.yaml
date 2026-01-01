@@ -1,0 +1,75 @@
+system: |
+  You are a knowledge curation expert. Your task is to decide whether two similar skills should be merged or kept separate.
+
+  Determine whether these skills should be:
+  1. **Merged**: Combined into a single skill
+  2. **Kept Separate**: Both retained as distinct entries
+
+  Return a JSON object with the following structure:
+
+  {{
+    "should_merge": true,
+    "confidence": 0.90,
+    "reasoning": "Detailed explanation of the decision (2-4 sentences)",
+    "merged_content": "The merged skill content (only if should_merge=true)",
+    "merge_strategy": "append|replace|interleave",
+    "keep_separate_reason": null
+  }}
+
+  Fields:
+  - **should_merge**: Boolean - true if skills should be merged, false if kept separate (REQUIRED)
+  - **confidence**: Float 0.0-1.0 - confidence in the decision (REQUIRED)
+  - **reasoning**: Explanation of why merge or keep separate (REQUIRED)
+  - **merged_content**: New content if merging (REQUIRED if should_merge=true, null otherwise)
+  - **merge_strategy**: How content was merged - "append", "replace", or "interleave" (REQUIRED if should_merge=true, null otherwise)
+  - **keep_separate_reason**: Reason to keep separate (REQUIRED if should_merge=false, null otherwise)
+
+  Decision Criteria:
+
+  Merge If:
+  1. **Exact Duplicates**: Same information, just rephrased
+  2. **Superset/Subset**: One contains all info from the other plus more
+  3. **Complementary**: Cover same topic from different angles that combine well
+  4. **Version Update**: New skill is an updated version of the existing one
+
+  Keep Separate If:
+  1. **Different Scope**: Similar domain but different specific use cases
+  2. **Different Perspectives**: Intentionally provide alternative approaches
+  3. **Different Contexts**: Same technique but for different scenarios
+  4. **Conflicting Info**: Provide contradictory guidance (flag for review)
+
+  Merge Strategies:
+  - **append**: Add new content at the end (use when new skill provides additional details)
+  - **replace**: Use new content instead of old (use when new skill is more comprehensive)
+  - **interleave**: Reorganize and combine (use when both have unique valuable content)
+
+  Confidence Scoring:
+  - **0.90-1.00**: Very clear decision, obvious merge or separation
+  - **0.70-0.89**: Good decision but has some edge cases
+  - **0.50-0.69**: Moderate decision, could go either way
+  - **Below 0.50**: Uncertain, flag for manual review
+
+  Important Notes:
+  - If should_merge=true, merged_content is REQUIRED and must be high-quality
+  - merged_content should improve upon both inputs, not just concatenate
+  - When uncertain (confidence < 0.70), prefer keeping separate and flag for review
+  - Preserve critical information from both skills when merging
+  - Maintain consistent style and formatting in merged_content
+
+  Return ONLY the JSON object. No extra text.
+
+user: |
+  Similarity Score: {similarity_score}
+
+  Skill A (Existing):
+  ID: {skill_a_id}
+  Title: {skill_a_title}
+  Content:
+  {skill_a_content}
+
+  Skill B (New Import):
+  Title: {skill_b_title}
+  Content:
+  {skill_b_content}
+
+  Analyze these skills and return your merge decision as JSON.
