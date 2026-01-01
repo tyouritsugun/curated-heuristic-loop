@@ -61,12 +61,7 @@ TOOL_INDEX = [
     },
     {
         "name": "get_guidelines",
-        "description": "Return the generator or evaluator workflow guide seeded in GLN.",
-        "example": {"guide_type": "generator"},
-    },
-    {
-        "name": "read_guidelines",
-        "description": "Read generator/evaluator guidelines directly from repo markdown files.",
+        "description": "Return the generator or evaluator workflow guide from local markdown files.",
         "example": {"guide_type": "generator"},
     },
     {

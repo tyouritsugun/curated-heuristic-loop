@@ -30,7 +30,6 @@ from src.mcp.handlers_entries import (
     check_duplicates,
 )
 from src.mcp.handlers_guidelines import get_guidelines
-from src.mcp.handlers_guidelines import read_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +170,6 @@ def init_server() -> None:
     mcp.tool()(update_entry)
     mcp.tool()(check_duplicates)
     mcp.tool()(get_guidelines)
-    mcp.tool()(read_guidelines)
 
     # ------------------------------------------------------------------
     # MCP Resources (official spec discovery endpoints)

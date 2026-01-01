@@ -28,6 +28,7 @@ CATEGORIES: List[CategoryDefinition] = [
     {"code": "PPT", "name": "playwright_page_test", "description": "Playwright-based UI testing."},
     {"code": "EET", "name": "e2e_test", "description": "End-to-end testing workflows."},
     {"code": "PRQ", "name": "pull_request", "description": "PR creation, review, and merge practices."},
+    {"code": "GLN", "name": "chl_guidelines", "description": "Generator/evaluator workflow guidelines (file-based)."},
     # Product & planning
     {"code": "REQ", "name": "requirements_specification", "description": "Functional/non-functional requirements capture."},
     {"code": "RMP", "name": "roadmap_planning", "description": "Milestones, sequencing, release planning."},

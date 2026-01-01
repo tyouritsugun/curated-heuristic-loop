@@ -72,9 +72,4 @@ def get_guidelines(guide_type: str, version: Optional[str] = None) -> Dict[str, 
     }
 
 
-def read_guidelines(guide_type: str, version: Optional[str] = None) -> Dict[str, Any]:
-    """Alias for get_guidelines; kept for explicit MCP use."""
-    return get_guidelines(guide_type=guide_type, version=version)
-
-
-__all__ = ["get_guidelines", "read_guidelines"]
+__all__ = ["get_guidelines"]

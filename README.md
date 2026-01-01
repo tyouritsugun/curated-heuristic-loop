@@ -351,7 +351,7 @@ Add to your MCP configuration file:
 claude mcp add \
   --scope user \
   --transport stdio \
-  --env UV_PROJECT_ENVIRONMENT=.venv-mcp \
+  --env UV_PROJECT_ENVIRONMENT=.venv-nvidia \
   chl \
   -- \
   uv --directory /absolute/path/to/curated-heuristic-loop run python -m src.mcp.server
@@ -365,7 +365,7 @@ claude mcp add \
       "command": "uv",
       "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
       "env": {
-        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
+        "UV_PROJECT_ENVIRONMENT": ".venv-nvidia"
       }
     }
   }
@@ -382,7 +382,7 @@ claude mcp add \
       "command": "uv",
       "args": ["--directory", "/absolute/path/to/curated-heuristic-loop", "run", "python", "-m", "src.mcp.server"],
       "env": {
-        "UV_PROJECT_ENVIRONMENT": ".venv-mcp"
+        "UV_PROJECT_ENVIRONMENT": ".venv-nvidia"
       }
     }
   }
