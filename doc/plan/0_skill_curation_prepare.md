@@ -178,7 +178,7 @@ def get_all_codes() -> List[str]:
 - API: skill endpoints return 404 when disabled; category skill_count reports 0.
 - Import/export: skip skill sheets (Sheets/Excel/CSV) when disabled.
 - Embeddings/indexing: do not enqueue or process skill embeddings when disabled.
-- UI: show skills as read-only with a warning; hide write/import/export actions.
+- UI: hide/disable skills with a warning; hide write/import/export actions.
 - Data preservation: disabling skills does not delete existing skill data.
 - Guidelines: provide a dedicated MCP `read_guidelines` tool that reads `generator.md`, `evaluator.md`, `evaluator_cpu.md` from the repo (no skills dependency).
 
@@ -209,7 +209,7 @@ def get_all_codes() -> List[str]:
 
 ## Clarifications / Notes
 - `skills_enabled` lives in `.env` only (no `scripts_config.yaml` override).
-- UI should show skills as read-only with a clear warning; hide write/import/export actions.
+- UI should hide/disable skills with a clear warning; hide write/import/export actions.
 - API should return 404 for skill endpoints when disabled; MCP should not expose skill tools.
 - No migration support for `curation_decisions` → `experience_curation_decisions` (temporary tables only).
 - When `skills_enabled=false`, disable skill embeddings/indexing jobs explicitly.

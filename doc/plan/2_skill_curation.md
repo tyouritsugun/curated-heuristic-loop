@@ -6,8 +6,7 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 
 ## Inputs
 - Member exports via `GET /api/v1/entries/export-csv` (zip with `categories.csv`, `experiences.csv`, `skills.csv`).
-- For Option A (CHL source-of-truth): Export from `chl.db`.
-- For Option B (external source-of-truth): Re-parse from Claude/Codex and export to CSV.
+- Export from `chl.db`.
 
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.
