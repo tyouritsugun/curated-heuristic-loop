@@ -43,12 +43,19 @@ google-auth-oauthlib>=1.0.0
 
 # Data processing and utilities
 numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+openpyxl>=3.0.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 pydantic>=2.6.0
 tqdm>=4.65.0
 tenacity>=8.2.0
 markdown>=3.6
+networkx>=3.2.1
+python-louvain>=0.16
+autogen>=0.4.1              # LLM agent
+autogen-ext[openai]>=0.4.1  # OpenAI-compatible client helpers
+pytest>=7.4.0               # testing
 
 # ML / GPU stack (HF Transformers with CUDA)
 # Use the official PyTorch CUDA wheels:

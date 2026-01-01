@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 from src.api.gpu.embedding_client import EmbeddingClient, EmbeddingClientError
 from src.common.interfaces.search import SearchProvider, SearchProviderError
 from src.common.interfaces.search_models import SearchResult, DuplicateCandidate, SearchReason
@@ -18,14 +18,14 @@ from src.api.gpu.faiss_manager import FAISSIndexManager, FAISSIndexError
 logger = logging.getLogger(__name__)
 
 
-def parse_two_phase_query(query: str) -> tuple[str, str]:
+def parse_two_step_query(query: str) -> tuple[str, str]:
     """
-    Parse a two-phase query into (search_phrase, full_context).
+    Parse a two-step query into (search_phrase, full_context).
 
     Supported formats (precedence order):
     1) "[SEARCH] phrase [TASK] context"
     2) "phrase | context"
-    3) Fallback: use the full query for both phases
+    3) Fallback: use the full query for both steps
 
     If either parsed part is empty, fallback to (query, query).
     full_context appends the search phrase for reranking: "{task}\n\nRelevant concepts: {search}".
@@ -49,7 +49,7 @@ def parse_two_phase_query(query: str) -> tuple[str, str]:
         search_part, task_part = query.split("|", 1)
         return _build_context(task_part, search_part)
 
-    # Fallback: unchanged query for both phases
+    # Fallback: unchanged query for both steps
     return (query, query)
 
 
@@ -80,12 +80,12 @@ class VectorFAISSProvider(SearchProvider):
         category_code: Optional[str] = None,
         top_k: int = 10,
     ) -> List[SearchResult]:
-        """Search using vector similarity with two-phase query support."""
+        """Search using vector similarity with two-step query support."""
         try:
-            # Parse query into two phases
-            search_phrase, task_text = parse_two_phase_query(query)
+            # Parse query into two steps
+            search_phrase, task_text = parse_two_step_query(query)
 
-            # Phase 1: FAISS with search phrase only
+            # Step 1: FAISS with search phrase only
             try:
                 query_embedding = self.embedding_client.encode_single(search_phrase)
             except EmbeddingClientError as exc:
@@ -107,10 +107,15 @@ class VectorFAISSProvider(SearchProvider):
             for internal_id, score in zip(internal_ids, scores):
                 mapping = self.index_manager.get_entity_id(int(internal_id))
                 if mapping:
+                    entity_type = str(mapping.get("entity_type"))
+                    if entity_type == "manual":
+                        entity_type = "skill"
+                    if entity_type not in ("experience", "skill"):
+                        continue
                     entity_mappings.append(
                         {
                             "entity_id": mapping["entity_id"],
-                            "entity_type": mapping["entity_type"],
+                            "entity_type": entity_type,
                             "score": float(score),
                         }
                     )
@@ -118,7 +123,7 @@ class VectorFAISSProvider(SearchProvider):
             # Deduplicate by entity (FAISS can return multiple vectors per entry).
             entity_mappings = self._dedup_by_entity(entity_mappings)
 
-            # Phase 2: Reranking with full context
+            # Step 2: Reranking with full context
             if self.reranker_client and len(entity_mappings) > 1:
                 entity_mappings = self._rerank_candidates(
                     session,
@@ -200,11 +205,16 @@ class VectorFAISSProvider(SearchProvider):
                 mapping = self.index_manager.get_entity_id(int(internal_id))
                 if not mapping:
                     continue
+                entity_type = str(mapping.get("entity_type"))
+                if entity_type == "manual":
+                    entity_type = "skill"
+                if entity_type not in ("experience", "skill"):
+                    continue
                 if exclude_id and mapping["entity_id"] == exclude_id:
                     continue
 
                 entity = self._fetch_entity(
-                    session, mapping["entity_id"], mapping["entity_type"]
+                    session, mapping["entity_id"], entity_type
                 )
                 if not entity:
                     continue
@@ -221,7 +231,7 @@ class VectorFAISSProvider(SearchProvider):
                 candidates.append(
                     {
                         "entity_id": mapping["entity_id"],
-                        "entity_type": mapping["entity_type"],
+                        "entity_type": entity_type,
                         "score": float(score),
                         "title": entity.title,
                         "summary": summary,
@@ -398,8 +408,8 @@ class VectorFAISSProvider(SearchProvider):
                     .first()
                 )
             return (
-                session.query(CategoryManual)
-                .filter(CategoryManual.id == entity_id)
+                session.query(CategorySkill)
+                .filter(CategorySkill.id == entity_id)
                 .first()
             )
         except Exception as exc:

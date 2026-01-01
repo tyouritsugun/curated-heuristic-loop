@@ -178,7 +178,11 @@ def _build_embedding_stack(
             logger.error(
                 "✗ Embedding client initialization failed: %s", exc, exc_info=True
             )
-            logger.warning("Embedding client not available: %s", exc)
+            # Don't continue in GPU mode without embedding client - stop the server
+            raise RuntimeError(
+                f"GPU mode requires embedding model '{config.embedding_model}' to be available locally. "
+                f"Please ensure the model is cached in your Hugging Face cache, or switch to CPU mode by using .venv-cpu."
+            ) from exc
 
         # FAISS manager + thread-safe wrapper
         if embedding_client:

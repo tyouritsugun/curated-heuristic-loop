@@ -617,7 +617,7 @@ def initialize_faiss_with_recovery(
                 if emb.entity_id.startswith("EXP-"):
                     entity_type_map[emb.entity_id] = "experience"
                 elif emb.entity_id.startswith("MNL-"):
-                    entity_type_map[emb.entity_id] = "manual"
+                    entity_type_map[emb.entity_id] = "skill"
 
             entity_ids: List[str] = []
             entity_types: List[str] = []

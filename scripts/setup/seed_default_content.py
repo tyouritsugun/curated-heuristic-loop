@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 
 # Ensure project root (for src/ and scripts/) is importable
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
 from src.common.config.config import ensure_project_root_on_sys_path  # noqa: E402
 
 ensure_project_root_on_sys_path()
@@ -59,7 +61,10 @@ def _run_seed() -> bool:
 def _run_guidelines() -> bool:
     # Lazy import to keep surface minimal
     try:
-        from scripts.sync_guidelines import sync_guidelines  # type: ignore
+        try:
+            from scripts.ops.sync_guidelines import sync_guidelines  # type: ignore
+        except ModuleNotFoundError:
+            from scripts.sync_guidelines import sync_guidelines  # type: ignore
         config = get_config()
         sync_guidelines(api_url=getattr(config, "api_base_url", None))
         return True

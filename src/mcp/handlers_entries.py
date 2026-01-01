@@ -41,7 +41,7 @@ def read_entries(
     fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Retrieve experiences or manuals.
+    Retrieve experiences or skills.
 
     USAGE PATTERNS:
 
@@ -86,8 +86,8 @@ def read_entries(
                         filtered["playbook_preview"] = entry["playbook_preview"]
                         filtered["playbook_truncated"] = entry.get("playbook_truncated", False)
                     filtered_entries.append(filtered)
-                else:  # manual
-                    # Manuals: id, title, content (or content_preview if not full)
+                else:  # skill
+                    # Skills: id, title, content (or content_preview if not full)
                     filtered = {"id": entry.get("id"), "title": entry.get("title")}
                     if "content" in entry:
                         filtered["content"] = entry["content"]
@@ -111,12 +111,34 @@ def create_entry(
     data: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Create a new experience or manual entry via the API.
+    Create a new experience or skill entry via the API.
 
     Args:
-        entity_type: Either 'experience' or 'manual'
+        entity_type: Either 'experience' or 'skill'
         category_code: Category shelf code (e.g., 'PGS', 'GLN')
         data: Entry payload
+
+    CRITICAL - Atomicity Rule for Experiences:
+        Each experience MUST be ATOMIC (one single technique/action/step).
+
+        ✅ ATOMIC (correct):
+          - "Use git rebase for clean history on feature branches"
+          - "Set timeout to 30s for slow API endpoints"
+          - "Add index on user_id for faster lookups"
+
+        ❌ NON-ATOMIC (reject - split into multiple experiences):
+          - "Set up authentication: configure OAuth, add middleware, and test login"
+            → Split into: (1) "Configure OAuth provider", (2) "Add auth middleware", (3) "Test login flow"
+          - "Optimize database: add indexes, enable query cache, and upgrade to v2"
+            → Split into 3 separate atomic experiences
+
+        Before creating an experience, verify:
+          1. Does the playbook describe exactly ONE technique/action?
+          2. Can it be applied independently without requiring other steps?
+          3. Would splitting it into smaller pieces still make sense?
+
+        If ANY answer is "no" or "maybe", SPLIT it into multiple atomic experiences.
+        Each atomic piece should be self-contained and independently reusable.
     """
     try:
         payload = {
@@ -139,11 +161,11 @@ def update_entry(
     force_contextual: bool = False,
 ) -> Dict[str, Any]:
     """
-    Update an existing experience or manual entry by id.
+    Update an existing experience or skill entry by id.
 
     Allowed fields:
         - experience: title, playbook, context, section (use force_contextual=true to set section='contextual')
-        - manual: title, content, summary
+        - skill: title, content, summary
     """
     try:
         payload = {
@@ -172,7 +194,7 @@ def check_duplicates(
     Check for potential duplicate entries before writing.
 
     Args:
-        entity_type: 'experience' or 'manual'
+        entity_type: 'experience' or 'skill'
         category_code: Category shelf code (e.g., 'PGS')
         title: Proposed entry title
         content: Proposed playbook/content body

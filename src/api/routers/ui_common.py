@@ -156,6 +156,13 @@ def _format_duration(start: Optional[datetime], end: Optional[datetime]) -> Opti
     if not start:
         return None
     end = end or datetime.now(timezone.utc)
+
+    # Ensure both datetimes have timezone info to avoid mixing offset-naive and offset-aware
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+
     total_seconds = max((end - start).total_seconds(), 0)
     if total_seconds < 1:
         return "<1s"
@@ -601,7 +608,7 @@ def _get_env_config_status(
         [
             os.getenv("IMPORT_WORKSHEET_CATEGORIES", "Categories"),
             os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences"),
-            os.getenv("IMPORT_WORKSHEET_MANUALS", "Manuals"),
+            os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_MANUALS", "Skills")),
         ]
     )
 
@@ -609,7 +616,7 @@ def _get_env_config_status(
         [
             os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories"),
             os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences"),
-            os.getenv("EXPORT_WORKSHEET_MANUALS", "Manuals"),
+            os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills")),
         ]
     )
 
@@ -658,6 +665,7 @@ def _get_env_config_status(
         import_sheet_id = (
             sheets_snapshot.get("import_spreadsheet_id")
             or sheets_snapshot.get("experiences_sheet_id")
+            or sheets_snapshot.get("skills_sheet_id")
             or sheets_snapshot.get("manuals_sheet_id")
             or sheets_snapshot.get("category_sheet_id")
             or ""
@@ -666,6 +674,7 @@ def _get_env_config_status(
         export_sheet_id = (
             sheets_snapshot.get("export_spreadsheet_id")
             or sheets_snapshot.get("experiences_sheet_id")
+            or sheets_snapshot.get("skills_sheet_id")
             or sheets_snapshot.get("manuals_sheet_id")
             or sheets_snapshot.get("category_sheet_id")
             or ""

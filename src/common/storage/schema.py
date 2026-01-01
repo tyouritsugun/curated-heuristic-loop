@@ -56,8 +56,8 @@ class Experience(Base):
     category = relationship("Category", backref="experiences")
 
 
-class CategoryManual(Base):
-    __tablename__ = "category_manuals"
+class CategorySkill(Base):
+    __tablename__ = "category_skills"
 
     id = Column(String(64), primary_key=True)
     category_code = Column(String(16), ForeignKey("categories.code"), nullable=False, index=True)
@@ -73,7 +73,7 @@ class CategoryManual(Base):
     synced_at = Column(DateTime(timezone=True), nullable=True)
     exported_at = Column(DateTime(timezone=True), nullable=True)
 
-    category = relationship("Category", backref="manuals")
+    category = relationship("Category", backref="skills")
 
 
 class Embedding(Base):
@@ -81,7 +81,7 @@ class Embedding(Base):
 
     id = Column(Integer, primary_key=True)
     entity_id = Column(String(64), nullable=False, index=True)
-    entity_type = Column(String(32), nullable=False)  # experience or manual
+    entity_type = Column(String(32), nullable=False)  # experience or skill
     category_code = Column(String(16), nullable=False)
     vector = Column(String, nullable=False)  # stored as space-separated floats
     model_version = Column(String(128), nullable=False)
@@ -96,6 +96,32 @@ class FAISSMetadata(Base):
     entity_type = Column(String(32), nullable=False)
     internal_id = Column(Integer, nullable=False, index=True)
     deleted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class CurationDecision(Base):
+    __tablename__ = "curation_decisions"
+
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(String(64), nullable=False, index=True)
+    action = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=True)
+    notes = Column(Text, nullable=True)
+    user = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ExperienceSplitProvenance(Base):
+    __tablename__ = "experience_split_provenance"
+
+    id = Column(Integer, primary_key=True)
+    source_experience_id = Column(String(64), nullable=False, index=True)
+    split_experience_id = Column(String(64), nullable=True, index=True)
+    split_group_id = Column(String(64), nullable=False, index=True)
+    decision = Column(String(16), nullable=False)  # split or atomic
+    model = Column(String(255), nullable=True)
+    prompt_path = Column(String(255), nullable=True)
+    raw_response = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 

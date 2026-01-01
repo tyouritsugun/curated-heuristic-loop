@@ -32,6 +32,7 @@ import os
 import sys
 import json
 import logging
+import os
 from pathlib import Path
 
 # Ensure repo root is on sys.path
@@ -49,13 +50,15 @@ from src.common.storage.database import Database
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
-    CategoryManualRepository,
+    CategorySkillRepository,
 )
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 
 # Configure logging
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=level,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -271,14 +274,14 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities
         def _do_counts():
             with db.session_scope() as session:
-                from src.common.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategorySkill, Category
                 exp_count_ = session.query(Experience).count()
-                manual_count_ = session.query(CategoryManual).count()
+                skill_count_ = session.query(CategorySkill).count()
                 cat_count_ = session.query(Category).count()
-                return exp_count_, manual_count_, cat_count_
+                return exp_count_, skill_count_, cat_count_
 
         try:
-            exp_count, manual_count, cat_count = _do_counts()
+            exp_count, skill_count, cat_count = _do_counts()
         except Exception as count_err:
             logger.error(f"Count failed (schema missing?): {count_err}")
             raise
@@ -286,13 +289,13 @@ def initialize_database(config) -> tuple[bool, dict]:
         stats = {
             'categories': cat_count,
             'experiences': exp_count,
-            'manuals': manual_count
+            'skills': skill_count
         }
 
         print(f"✓ Database initialized: {config.database_path}")
         print(f"  - {stats['categories']} categories")
         print(f"  - {stats['experiences']} experiences")
-        print(f"  - {stats['manuals']} manuals")
+        print(f"  - {stats['skills']} skills")
 
         return True, stats
     except Exception as e:
@@ -320,7 +323,7 @@ def seed_default_content(config) -> bool:
                 print(f"  (Categories already present: {len(categories)})")
 
             exp_repo = ExperienceRepository(session)
-            manual_repo = CategoryManualRepository(session)
+            skill_repo = CategorySkillRepository(session)
 
             exp_seeded = 0
             if session.query(Experience).count() == 0:
@@ -334,17 +337,17 @@ def seed_default_content(config) -> bool:
                 exp_total = session.query(Experience).count()
                 print(f"  (Experiences already present: {exp_total})")
 
-            manual_seeded = 0
-            if session.query(CategoryManual).count() == 0:
+            skill_seeded = 0
+            if session.query(CategorySkill).count() == 0:
                 for data in DEFAULT_MANUALS:
                     if data["category_code"] in category_codes:
-                        manual_repo.create(data)
-                        manual_seeded += 1
-                if manual_seeded:
-                    print(f"✓ Added {manual_seeded} sample manual")
+                        skill_repo.create(data)
+                        skill_seeded += 1
+                if skill_seeded:
+                    print(f"✓ Added {skill_seeded} sample skill")
             else:
-                manual_total = session.query(CategoryManual).count()
-                print(f"  (Manuals already present: {manual_total})")
+                skill_total = session.query(CategorySkill).count()
+                print(f"  (Skills already present: {skill_total})")
 
         return True
     except Exception as e:

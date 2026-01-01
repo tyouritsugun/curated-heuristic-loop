@@ -1,6 +1,6 @@
 ## Generator Workflow (Search-First)
 
-Load these notes whenever you are in Generator mode. The goal is to surface the most relevant experiences and manuals before you draft anything.
+Load these notes whenever you are in Generator mode. The goal is to surface the most relevant experiences and skills before you draft anything.
 
 ### 0. Clarify task intent (before rushing to code)
 
@@ -39,7 +39,7 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 - Omit `category_code` to search all categories
 - If top score <0.50, reformulate the SEARCH phrase and retry
 
-**Two-phase query (only when you are searching):** keep it terse:
+**Two-step query (only when you are searching):** keep it terse:
 ```
 [SEARCH] {process + domain}      # e.g., "query performance troubleshooting"
 [TASK] I want to {goal}. Will this help?
@@ -47,6 +47,13 @@ When user mentions bugs, errors, or problems, pause and clarify what they want:
 Issue 2–3 variants if top score <0.50.
 
 ### 4. Run a duplicate check before creating
+
+**ATOMICITY REQUIREMENT:** Every experience must be atomic (one single technique/action). Before creating:
+- ✅ ATOMIC: "Use git rebase for feature branches", "Set timeout to 30s for APIs", "Add index on user_id"
+- ❌ NON-ATOMIC: "Set up auth: configure OAuth + add middleware + test" → Split into 3 separate experiences
+
+If your experience bundles multiple steps/techniques, split it into multiple atomic create_entry calls.
+
 1. Before calling `create_entry`, use `check_duplicates` with the proposed `title` and full `playbook`/`content`:
    - `check_duplicates(entity_type=\"experience\", category_code=..., title=..., content=..., limit=1)`
 2. If the top candidate has a high similarity score (e.g., >0.85):
@@ -55,9 +62,9 @@ Issue 2–3 variants if top score <0.50.
 3. If no strong candidate is returned, proceed to `create_entry` as usual.
 4. **CPU mode:** if `read_entries` meta shows `search_mode='cpu'`, skip `check_duplicates`; instead load relevant entries in that category via keyword `read_entries` and manually compare before writing.
 
-### 5. Layer manuals only when they change the plan
-- Use `entity_type=\"manual\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
-- Limit yourself to the top 1–2 manuals; if nothing useful appears, treat it as a knowledge gap and flag it later.
+### 5. Layer skills only when they change the plan
+- Use `entity_type=\"skill\"` when broader background will materially affect your deliverable (process overviews, terminology, regulatory context).
+- Limit yourself to the top 1–2 skills; if nothing useful appears, treat it as a knowledge gap and flag it later.
 
 ### 6. Check coverage and gaps
 - If every variant still yields weak matches, log the gap (include queries tried and their best scores) so an Evaluator can curate a new entry.
@@ -65,7 +72,7 @@ Issue 2–3 variants if top score <0.50.
 
 ### Guiding principles
 - **Atomic first**: default to experiences; they carry the actionable steps.
-- **Seek patterns, not answers**: manuals and experiences teach how to work; they will not contain the exact schema, spec, or code your user is asking for.
+- **Seek patterns, not answers**: skills and experiences teach how to work; they will not contain the exact schema, spec, or code your user is asking for.
 - **Stay concise**: shorter, cleaner queries produce better rankings.
 - **Leave breadcrumbs**: record which IDs informed your work and any missing coverage you discovered.
-- **Scope of knowledge**: The KB contains manuals/experiences (shared heuristics), not domain- or customer-specific content. There is no product-specific spec; only general “how to design a page spec” patterns organized by category.
+- **Scope of knowledge**: The KB contains skills/experiences (shared heuristics), not domain- or customer-specific content. There is no product-specific spec; only general "how to design a page spec" patterns organized by category.

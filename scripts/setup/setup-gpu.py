@@ -43,6 +43,7 @@ import sys
 import json
 import argparse
 import logging
+import os
 import subprocess
 import shutil
 import platform
@@ -73,9 +74,9 @@ try:
     from src.common.storage.repository import (
         CategoryRepository,
         ExperienceRepository,
-        CategoryManualRepository,
+        CategorySkillRepository,
     )
-    from src.common.storage.schema import Experience, CategoryManual
+    from src.common.storage.schema import Experience, CategorySkill
     from src.api.services import gpu_installer
 except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirements install
     sys.stderr.write(
@@ -86,8 +87,10 @@ except ImportError as exc:  # Missing deps (e.g., sqlalchemy) before requirement
     raise SystemExit(1) from exc
 
 # Configure logging
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=level,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -129,6 +132,7 @@ DEFAULT_CATEGORIES = [
     ("PPT", "playwright_page_test", "Playwright page test strategies."),
     ("EET", "e2e_test", "End-to-end testing guidance."),
     ("PRQ", "pull_request", "Pull request authoring and review heuristics."),
+    ("DVT", "dev_tooling_common_errors", "Common developer tooling errors and fixes (Git, package managers, Docker, IDEs)."),
 ]
 
 # Sample seed data (inserted only if tables are empty)
@@ -435,14 +439,14 @@ def initialize_database(config) -> tuple[bool, dict]:
         # Count entities (retry once if a missing column is detected)
         def _do_counts():
             with db.session_scope() as session:
-                from src.common.storage.schema import Experience, CategoryManual, Category
+                from src.common.storage.schema import Experience, CategorySkill, Category
                 exp_count_ = session.query(Experience).count()
-                manual_count_ = session.query(CategoryManual).count()
+                skill_count_ = session.query(CategorySkill).count()
                 cat_count_ = session.query(Category).count()
-                return exp_count_, manual_count_, cat_count_
+                return exp_count_, skill_count_, cat_count_
 
         try:
-            exp_count, manual_count, cat_count = _do_counts()
+            exp_count, skill_count, cat_count = _do_counts()
         except Exception as count_err:
             logger.error(f"Count failed (schema missing?): {count_err}")
             raise
@@ -450,13 +454,13 @@ def initialize_database(config) -> tuple[bool, dict]:
         stats = {
             'categories': cat_count,
             'experiences': exp_count,
-            'manuals': manual_count
+            'skills': skill_count
         }
 
         print(f"✓ Database initialized: {config.database_path}")
         print(f"  - {stats['categories']} categories")
         print(f"  - {stats['experiences']} experiences")
-        print(f"  - {stats['manuals']} manuals")
+        print(f"  - {stats['skills']} skills")
 
         return True, stats
     except Exception as e:
@@ -487,7 +491,7 @@ def _seed_default_content(config) -> bool:
                 print(f"  (Categories already present: {len(categories)})")
 
             exp_repo = ExperienceRepository(session)
-            manual_repo = CategoryManualRepository(session)
+            skill_repo = CategorySkillRepository(session)
 
             exp_seeded = 0
             if session.query(Experience).count() == 0:
@@ -501,19 +505,19 @@ def _seed_default_content(config) -> bool:
                 exp_total = session.query(Experience).count()
                 print(f"  (Experiences already present: {exp_total})")
 
-            manual_seeded = 0
-            if session.query(CategoryManual).count() == 0:
+            skill_seeded = 0
+            if session.query(CategorySkill).count() == 0:
                 for data in DEFAULT_MANUALS:
                     if data["category_code"] in category_codes:
-                        manual_repo.create(data)
-                        manual_seeded += 1
-                if manual_seeded:
-                    print(f"✓ Added {manual_seeded} sample manual")
+                        skill_repo.create(data)
+                        skill_seeded += 1
+                if skill_seeded:
+                    print(f"✓ Added {skill_seeded} sample skill")
             else:
-                manual_total = session.query(CategoryManual).count()
-                print(f"  (Manuals already present: {manual_total})")
+                skill_total = session.query(CategorySkill).count()
+                print(f"  (Skills already present: {skill_total})")
 
-        if exp_seeded or manual_seeded:
+        if exp_seeded or skill_seeded:
             logger.info(
                 "Seed data added. Use the Operations dashboard to rebuild or upload a FAISS snapshot "
                 "before enabling vector search."
@@ -529,7 +533,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
     """Generate embeddings for existing content and build initial FAISS index.
 
     This runs offline during setup so that once the API server starts, the
-    FAISS index already contains vectors for any seeded experiences/manuals.
+    FAISS index already contains vectors for any seeded experiences/skills.
     """
     logger.info("Building initial embeddings and FAISS index (if needed)...")
     try:
@@ -537,7 +541,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
         from src.api.gpu.embedding_client import EmbeddingClient, EmbeddingClientError
         from src.api.gpu.embedding_service import EmbeddingService
         from src.api.gpu.faiss_manager import initialize_faiss_with_recovery
-        from src.common.storage.schema import Experience, CategoryManual
+        from src.common.storage.schema import Experience, CategorySkill
 
         db = Database(config.database_path, echo=False)
         db.init_database()
@@ -545,9 +549,9 @@ def _build_initial_embeddings_and_index(config) -> bool:
         # Quick check: if there is no content yet, nothing to embed
         with db.session_scope() as session:
             exp_count = session.query(Experience).count()
-            man_count = session.query(CategoryManual).count()
+            man_count = session.query(CategorySkill).count()
             if exp_count == 0 and man_count == 0:
-                logger.info("No experiences/manuals found; skipping initial embedding/index build.")
+                logger.info("No experiences/skills found; skipping initial embedding/index build.")
                 return True
 
         # Initialize embedding client once (outside session scope)
@@ -585,7 +589,7 @@ def _build_initial_embeddings_and_index(config) -> bool:
             session.query(Experience).filter(Experience.embedding_status.is_(None)).update(
                 {"embedding_status": "pending"}, synchronize_session=False
             )
-            session.query(CategoryManual).filter(CategoryManual.embedding_status.is_(None)).update(
+            session.query(CategorySkill).filter(CategorySkill.embedding_status.is_(None)).update(
                 {"embedding_status": "pending"}, synchronize_session=False
             )
             session.flush()
@@ -1053,7 +1057,7 @@ def main():
         if not validate_setup(config):
             sys.exit(1)
 
-        # 7. Seed default content (categories, sample experiences/manuals)
+        # 7. Seed default content (categories, sample experiences/skills)
         if not _seed_default_content(config):
             sys.exit(1)
 

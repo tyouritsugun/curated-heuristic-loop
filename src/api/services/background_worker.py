@@ -52,7 +52,7 @@ class BackgroundEmbeddingWorker:
             faiss_manager: Optional FAISS manager for index updates
             poll_interval: Seconds to wait between polls (default: 5.0)
             batch_size: Maximum number of entries to process per batch (default: 10)
-            max_tokens: Max tokens for manual content (default: 8000)
+            max_tokens: Max tokens for skill content (default: 8000)
         """
         self.session_factory = session_factory
         self.embedding_client = embedding_client

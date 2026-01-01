@@ -24,7 +24,7 @@ def _load_markdown(path: Path) -> str:
 
 def get_guidelines(guide_type: str, version: Optional[str] = None) -> Dict[str, Any]:
     """
-    Return the generator or evaluator workflow manual from local markdown.
+    Return the generator or evaluator workflow guide from local markdown.
 
     Example:
         get_guidelines(guide_type='generator')
@@ -52,7 +52,7 @@ def get_guidelines(guide_type: str, version: Optional[str] = None) -> Dict[str, 
 
     content = _load_markdown(md_path)
 
-    manual_id = f"GLN-{guide_type}-markdown"
+    skill_id = f"GLN-{guide_type}-markdown"
     summary = title
 
     return {
@@ -61,8 +61,8 @@ def get_guidelines(guide_type: str, version: Optional[str] = None) -> Dict[str, 
             "name": "chl_guidelines",
             "search_mode": search_mode,
         },
-        "manual": {
-            "id": manual_id,
+        "skill": {
+            "id": skill_id,
             "title": title,
             "content": content,
             "summary": summary,

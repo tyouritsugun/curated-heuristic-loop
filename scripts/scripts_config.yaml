@@ -9,11 +9,50 @@ data_path: ../data
 # Optional override for the SQLite database filename (relative to data_path).
 database_filename: chl.db
 
+curation:
+  # Default paths for curation workflow
+  members_dir: data/curation/members
+  merged_output_dir: data/curation/merged
+  curation_db_path: data/curation/chl_curation.db
+  approved_output_dir: data/curation/approved
+  # State file for resume functionality
+  state_file: data/curation/.curation_state.json
+  # Curation loop state (round loop); keeps schema separate from interactive flow
+  curation_state_file: data/curation/.curation_state_loop.json
+  # Other potential curation paths
+  faiss_index_dir: data/curation/faiss_index
+  audit_log_path: data/curation/merge_audit.csv
+  evaluation_log_path: data/curation/evaluation_log.csv
+  # Sparse graph
+  min_similarity_threshold: 0.72   # edge_keep threshold
+  top_k_neighbors: 50
+  per_category: true
+  algorithm: louvain               # louvain (default) or leiden
+  min_community_size: 2
+  max_community_size: 50
+  graph_file: data/curation/similarity_graph.pkl
+  community_data_file: data/curation/communities.json
+  # Similarity signals (embed + rerank blend)
+  # Default: embed-only. Pass --with-rerank to enable rerank (rerank-only scoring).
+  use_rerank: false
+  blend_weights:
+    embed: 0.7
+    rerank: 0.3
+  rerank_cache_dir: data/curation/rerank_cache
+  # Threshold table (tunable by users)
+  thresholds:
+    edge_keep: 0.72         # keep edge in sparse graph
+    community_detect: 0.72  # same as edge_keep unless tuned
+    auto_dedup: 0.98        # merge-without-review
+    high_bucket: 0.92       # interactive high bucket
+    medium_bucket: 0.75     # interactive medium bucket
+    low_bucket: 0.55        # informational/preview
+
 export:
   worksheets:
     categories: Categories
     experiences: Experiences
-    manuals: Manuals
+    skills: Skills
 
   # Set to true to preview counts without writing to Google Sheets.
   dry_run: false
@@ -23,6 +62,30 @@ import:
   worksheets:
     categories: Categories
     experiences: Experiences
-    manuals: Manuals
+    skills: Skills
 
   verbose: false
+
+# LLM settings for overnight agent (used by scripts/curation/agents/autogen_openai_completion_agent.py)
+# Supports any OpenAI-compatible endpoint (OpenAI, Gemini, or local: Ollama/LM Studio)
+curation_llm:
+  # model: gpt-5-mini-2025-08-07        # e.g., gpt-4o-mini, gemini-2.0-flash, claude-3-5-sonnet, qwen2.5:14b
+  model: gemini-3-flash-preview
+  api_base: https://generativelanguage.googleapis.com/v1beta/openai/                      # Optional base URL. Examples:
+                                      #   OpenAI: leave null (api.openai.com)
+                                      #   Gemini (OpenAI-compat): https://generativelanguage.googleapis.com/v1beta/openai/
+                                      #   Claude (OpenAI-compat): https://api.anthropic.com/v1/
+                                      #   Local (Ollama): http://localhost:11434/v1
+                                      #   Local (LM Studio): http://localhost:1234/v1
+  # NOTE: Keys are read from .env only. Avoid setting multiple keys there; keep just one.
+  # api_key: null                     # Set via .env: OPENAI_API_KEY, GEMINI_API_KEY, or LLM_API_KEY
+  llm_response_timeout: 120           # seconds per LLM call
+                                      # Note: expected per-call latency varies by model/provider.
+                                      # Use a short value for fast hosted models (e.g., Gemini Flash),
+                                      # and a longer value for local LLMs on low-spec GPUs. Use field
+                                      # trial measurements + a small buffer when estimating runtime.
+                                      # For total runtime estimation, prefer --expected-llm-seconds.
+  # Retry policy for malformed responses or transient connection errors.
+  max_retries: 3
+  retry_backoff: exponential          # exponential | linear
+  retry_delays: []                    # optional fixed delays per attempt (seconds)

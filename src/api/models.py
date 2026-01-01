@@ -1,8 +1,15 @@
 """Pydantic models for API request/response schemas."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+
+def normalize_entity_type(value: str) -> str:
+    """Normalize entity_type for current API usage."""
+    if value == "manual":
+        raise ValueError("entity_type 'manual' is deprecated; use 'skill'")
+    return value
 
 
 # Category models
@@ -13,8 +20,8 @@ class CategoryResponse(BaseModel):
     description: Optional[str] = None
     created_at: Optional[str] = None
     experience_count: Optional[int] = Field(None, description="Number of experiences in this category")
-    manual_count: Optional[int] = Field(None, description="Number of manuals in this category")
-    total_count: Optional[int] = Field(None, description="Total entries (experiences + manuals)")
+    skill_count: Optional[int] = Field(None, description="Number of skills in this category")
+    total_count: Optional[int] = Field(None, description="Total entries (experiences + skills)")
 
 
 class ListCategoriesResponse(BaseModel):
@@ -25,7 +32,7 @@ class ListCategoriesResponse(BaseModel):
 # Entry models
 class ReadEntriesRequest(BaseModel):
     """Request model for reading entries."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: Optional[str] = Field(default=None, description="Category code to filter by (None for global search)")
     query: Optional[str] = None
     ids: Optional[List[str]] = None
@@ -35,21 +42,36 @@ class ReadEntriesRequest(BaseModel):
     snippet_len: Optional[int] = Field(default=None, ge=80, le=640, description="Snippet length if fields=['preview']")
     session_id: Optional[str] = Field(default=None, description="Session ID for tracking (prefer X-CHL-Session header)")
 
+    @field_validator('entity_type')
+    @classmethod
+    def normalize_entity_type_field(cls, v: str) -> str:
+        return normalize_entity_type(v)
+
 
 class WriteEntryRequest(BaseModel):
     """Request model for creating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: str
     data: Dict[str, Any]
+
+    @field_validator('entity_type')
+    @classmethod
+    def normalize_entity_type_field(cls, v: str) -> str:
+        return normalize_entity_type(v)
 
 
 class UpdateEntryRequest(BaseModel):
     """Request model for updating an entry."""
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: str
     entry_id: str
     updates: Dict[str, Any]
     force_contextual: bool = False
+
+    @field_validator('entity_type')
+    @classmethod
+    def normalize_entity_type_field(cls, v: str) -> str:
+        return normalize_entity_type(v)
 
 
 class EntryResponse(BaseModel):
@@ -78,7 +100,7 @@ class WriteEntryResponse(BaseModel):
     # Potential duplicates surfaced at write-time with guidance
     duplicates: Optional[List[Dict[str, Any]]] = None
     recommendation: Optional[str] = None
-    # Optional human-readable notes (e.g., context ignored for non-contextual sections)
+    # Optional human-readable notes about processing.
     warnings: Optional[List[str]] = None
     message: Optional[str] = None
 
@@ -92,16 +114,21 @@ class UpdateEntryResponse(BaseModel):
     message: Optional[str] = None
 
 
-# Search models (Phase 1: Unified search)
+# Search models (unified search)
 class DuplicateCheckRequest(BaseModel):
     """Request model for duplicate detection."""
 
-    entity_type: str = Field(..., description="'experience' or 'manual'")
+    entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: Optional[str] = None
     title: str
     content: str
     limit: Optional[int] = 1
     threshold: Optional[float] = None
+
+    @field_validator('entity_type')
+    @classmethod
+    def normalize_entity_type_field(cls, v: str) -> str:
+        return normalize_entity_type(v)
 
 
 class DuplicateCandidateResponse(BaseModel):
@@ -192,8 +219,8 @@ class UnifiedSearchRequest(BaseModel):
     """Request model for unified search API v1.1."""
     query: str = Field(..., description="Search query text")
     types: List[str] = Field(
-        default=["experience", "manual"],
-        description="Entity types to search (experience, manual, or both)"
+        default=["experience", "skill"],
+        description="Entity types to search: 'experience', 'skill'"
     )
     category: Optional[str] = Field(None, description="Filter to specific category code")
     limit: int = Field(10, ge=1, le=25, description="Maximum results to return (capped at 25)")
@@ -212,11 +239,16 @@ class UnifiedSearchRequest(BaseModel):
     downrank_viewed: bool = Field(True, description="Apply score penalty (0.5x) to viewed entries")
     session_id: Optional[str] = Field(None, description="Session ID for tracking (prefer X-CHL-Session header)")
 
+    @field_validator('types')
+    @classmethod
+    def normalize_types(cls, v: List[str]) -> List[str]:
+        return [normalize_entity_type(item) for item in v]
+
 
 class UnifiedSearchResult(BaseModel):
     """Single result from unified search API v1.1."""
     entity_id: str
-    entity_type: str  # 'experience' or 'manual'
+    entity_type: str  # 'experience' or 'skill'
     title: str
     section: Optional[str] = None
     score: float = Field(..., description="Relevance score (always present for search results)")

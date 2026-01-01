@@ -74,7 +74,7 @@ class EmbeddingClient:
     def _init_hf(self, model_repo: str) -> None:
         try:
             logger.info("Loading HF embedding model: %s", model_repo)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_repo, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_repo, trust_remote_code=True, local_files_only=True)
 
             if torch.backends.mps.is_available():
                 self.device = torch.device("mps")
@@ -90,6 +90,7 @@ class EmbeddingClient:
                 model_repo,
                 trust_remote_code=True,
                 torch_dtype=torch_dtype,
+                local_files_only=True
             )
 
             self.model.to(self.device)

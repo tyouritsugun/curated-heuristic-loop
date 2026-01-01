@@ -1,10 +1,10 @@
-"""Guidelines endpoints for retrieving generator/evaluator workflow manuals."""
+"""Guidelines endpoints for retrieving generator/evaluator workflow guides."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
 
 from src.api.dependencies import get_db_session, get_config
-from src.common.storage.repository import CategoryManualRepository, CategoryRepository
+from src.common.storage.repository import CategorySkillRepository, CategoryRepository
 from src.common.config.config import Config
 
 router = APIRouter(prefix="/api/v1/guidelines", tags=["guidelines"])
@@ -28,7 +28,7 @@ def get_guidelines(
     config: Config = Depends(get_config)
 ) -> Dict[str, Any]:
     """
-    Return the generator or evaluator workflow manual from the GLN category.
+    Return the generator or evaluator workflow guide from the GLN category.
 
     In CPU mode, returns CPU-specific evaluator guidelines when guide_type='evaluator'.
 
@@ -52,7 +52,7 @@ def get_guidelines(
         )
 
     cat_repo = CategoryRepository(session)
-    manual_repo = CategoryManualRepository(session)
+    skill_repo = CategorySkillRepository(session)
 
     category = cat_repo.get_by_code(GUIDELINES_CATEGORY)
     if not category:
@@ -61,13 +61,13 @@ def get_guidelines(
             detail="Guidelines category not found. Run 'uv run python scripts/seed_default_content.py' to seed it."
         )
 
-    manuals = manual_repo.get_by_category(GUIDELINES_CATEGORY)
-    manual = next((m for m in manuals if m.title == title), None)
-    if not manual:
+    skills = skill_repo.get_by_category(GUIDELINES_CATEGORY)
+    skill = next((s for s in skills if s.title == title), None)
+    if not skill:
         raise HTTPException(
             status_code=404,
             detail=(
-                f"Guideline manual '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
+                f"Guideline '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
                 "'uv run python scripts/seed_default_content.py'."
             )
         )
@@ -78,12 +78,12 @@ def get_guidelines(
             "name": category.name,
             "search_mode": config.search_mode,
         },
-        "manual": {
-            "id": manual.id,
-            "title": manual.title,
-            "content": manual.content,
-            "summary": manual.summary,
-            "updated_at": manual.updated_at,
-            "author": manual.author,
+        "skill": {
+            "id": skill.id,
+            "title": skill.title,
+            "content": skill.content,
+            "summary": skill.summary,
+            "updated_at": skill.updated_at,
+            "author": skill.author,
         },
     }

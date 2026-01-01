@@ -20,8 +20,8 @@ class SearchResult:
     """Result from search operation.
 
     Attributes:
-        entity_id: Experience or manual ID
-        entity_type: 'experience' or 'manual'
+        entity_id: Experience or skill ID
+        entity_type: 'experience' or 'skill'
         score: Relevance score (0.0-1.0, higher is better, None if not applicable)
         reason: How this result was found
         provider: Which provider returned this result ('vector_faiss', 'sqlite_text', 'direct')
@@ -31,7 +31,7 @@ class SearchResult:
     """
 
     entity_id: str
-    entity_type: str  # 'experience' or 'manual'
+    entity_type: str  # 'experience' or 'skill'
     score: Optional[float] = None
     reason: SearchReason = SearchReason.ID_LOOKUP
     provider: str = "direct"
@@ -41,7 +41,7 @@ class SearchResult:
 
     def __post_init__(self):
         """Validate fields."""
-        if self.entity_type not in ("experience", "manual"):
+        if self.entity_type not in ("experience", "skill"):
             raise ValueError(f"Invalid entity_type: {self.entity_type}")
 
         if self.score is not None and not (0.0 <= self.score <= 1.0):
@@ -54,7 +54,7 @@ class DuplicateCandidate:
 
     Attributes:
         entity_id: ID of existing entity that might be duplicate
-        entity_type: 'experience' or 'manual'
+        entity_type: 'experience' or 'skill'
         score: Similarity score (0.0-1.0, higher means more similar)
         reason: How duplicate was detected
         provider: Which provider found this duplicate
@@ -72,7 +72,7 @@ class DuplicateCandidate:
 
     def __post_init__(self):
         """Validate fields."""
-        if self.entity_type not in ("experience", "manual"):
+        if self.entity_type not in ("experience", "skill"):
             raise ValueError(f"Invalid entity_type: {self.entity_type}")
 
         if not (0.0 <= self.score <= 1.0):

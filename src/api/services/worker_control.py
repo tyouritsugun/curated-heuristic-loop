@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import AuditLog, CategoryManual, Experience, utc_now
+from src.common.storage.schema import AuditLog, CategorySkill, Experience, utc_now
 
 
 class WorkerUnavailableError(RuntimeError):
@@ -67,25 +67,25 @@ class WorkerControlService:
     def _queue_depth(self, session: Session) -> Dict[str, Any]:
         # Pending and processing are tracked separately for smoother UI feedback
         pending_exp = session.query(Experience).filter(Experience.embedding_status == "pending").count()
-        pending_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "pending").count()
+        pending_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "pending").count()
         processing_exp = session.query(Experience).filter(Experience.embedding_status == "processing").count()
-        processing_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "processing").count()
+        processing_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "processing").count()
         failed_exp = session.query(Experience).filter(Experience.embedding_status == "failed").count()
-        failed_man = session.query(CategoryManual).filter(CategoryManual.embedding_status == "failed").count()
+        failed_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "failed").count()
         return {
             "pending": {
                 "experiences": pending_exp,
-                "manuals": pending_man,
+                "skills": pending_man,
                 "total": pending_exp + pending_man,
             },
             "processing": {
                 "experiences": processing_exp,
-                "manuals": processing_man,
+                "skills": processing_man,
                 "total": processing_exp + processing_man,
             },
             "failed": {
                 "experiences": failed_exp,
-                "manuals": failed_man,
+                "skills": failed_man,
                 "total": failed_exp + failed_man,
             },
         }

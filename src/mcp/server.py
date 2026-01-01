@@ -34,7 +34,7 @@ from src.mcp.handlers_guidelines import get_guidelines
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-mcp = FastMCP("CHL: Manual & experience toolset - clarify task intent before action")
+mcp = FastMCP("CHL: Skill & experience toolset - clarify task intent before action")
 
 # Global state
 config: Any = None
@@ -118,7 +118,7 @@ def init_server() -> None:
 
     logger.info("Initializing HTTP API client: %s", config.api_base_url)
 
-    # Phase 4: Session ID management - check env override first, then auto-generate
+    # Session ID management - check env override first, then auto-generate
     # This enables automatic session memory without user action
     session_id = os.getenv("CHL_SESSION_ID")
 
@@ -217,13 +217,13 @@ def init_server() -> None:
 
     @mcp.resource("chl://entry/{entry_id}")
     def resource_entry_by_id(entry_id: str) -> str:
-        """Fetch a single entry by ID (EXP-*/MNL-*), returns JSON."""
+        """Fetch a single entry by ID (EXP-* for experiences, MNL-* for skills), returns JSON."""
         upper = entry_id.upper()
         if upper.startswith("EXP-"):
             entity_type = "experience"
             fields = ["playbook", "section", "title"]
         elif upper.startswith("MNL-"):
-            entity_type = "manual"
+            entity_type = "skill"
             fields = ["content", "summary", "title"]
         else:
             raise MCPError("entry_id must start with EXP- or MNL-")
@@ -236,10 +236,10 @@ def init_server() -> None:
 
     @mcp.resource("chl://category/{category_code}/latest{?entity_type,limit}")
     def resource_category_latest(category_code: str, entity_type: str = "experience", limit: int = 10) -> str:
-        """Latest entries in a category (previews unless fields requested)."""
+        """Latest entries in a category (previews unless fields requested). entity_type: 'experience' or 'skill'."""
         entity_type = entity_type or "experience"
-        if entity_type not in {"experience", "manual"}:
-            raise MCPError("entity_type must be 'experience' or 'manual'")
+        if entity_type not in {"experience", "skill"}:
+            raise MCPError("entity_type must be 'experience' or 'skill'")
         limit_int = int(limit)
         resp = read_entries(entity_type=entity_type, category_code=category_code, limit=limit_int)
         return json.dumps(resp, ensure_ascii=False, indent=2)

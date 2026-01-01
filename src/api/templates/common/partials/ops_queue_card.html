@@ -1,17 +1,17 @@
 {# Prefer live queue depth from worker_status; fall back to last telemetry sample #}
 {% set queue_sample = (worker_status.get('queue') if worker_status else None) or (snapshot.queue.value if snapshot and snapshot.queue else None) %}
-{% set pending = queue_sample.get('pending') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
-{% set processing = queue_sample.get('processing') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set pending = queue_sample.get('pending') if queue_sample else {'total': 0, 'experiences': 0, 'skills': 0} %}
+{% set processing = queue_sample.get('processing') if queue_sample else {'total': 0, 'experiences': 0, 'skills': 0} %}
 {% set queued_total = pending.get('total', 0) + processing.get('total', 0) %}
 {% set queued_exp = pending.get('experiences', 0) + processing.get('experiences', 0) %}
-{% set queued_man = pending.get('manuals', 0) + processing.get('manuals', 0) %}
-{% set failed = queue_sample.get('failed') if queue_sample else {'total': 0, 'experiences': 0, 'manuals': 0} %}
+{% set queued_skill = pending.get('skills', 0) + processing.get('skills', 0) %}
+{% set failed = queue_sample.get('failed') if queue_sample else {'total': 0, 'experiences': 0, 'skills': 0} %}
 {% set pending_total = pending.get('total', 0) %}
 {% set pending_exp = pending.get('experiences', 0) %}
-{% set pending_man = pending.get('manuals', 0) %}
+{% set pending_skill = pending.get('skills', 0) %}
 {% set failed_total = failed.get('total', 0) %}
 {% set failed_exp = failed.get('experiences', 0) %}
-{% set failed_man = failed.get('manuals', 0) %}
+{% set failed_skill = failed.get('skills', 0) %}
 <section
   id="ops-queue-card"
   class="card ops-card"
@@ -32,15 +32,15 @@
   <div class="stat-grid">
     <div class="stat-pair">
       <p class="stat-label">Queued (pending+processing)</p>
-      <p class="stat-value">{{ queued_total }}<small class="muted"> ({{ queued_exp }}/{{ queued_man }})</small></p>
+      <p class="stat-value">{{ queued_total }}<small class="muted"> ({{ queued_exp }}/{{ queued_skill }})</small></p>
     </div>
     <div class="stat-pair">
-      <p class="stat-label">In Progress (exp/manuals)</p>
-      <p class="stat-value">{{ processing.get('total', 0) }}<small class="muted"> ({{ processing.get('experiences', 0) }}/{{ processing.get('manuals', 0) }})</small></p>
+      <p class="stat-label">In Progress (exp/skills)</p>
+      <p class="stat-value">{{ processing.get('total', 0) }}<small class="muted"> ({{ processing.get('experiences', 0) }}/{{ processing.get('skills', 0) }})</small></p>
     </div>
     <div class="stat-pair">
-      <p class="stat-label">Failed (exp/manuals)</p>
-      <p class="stat-value">{{ failed_total }}<small class="muted"> ({{ failed_exp }}/{{ failed_man }})</small></p>
+      <p class="stat-label">Failed (exp/skills)</p>
+      <p class="stat-value">{{ failed_total }}<small class="muted"> ({{ failed_exp }}/{{ failed_skill }})</small></p>
     </div>
     <div class="stat-pair">
       <p class="stat-label">Sync Status</p>

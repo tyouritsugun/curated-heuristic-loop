@@ -16,8 +16,8 @@ from src.api.models import (
 )
 from src.api.services.snippet import generate_snippet, extract_heading
 from src.api.services.session_store import get_session_store
-from src.common.storage.schema import Experience, CategoryManual
-from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
+from src.common.storage.schema import Experience, CategorySkill
+from src.common.storage.repository import ExperienceRepository, CategorySkillRepository
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def unified_search(
     Unified search API v1.1 with snippets, filtering, and session support.
 
     Returns rich results with snippets to reduce token usage for LLM contexts.
-    Supports cross-type search, filtering, and session-based ranking (Phase 2).
+    Supports cross-type search, filtering, and session-based ranking.
     """
     try:
         if search_service is None:
@@ -44,7 +44,7 @@ def unified_search(
         # Session ID resolution: header takes precedence over body
         session_id = x_chl_session or request.session_id
 
-        # Phase 2: Session filtering implementation
+        # Session filtering implementation
         # Get viewed IDs from session store if session_id provided
         viewed_ids = set()
         session_applied = False
@@ -54,7 +54,7 @@ def unified_search(
             viewed_ids = store.get_viewed_ids(session_id)
             session_applied = (request.hide_viewed or request.downrank_viewed) and len(viewed_ids) > 0
 
-        # Phase 2: Backfill logic for hide_viewed
+        # Backfill logic for hide_viewed
         # When hide_viewed is active, fetch extra results to account for filtering
         # Strategy: fetch 2x limit initially, then filter to target limit
         initial_limit = request.limit
@@ -76,7 +76,7 @@ def unified_search(
             filters=request.filters,
         )
 
-        # Phase 2: Apply session filtering to results
+        # Apply session filtering to results
         pre_filter_total = search_result["total"]
         if session_id and viewed_ids:
             results = search_result["results"]
@@ -125,12 +125,12 @@ def unified_search(
             search_result["results"] = results
 
         # Build response with rich metadata and snippets
-        # TODO Phase 3: Consider optimizing N+1 queries here
+        # TODO: Consider optimizing N+1 queries here
         # Current flow: unified_search returns IDs → fetch each entity for snippets
         # With limit=25 max, this is 25 queries (acceptable for local tool)
         # Optimization: batch fetch entities via `WHERE id IN (...)` if needed
         exp_repo = ExperienceRepository(session)
-        manual_repo = CategoryManualRepository(session)
+        skill_repo = CategorySkillRepository(session)
 
         formatted_results = []
         for r in search_result["results"]:
@@ -167,8 +167,8 @@ def unified_search(
                 if request.fields and "context" in request.fields:
                     result_dict["context"] = entity.context
 
-            elif r.entity_type == "manual":
-                entity = manual_repo.get_by_id(r.entity_id)
+            elif r.entity_type == "skill":
+                entity = skill_repo.get_by_id(r.entity_id)
                 if not entity:
                     continue
 
@@ -180,7 +180,7 @@ def unified_search(
                     "entity_id": r.entity_id,
                     "entity_type": r.entity_type,
                     "title": entity.title,
-                    "section": None,  # Manuals don't have sections
+                    "section": None,  # Skills don't have sections
                     "score": r.score or 0.0,
                     "rank": r.rank,
                     "reason": getattr(r.reason, "value", str(r.reason)),
@@ -204,7 +204,7 @@ def unified_search(
 
             formatted_results.append(UnifiedSearchResult(**result_dict))
 
-        # Phase 2: Track viewed IDs in session store after building results
+        # Track viewed IDs in session store after building results
         if session_id and formatted_results:
             store = get_session_store()
             viewed_ids_to_add = {r.entity_id for r in formatted_results}
@@ -246,14 +246,14 @@ def search_health(
     Return search stack health information.
 
     Mirrors the information previously produced by `scripts/ops/search_health.py`:
-    - Total counts for experiences/manuals
+    - Total counts for experiences/skills
     - Embedding status summary
     - FAISS availability and basic stats (GPU mode only)
     - Warnings for pending/failed embeddings or missing FAISS
     """
     # Base report structure
     report: Dict[str, Any] = {
-        "totals": {"experiences": 0, "manuals": 0},
+        "totals": {"experiences": 0, "skills": 0},
         "embedding_status": {"pending": 0, "embedded": 0, "failed": 0},
         "faiss": {
             "available": False,
@@ -268,31 +268,31 @@ def search_health(
 
     # Totals
     report["totals"]["experiences"] = session.query(Experience).count()
-    report["totals"]["manuals"] = session.query(CategoryManual).count()
+    report["totals"]["skills"] = session.query(CategorySkill).count()
 
     # Embedding status (entity tables as source of truth)
     pending = (
         session.query(Experience)
         .filter(Experience.embedding_status == "pending")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "pending")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "pending")
         .count()
     )
     embedded = (
         session.query(Experience)
         .filter(Experience.embedding_status == "embedded")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "embedded")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "embedded")
         .count()
     )
     failed = (
         session.query(Experience)
         .filter(Experience.embedding_status == "failed")
         .count()
-        + session.query(CategoryManual)
-        .filter(CategoryManual.embedding_status == "failed")
+        + session.query(CategorySkill)
+        .filter(CategorySkill.embedding_status == "failed")
         .count()
     )
     report["embedding_status"] = {

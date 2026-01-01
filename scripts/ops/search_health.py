@@ -6,14 +6,14 @@ Usage:
 
 Output (JSON):
 {
-  "totals": {"experiences": N, "manuals": M},
+  "totals": {"experiences": N, "skills": M},
   "embedding_status": {"pending": X, "embedded": Y, "failed": Z},
   "faiss": {
     "available": true,
     "model": "Qwen/Qwen3-Embedding-0.6B",
     "dimension": 1024,
     "vectors": 0,
-    "by_type": {"experience": 0, "manual": 0},
+    "by_type": {"experience": 0, "skill": 0},
     "index_path": "data/faiss_index/unified_...index",
     "last_updated": "2025-10-26T23:59:59Z"
   },
@@ -35,11 +35,13 @@ from src.common.config.config import ensure_project_root_on_sys_path, get_config
 ensure_project_root_on_sys_path()
 from src.common.api_client.client import CHLAPIClient
 from src.common.storage.database import Database
-from src.common.storage.schema import Experience, CategoryManual, FAISSMetadata
+from src.common.storage.schema import Experience, CategorySkill, FAISSMetadata
 from src.common.storage.repository import EmbeddingRepository
 
 log = logging.getLogger("search_health")
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
+level = getattr(logging, log_level, logging.INFO)
+logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
 
 
 def iso_utc(ts: float) -> str:
@@ -67,14 +69,14 @@ def main():
     db.init_database()
 
     report = {
-        "totals": {"experiences": 0, "manuals": 0},
+        "totals": {"experiences": 0, "skills": 0},
         "embedding_status": {"pending": 0, "embedded": 0, "failed": 0},
         "faiss": {
             "available": False,
             "model": getattr(config, "embedding_model", None),
             "dimension": None,
             "vectors": 0,
-            "by_type": {"experience": 0, "manual": 0},
+            "by_type": {"experience": 0, "skill": 0},
             "index_path": None,
             "last_updated": None,
         },
@@ -84,7 +86,7 @@ def main():
     with db.session_scope() as session:
         # Totals
         report["totals"]["experiences"] = session.query(Experience).count()
-        report["totals"]["manuals"] = session.query(CategoryManual).count()
+        report["totals"]["skills"] = session.query(CategorySkill).count()
 
         # Embedding status counts (across both types)
         emb_repo = EmbeddingRepository(session)

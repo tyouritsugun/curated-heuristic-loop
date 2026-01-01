@@ -110,7 +110,7 @@ class SearchService:
         Args:
             session: Request-scoped SQLAlchemy session
             query: Search query text
-            entity_type: Filter by 'experience' or 'manual' (None for both)
+            entity_type: Filter by 'experience' or 'skill' (None for both)
             category_code: Filter by category code (None for all)
             top_k: Maximum number of results to return
 
@@ -214,8 +214,8 @@ class SearchService:
         Args:
             session: Request-scoped SQLAlchemy session
             title: Title of the entity to check
-            content: Content of the entity (playbook for experiences, full content for manuals)
-            entity_type: 'experience' or 'manual'
+            content: Content of the entity (playbook for experiences, full content for skills)
+            entity_type: 'experience' or 'skill'
             category_code: Filter to category (None for all)
             exclude_id: Exclude this ID from results (for updates)
             threshold: Minimum similarity score (provider-specific defaults if None)
@@ -325,7 +325,7 @@ class SearchService:
         Args:
             session: Request-scoped SQLAlchemy session
             query: Search query text
-            types: List of entity types to search ('experience', 'manual')
+            types: List of entity types to search ('experience', 'skill')
             category_code: Filter by category code (None for all)
             limit: Maximum number of results to return
             offset: Pagination offset
@@ -346,7 +346,7 @@ class SearchService:
 
         # Search each entity type
         for entity_type in types:
-            if entity_type not in ("experience", "manual"):
+            if entity_type not in ("experience", "skill"):
                 warnings.append(f"Unsupported entity type '{entity_type}' ignored")
                 continue
 
@@ -427,7 +427,7 @@ class SearchService:
         Returns:
             Filtered list of results
         """
-        from src.common.storage.repository import ExperienceRepository, CategoryManualRepository
+        from src.common.storage.repository import ExperienceRepository, CategorySkillRepository
 
         if not filters:
             return results
@@ -441,7 +441,7 @@ class SearchService:
 
         filtered = []
         exp_repo = ExperienceRepository(session)
-        manual_repo = CategoryManualRepository(session)
+        skill_repo = CategorySkillRepository(session)
 
         for result in results:
             # Fetch entity to check filters
@@ -458,12 +458,12 @@ class SearchService:
 
                 filtered.append(result)
 
-            elif result.entity_type == "manual":
-                entity = manual_repo.get_by_id(result.entity_id)
+            elif result.entity_type == "skill":
+                entity = skill_repo.get_by_id(result.entity_id)
                 if not entity:
                     continue
 
-                # Manuals only have author filter (no section)
+                # Skills only have author filter (no section)
                 if author_filter and entity.author != author_filter:
                     continue
 

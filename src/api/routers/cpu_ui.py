@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import (
     APIRouter,
@@ -327,6 +330,184 @@ def operations_controls_card(
         telemetry_service,
         operations_service,
         worker_control,
+    )
+
+
+@router.post("/ui/operations/import-excel-upload", response_class=HTMLResponse)
+async def import_excel_upload(
+    request: Request,
+    excel_file: UploadFile = File(...),
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+):
+    from pathlib import Path
+    import tempfile
+
+    # Create a temporary file to save the uploaded Excel file with explicit binary mode
+    temp_suffix = Path(excel_file.filename).suffix.lower()
+    if not temp_suffix:
+        temp_suffix = '.xlsx'  # Default to xlsx if no extension
+
+    # Write the file content to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix) as tmp_file:
+        # Read and write the uploaded file to the temporary file in chunks to handle large files
+        content = await excel_file.read()
+        tmp_file.write(content)
+        tmp_file.flush()  # Ensure content is written to disk
+        tmp_file_path = tmp_file.name
+
+    try:
+        # Verify the file exists and has content before triggering import
+        import os
+        file_size = os.path.getsize(tmp_file_path)
+        logger.info(f"Saved uploaded Excel file to {tmp_file_path}, size: {file_size} bytes")
+
+        if file_size == 0:
+            raise ValueError(f"Uploaded file is empty: {excel_file.filename}")
+
+        # Trigger the import-excel operation with the temporary file path
+        payload = {"file_path": tmp_file_path}
+        actor = _actor_from_request(request)
+
+        operations_service.trigger("import-excel", payload, actor)
+        message = f"Excel import job queued for file: {excel_file.filename} ({file_size} bytes)"
+        message_level = "success"
+        error = None
+    except Exception as exc:
+        message = None
+        message_level = "info"
+        error = str(exc)
+    finally:
+        # Note: In a real implementation, you might want to clean up the temp file after
+        # the operation is complete, but for now we'll let the system handle it
+
+        # Render response using the same logic as the template
+        return _render_operation_result(
+            "common/partials/config_status_card.html",
+            request,
+            session,
+            settings_service,
+            telemetry_service,
+            operations_service,
+            worker_control,
+            message=message,
+            message_level=message_level,
+            error=error,
+            trigger_event="operations-updated",
+        )
+
+
+@router.post("/ui/operations/run/export-excel", response_class=HTMLResponse)
+async def run_export_excel_operation(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    settings_service: SettingsService = Depends(get_settings_service),
+    telemetry_service=Depends(get_telemetry_service),
+    operations_service=Depends(get_operations_service),
+    worker_control=Depends(get_worker_control_service),
+):
+    actor = _actor_from_request(request)
+
+    try:
+        # Trigger export-excel operation - this will result in an Excel file being created
+        operations_service.trigger("export-excel", {}, actor)
+        message = "Excel export job queued"
+        message_level = "success"
+        error = None
+    except Exception as exc:
+        message = None
+        message_level = "info"
+        error = str(exc)
+
+    return _render_operation_result(
+        "common/partials/config_status_card.html",
+        request,
+        session,
+        settings_service,
+        telemetry_service,
+        operations_service,
+        worker_control,
+        message=message,
+        message_level=message_level,
+        error=error,
+        trigger_event="operations-updated",
+    )
+
+
+@router.get("/api/v1/entries/export-excel-download")
+async def export_and_download_excel(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    operations_service=Depends(get_operations_service),
+):
+    from src.common.config.config import PROJECT_ROOT
+    import os
+    from fastapi.responses import FileResponse
+    import time
+
+    try:
+        # Execute the export operation to generate the Excel file directly
+        # We'll run the export handler in a separate session to avoid conflicts
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from src.api.services.operations_service import OperationsService
+
+        # Call the export handler directly with a fresh context to generate the Excel file
+        result = operations_service._export_excel_handler({}, session)
+
+        # Find the most recently created Excel file in the data directory
+        data_dir = PROJECT_ROOT / "data"
+        excel_files = list(data_dir.glob("export_*.xlsx"))
+
+        if not excel_files:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="No Excel export file was generated")
+
+        # Get the most recently created file
+        latest_file = max(excel_files, key=os.path.getctime)
+
+        # Return the file as a download
+        return FileResponse(
+            path=latest_file,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            filename=latest_file.name
+        )
+
+    except Exception as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(exc)}")
+
+
+@router.get("/api/v1/entries/export-excel")
+def download_excel_export(
+    request: Request,
+    session: Session = Depends(get_db_session),
+    operations_service=Depends(get_operations_service),
+):
+    """Download the latest exported Excel file."""
+    from src.common.config.config import PROJECT_ROOT
+    import os
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    # Find the most recent Excel export file in the data directory
+    data_dir = PROJECT_ROOT / "data"
+    excel_files = list(data_dir.glob("export_*.xlsx"))
+
+    if not excel_files:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="No Excel export files found. Run the export first.")
+
+    # Get the most recent file
+    latest_file = max(excel_files, key=os.path.getctime)
+
+    return FileResponse(
+        path=latest_file,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename=latest_file.name
     )
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Environment diagnostics menu for CHL API server (Phase B).
+"""Environment diagnostics menu for CHL API server.
 
 This script provides an interactive menu to select your hardware platform
 and dispatches to the appropriate platform-specific diagnostics script:

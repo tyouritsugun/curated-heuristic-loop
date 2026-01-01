@@ -49,7 +49,7 @@ class CHLAPIClient:
         Args:
             base_url: Base URL of the CHL API server
             timeout: Default request timeout in seconds
-            session_id: Optional session ID for Phase 2 session memory.
+            session_id: Optional session ID for session memory.
                        If provided, automatically adds X-CHL-Session header to all requests.
         """
         self.base_url = base_url.rstrip("/")
@@ -57,7 +57,7 @@ class CHLAPIClient:
         self.session_id = session_id
         self.session = requests.Session()
 
-        # Phase 2: Auto-inject session header if session_id provided
+        # Auto-inject session header if session_id provided
         if session_id:
             self.session.headers["X-CHL-Session"] = session_id
 
@@ -313,7 +313,7 @@ class CHLAPIClient:
         limit: Optional[int] = None,
         timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Read entries (experiences or manuals).
+        """Read entries (experiences or skills).
 
         category_code is optional to enable global search. For category-scoped
         calls, pass the code; for global search omit it and provide a query.
@@ -438,14 +438,14 @@ class CHLAPIClient:
     # Entry operations
 
     def export_entries(self, timeout: Optional[int] = None) -> Dict[str, Any]:
-        """Export all entries (experiences, manuals, categories) from the database."""
+        """Export all entries (experiences, skills, categories) from the database."""
         return self.request(
             "GET",
             "/api/v1/entries/export",
             timeout=timeout or self.timeout,
         )
 
-    # Phase 2: Session management helpers
+    # Session management helpers
 
     def get_session_info(self, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Get session information (viewed count, last accessed).

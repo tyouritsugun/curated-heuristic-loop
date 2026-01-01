@@ -1,4 +1,4 @@
-"""Entry endpoints for experiences and manuals."""
+"""Entry endpoints for experiences and skills."""
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from src.api.services.session_store import get_session_store
 from src.common.storage.repository import (
     CategoryRepository,
     ExperienceRepository,
-    CategoryManualRepository,
+    CategorySkillRepository,
 )
 from src.common.dto.models import ExperienceWritePayload, format_validation_error, normalize_context
 from pydantic import ValidationError as PydanticValidationError
@@ -72,7 +72,7 @@ def read_entries(
 ):
     """Read entries by query or IDs.
 
-    Phase 2: Automatically tracks viewed entry IDs in session store when
+    Automatically tracks viewed entry IDs in session store when
     X-CHL-Session header is provided.
     """
     try:
@@ -93,7 +93,7 @@ def read_entries(
         snippet_len = request.snippet_len if request.snippet_len is not None else 320
         use_preview = _should_use_preview(request.fields)
 
-        if request.entity_type not in {"experience", "manual"}:
+        if request.entity_type not in {"experience", "skill"}:
             raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
         if request.entity_type == "experience":
@@ -207,25 +207,25 @@ def read_entries(
 
                     entries.append(entry)
 
-        else:  # manual
-            man_repo = CategoryManualRepository(session)
+        elif request.entity_type == "skill":
+            skill_repo = CategorySkillRepository(session)
 
             if request.query:
-                # Semantic search for manuals
+                # Semantic search for skills
                 if search_service is None:
                     raise HTTPException(status_code=503, detail="Search service not initialized")
 
                 results = search_service.search(
                     session=session,
                     query=request.query,
-                    entity_type='manual',
+                    entity_type='skill',
                     category_code=request.category_code,
                     top_k=limit,
                 )
 
                 entries = []
                 for r in results:
-                    man = man_repo.get_by_id(r.entity_id)
+                    man = skill_repo.get_by_id(r.entity_id)
                     if not man:
                         continue
 
@@ -266,7 +266,7 @@ def read_entries(
                 # ID lookup or list all
                 if request.ids:
                     # ID lookup works globally (IDs contain category prefix)
-                    entities = [man_repo.get_by_id(i) for i in request.ids]
+                    entities = [skill_repo.get_by_id(i) for i in request.ids]
                     entities = [e for e in entities if e is not None]
                 else:
                     # List all requires category_code
@@ -275,7 +275,7 @@ def read_entries(
                             status_code=400,
                             detail="category_code required to list all entries (use query parameter for global search)"
                         )
-                    all_mans = man_repo.get_by_category(request.category_code)
+                    all_mans = skill_repo.get_by_category(request.category_code)
                     entities = all_mans[:limit]
 
                 entries = []
@@ -308,7 +308,10 @@ def read_entries(
 
                     entries.append(entry)
 
-        # Phase 2: Track viewed entries in session store
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
+
+        # Track viewed entries in session store
         session_id = x_chl_session or request.session_id
         if session_id and entries:
             store = get_session_store()
@@ -338,7 +341,7 @@ def create_entry(
 ):
     """Create a new entry.
 
-    Phase 3: Automatically runs duplicate check with 750ms timeout.
+    Automatically runs duplicate check with 750ms timeout.
     Decision tree:
     - Timeout → proceed with warning
     - Max score ≥ 0.85 → write, return duplicates + recommendation="review_first"
@@ -362,7 +365,7 @@ def create_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check with hard 750ms timeout
+            # Auto-run duplicate check with hard 750ms timeout
             import time
             import threading
             duplicate_candidates = []
@@ -427,13 +430,8 @@ def create_entry(
             }
 
             warnings: list[str] = []
-            raw_context = request.data.get("context")
-            if raw_context and validated.section in {"useful", "harmful"}:
-                warnings.append(
-                    "Context was ignored because section='useful' or 'harmful'; use section='contextual' if you need context."
-                )
 
-            # Phase 3: Apply decision tree based on duplicate check results
+            # Apply decision tree based on duplicate check results
             recommendation = None
             duplicates_response = None
 
@@ -482,7 +480,7 @@ def create_entry(
                 ),
             )
 
-        else:  # manual
+        elif request.entity_type == "skill":
             # Basic validation
             title = request.data.get("title")
             content = request.data.get("content")
@@ -507,7 +505,7 @@ def create_entry(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-            # Phase 3: Auto-run duplicate check for manuals with hard 750ms timeout
+            # Auto-run duplicate check for skills with hard 750ms timeout
             import threading
             duplicate_candidates = []
             duplicate_check_timeout = False
@@ -522,7 +520,7 @@ def create_entry(
                             session=session,
                             title=title,
                             content=content,
-                            entity_type="manual",
+                            entity_type="skill",
                             category_code=request.category_code,
                             exclude_id=None,
                             threshold=0.50,
@@ -546,26 +544,26 @@ def create_entry(
                     # Success
                     duplicate_candidates = result_container["candidates"]
 
-            man_repo = CategoryManualRepository(session)
-            new_manual = man_repo.create({
+            skill_repo = CategorySkillRepository(session)
+            new_skill = skill_repo.create({
                 "category_code": request.category_code,
                 "title": title,
                 "content": content,
                 "summary": summary,
             })
-            manual_id = new_manual.id
+            skill_id = new_skill.id
 
-            manual_dict = {
-                "id": new_manual.id,
-                "title": new_manual.title,
-                "content": new_manual.content,
-                "summary": new_manual.summary,
-                "embedding_status": getattr(new_manual, "embedding_status", None),
-                "updated_at": new_manual.updated_at,
-                "author": new_manual.author,
+            skill_dict = {
+                "id": new_skill.id,
+                "title": new_skill.title,
+                "content": new_skill.content,
+                "summary": new_skill.summary,
+                "embedding_status": getattr(new_skill, "embedding_status", None),
+                "updated_at": new_skill.updated_at,
+                "author": new_skill.author,
             }
 
-            # Phase 3: Apply decision tree for manuals
+            # Apply decision tree for skills
             warnings: list[str] = []
             recommendation = None
             duplicates_response = None
@@ -597,16 +595,18 @@ def create_entry(
 
             return WriteEntryResponse(
                 success=True,
-                entry_id=manual_id,
-                entry=manual_dict,
+                entry_id=skill_id,
+                entry=skill_dict,
                 duplicates=duplicates_response,
                 recommendation=recommendation,
                 warnings=warnings or None,
                 message=(
-                    "Manual created successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Skill created successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
     except HTTPException:
         raise
@@ -652,16 +652,10 @@ def update_entry(
                     detail=f"Entry '{request.entry_id}' not found"
                 )
 
-            effective_section = request.updates.get("section") or existing.section
             if request.updates.get("section") == "contextual" and not request.force_contextual:
                 raise HTTPException(
                     status_code=400,
                     detail="Changing section to 'contextual' requires force_contextual=true"
-                )
-            if effective_section in {"useful", "harmful"} and request.updates.get("context"):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Context must be empty for '{effective_section}' entries"
                 )
 
             try:
@@ -692,7 +686,7 @@ def update_entry(
                 ),
             )
 
-        else:  # manual
+        elif request.entity_type == "skill":
             allowed_fields = {"title", "content", "summary"}
             if not request.updates:
                 raise HTTPException(status_code=400, detail="No updates provided")
@@ -703,13 +697,13 @@ def update_entry(
                     detail=f"Unsupported update fields: {', '.join(sorted(invalid))}"
                 )
 
-            man_repo = CategoryManualRepository(session)
+            skill_repo = CategorySkillRepository(session)
             try:
-                updated = man_repo.update(request.entry_id, dict(request.updates))
+                updated = skill_repo.update(request.entry_id, dict(request.updates))
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-            manual_dict = {
+            skill_dict = {
                 "id": updated.id,
                 "title": updated.title,
                 "content": updated.content,
@@ -722,12 +716,14 @@ def update_entry(
             return UpdateEntryResponse(
                 success=True,
                 entry_id=updated.id,
-                entry=manual_dict,
+                entry=skill_dict,
                 message=(
-                    "Manual updated successfully. Indexing is in progress and may take up to 15 seconds. "
+                    "Skill updated successfully. Indexing is in progress and may take up to 15 seconds. "
                     "Semantic search will not reflect this change until indexing is complete."
                 ),
             )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported entity_type")
 
     except HTTPException:
         raise
@@ -742,15 +738,15 @@ def export_entries(
 ) -> Dict[str, Any]:
     """Export all entries for Sheets/backup clients.
 
-    Returns all experiences, manuals, and categories in a format suitable
+    Returns all experiences, skills, and categories in a format suitable
     for exporting to Google Sheets or other external systems.
     """
     try:
-        from src.common.storage.schema import Experience, CategoryManual, Category
+        from src.common.storage.schema import Experience, CategorySkill, Category
 
         # Fetch all data
         experiences = session.query(Experience).all()
-        manuals = session.query(CategoryManual).all()
+        skills = session.query(CategorySkill).all()
         categories = session.query(Category).all()
 
         # Serialize to dicts
@@ -773,22 +769,22 @@ def export_entries(
                 "exported_at": exp.exported_at,
             })
 
-        manuals_data = []
-        for man in manuals:
-            manuals_data.append({
-                "id": man.id,
-                "category_code": man.category_code,
-                "title": man.title,
-                "content": man.content,
-                "summary": man.summary,
-                "source": man.source,
-                "sync_status": man.sync_status,
-                "author": man.author,
-                "embedding_status": man.embedding_status,
-                "created_at": man.created_at,
-                "updated_at": man.updated_at,
-                "synced_at": man.synced_at,
-                "exported_at": man.exported_at,
+        skills_data = []
+        for skill in skills:
+            skills_data.append({
+                "id": skill.id,
+                "category_code": skill.category_code,
+                "title": skill.title,
+                "content": skill.content,
+                "summary": skill.summary,
+                "source": skill.source,
+                "sync_status": skill.sync_status,
+                "author": skill.author,
+                "embedding_status": skill.embedding_status,
+                "created_at": skill.created_at,
+                "updated_at": skill.updated_at,
+                "synced_at": skill.synced_at,
+                "exported_at": skill.exported_at,
             })
 
         categories_data = []
@@ -802,15 +798,140 @@ def export_entries(
 
         return {
             "experiences": experiences_data,
-            "manuals": manuals_data,
+            "skills": skills_data,
             "categories": categories_data,
             "count": {
                 "experiences": len(experiences_data),
-                "manuals": len(manuals_data),
+                "skills": len(skills_data),
                 "categories": len(categories_data),
             }
         }
 
     except Exception as e:
         logger.exception("Error exporting entries")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export-csv")
+def export_entries_csv(
+    session: Session = Depends(get_db_session),
+):
+    """Export all entries as CSV files in a zip archive for team curation workflow.
+
+    Returns a zip file named {username}.export.zip containing:
+    - {username}/categories.csv
+    - {username}/experiences.csv
+    - {username}/skills.csv
+    """
+    import csv
+    import io
+    import tempfile
+    import zipfile
+    from pathlib import Path
+    from fastapi.responses import StreamingResponse
+    from src.common.storage.repository import get_author
+    from src.common.storage.schema import Experience, CategorySkill, Category
+
+    try:
+        # Get username from system
+        username = get_author() or "unknown"
+
+        # Fetch all data
+        experiences = session.query(Experience).all()
+        skills = session.query(CategorySkill).all()
+        categories = session.query(Category).all()
+
+        # Create in-memory zip file
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Export categories
+            if categories:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "code", "name", "description", "created_at"
+                ])
+                writer.writeheader()
+                for cat in categories:
+                    writer.writerow({
+                        "code": cat.code,
+                        "name": cat.name,
+                        "description": cat.description or "",
+                        "created_at": cat.created_at.isoformat() if cat.created_at else "",
+                    })
+                zip_file.writestr(f"{username}/categories.csv", csv_buffer.getvalue())
+
+            # Export experiences
+            if experiences:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "id", "category_code", "section", "title", "playbook", "context",
+                    "source", "author", "embedding_status",
+                    "created_at", "updated_at", "synced_at", "exported_at"
+                ])
+                writer.writeheader()
+                for exp in experiences:
+                    writer.writerow({
+                        "id": exp.id,
+                        "category_code": exp.category_code,
+                        "section": exp.section,
+                        "title": exp.title,
+                        "playbook": exp.playbook,
+                        "context": exp.context or "",
+                        "source": exp.source or "",
+                        "author": exp.author or "",
+                        "embedding_status": exp.embedding_status or "",
+                        "created_at": exp.created_at.isoformat() if exp.created_at else "",
+                        "updated_at": exp.updated_at.isoformat() if exp.updated_at else "",
+                        "synced_at": exp.synced_at.isoformat() if exp.synced_at else "",
+                        "exported_at": exp.exported_at.isoformat() if exp.exported_at else "",
+                    })
+                zip_file.writestr(f"{username}/experiences.csv", csv_buffer.getvalue())
+
+            # Export skills
+            if skills:
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(csv_buffer, fieldnames=[
+                    "id", "category_code", "title", "content", "summary",
+                    "source", "author", "embedding_status",
+                    "created_at", "updated_at", "synced_at", "exported_at"
+                ])
+                writer.writeheader()
+                for skill in skills:
+                    writer.writerow({
+                        "id": skill.id,
+                        "category_code": skill.category_code,
+                        "title": skill.title,
+                        "content": skill.content,
+                        "summary": skill.summary or "",
+                        "source": skill.source or "",
+                        "author": skill.author or "",
+                        "embedding_status": skill.embedding_status or "",
+                        "created_at": skill.created_at.isoformat() if skill.created_at else "",
+                        "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+                        "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
+                        "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
+                    })
+                zip_file.writestr(f"{username}/skills.csv", csv_buffer.getvalue())
+
+        # Prepare zip for download
+        zip_buffer.seek(0)
+        filename = f"{username}.zip"
+
+        logger.info(
+            "CSV export created for user=%s: %d categories, %d experiences, %d skills",
+            username,
+            len(categories),
+            len(experiences),
+            len(skills),
+        )
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+
+    except Exception as e:
+        logger.exception("Error exporting entries to CSV")
         raise HTTPException(status_code=500, detail=str(e))

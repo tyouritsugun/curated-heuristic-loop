@@ -9,7 +9,7 @@ import re
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.common.storage.schema import Experience, CategoryManual
+from src.common.storage.schema import Experience, CategorySkill
 from src.common.interfaces.search import SearchProvider, SearchProviderError
 from src.common.interfaces.search_models import SearchResult, DuplicateCandidate, SearchReason
 
@@ -49,8 +49,8 @@ class SQLiteTextProvider(SearchProvider):
             if entity_type in (None, "experience"):
                 results.extend(self._search_experiences(session, query, category_code, top_k))
 
-            if entity_type in (None, "manual"):
-                results.extend(self._search_manuals(session, query, category_code, top_k))
+            if entity_type in (None, "skill"):
+                results.extend(self._search_skills(session, query, category_code, top_k))
 
             # Sort by updated_at DESC (most recent first)
             results.sort(key=lambda x: x[1], reverse=True)
@@ -62,7 +62,7 @@ class SQLiteTextProvider(SearchProvider):
                     entity_type_str = "experience"
                 else:
                     entity_id = entity.id
-                    entity_type_str = "manual"
+                    entity_type_str = "skill"
 
                 search_results.append(
                     SearchResult(
@@ -110,38 +110,38 @@ class SQLiteTextProvider(SearchProvider):
 
         return q.limit(limit).all()
 
-    def _search_manuals(
+    def _search_skills(
         self,
         session: Session,
         query: str,
         category_code: Optional[str],
         limit: int,
     ) -> List[tuple]:
-        """Search manuals using LIKE matching."""
+        """Search skills using LIKE matching."""
         pattern = f"%{query}%"
         tokens = self._tokenize(query)
 
         filters = [
             or_(
-                CategoryManual.title.like(pattern),
-                CategoryManual.content.like(pattern),
-                CategoryManual.summary.like(pattern),
+                CategorySkill.title.like(pattern),
+                CategorySkill.content.like(pattern),
+                CategorySkill.summary.like(pattern),
             )
         ]
         for token in tokens:
             token_pattern = f"%{token}%"
             filters.append(
                 or_(
-                    CategoryManual.title.ilike(token_pattern),
-                    CategoryManual.content.ilike(token_pattern),
-                    CategoryManual.summary.ilike(token_pattern),
+                    CategorySkill.title.ilike(token_pattern),
+                    CategorySkill.content.ilike(token_pattern),
+                    CategorySkill.summary.ilike(token_pattern),
                 )
             )
 
-        q = session.query(CategoryManual, CategoryManual.updated_at).filter(or_(*filters))
+        q = session.query(CategorySkill, CategorySkill.updated_at).filter(or_(*filters))
 
         if category_code:
-            q = q.filter(CategoryManual.category_code == category_code)
+            q = q.filter(CategorySkill.category_code == category_code)
 
         return q.limit(limit).all()
 
@@ -162,8 +162,8 @@ class SQLiteTextProvider(SearchProvider):
                 return self._find_experience_duplicates(
                     session, title, content, category_code, exclude_id
                 )
-            if entity_type == "manual":
-                return self._find_manual_duplicates(
+            if entity_type == "skill":
+                return self._find_skill_duplicates(
                     session, title, content, category_code, exclude_id
                 )
             raise ValueError(f"Invalid entity_type: {entity_type}")
@@ -229,7 +229,7 @@ class SQLiteTextProvider(SearchProvider):
 
         return candidates
 
-    def _find_manual_duplicates(
+    def _find_skill_duplicates(
         self,
         session: Session,
         title: str,
@@ -239,43 +239,43 @@ class SQLiteTextProvider(SearchProvider):
     ) -> List[DuplicateCandidate]:
         candidates: List[DuplicateCandidate] = []
 
-        q = session.query(CategoryManual).filter(CategoryManual.title.ilike(title))
+        q = session.query(CategorySkill).filter(CategorySkill.title.ilike(title))
         if category_code:
-            q = q.filter(CategoryManual.category_code == category_code)
+            q = q.filter(CategorySkill.category_code == category_code)
         if exclude_id:
-            q = q.filter(CategoryManual.id != exclude_id)
+            q = q.filter(CategorySkill.id != exclude_id)
 
-        for manual in q.all():
+        for skill in q.all():
             candidates.append(
                 DuplicateCandidate(
-                    entity_id=manual.id,
-                    entity_type="manual",
+                    entity_id=skill.id,
+                    entity_type="skill",
                     score=1.0,
                     reason=SearchReason.TEXT_DUPLICATE,
                     provider="sqlite_text",
-                    title=manual.title,
-                    summary=manual.summary or (manual.content[:200] if manual.content else None),
+                    title=skill.title,
+                    summary=skill.summary or (skill.content[:200] if skill.content else None),
                 )
             )
 
         if not candidates:
             pattern = f"%{title}%"
-            q = session.query(CategoryManual).filter(CategoryManual.title.like(pattern))
+            q = session.query(CategorySkill).filter(CategorySkill.title.like(pattern))
             if category_code:
-                q = q.filter(CategoryManual.category_code == category_code)
+                q = q.filter(CategorySkill.category_code == category_code)
             if exclude_id:
-                q = q.filter(CategoryManual.id != exclude_id)
+                q = q.filter(CategorySkill.id != exclude_id)
 
-            for manual in q.limit(5).all():
+            for skill in q.limit(5).all():
                 candidates.append(
                     DuplicateCandidate(
-                        entity_id=manual.id,
-                        entity_type="manual",
+                        entity_id=skill.id,
+                        entity_type="skill",
                         score=0.75,
                         reason=SearchReason.TEXT_DUPLICATE,
                         provider="sqlite_text",
-                        title=manual.title,
-                        summary=manual.summary or (manual.content[:200] if manual.content else None),
+                        title=skill.title,
+                        summary=skill.summary or (skill.content[:200] if skill.content else None),
                     )
                 )
 

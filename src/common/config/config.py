@@ -50,7 +50,7 @@ Thresholds:
 - CHL_TOPK_RETRIEVE: FAISS candidates (default: 100)
 - CHL_TOPK_RERANK: Reranker candidates (default: 40)
 
-API Client (Phase 2):
+API Client:
 - CHL_API_BASE_URL: API server base URL (default: http://localhost:8000)
 - CHL_API_TIMEOUT: HTTP request timeout in seconds (default: 30.0)
 - CHL_API_HEALTH_CHECK_MAX_WAIT: Max seconds to wait for API health on startup (default: 30)
@@ -60,7 +60,7 @@ API Client (Phase 2):
 Operations:
 - CHL_CATEGORIES_CACHE_TTL: Seconds to cache MCP categories/tool index (default: 30.0)
 
-FAISS Persistence (Phase 3):
+FAISS Persistence:
 - CHL_FAISS_SAVE_POLICY: Save policy (default: immediate; options: immediate, periodic, manual)
 - CHL_FAISS_SAVE_INTERVAL: Save interval in seconds for periodic mode (default: 300)
 - CHL_FAISS_REBUILD_THRESHOLD: Tombstone ratio threshold for automatic rebuild (default: 0.10)
@@ -235,7 +235,7 @@ class Config:
             faiss_path = Path(self.experience_root) / "faiss_index"
         self.faiss_index_path = str(faiss_path)
 
-        # API client configuration (Phase 2)
+        # API client configuration
         self.api_base_url = os.getenv("CHL_API_BASE_URL", "http://localhost:8000")
         self.api_timeout = float(os.getenv("CHL_API_TIMEOUT", "30.0"))
         self.api_health_check_max_wait = int(os.getenv("CHL_API_HEALTH_CHECK_MAX_WAIT", "30"))
@@ -246,7 +246,7 @@ class Config:
         # CHL_LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
         self.log_level = os.getenv("CHL_LOG_LEVEL", "INFO").upper()
 
-        # FAISS persistence configuration (Phase 3)
+        # FAISS persistence configuration
         self.faiss_save_policy = os.getenv("CHL_FAISS_SAVE_POLICY", "immediate")
         self.faiss_save_interval = int(os.getenv("CHL_FAISS_SAVE_INTERVAL", "300"))
         self.faiss_rebuild_threshold = float(os.getenv("CHL_FAISS_REBUILD_THRESHOLD", "0.10"))

@@ -270,13 +270,13 @@ The authoritative per-user store. Contains tables for:
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
 
-- `category_manuals` - Long-form context and domain knowledge
+- `skills` - Long-form context and domain knowledge (legacy table name: `category_manuals`)
   - Fields: `id`, `category_code`, `title`, `content`, `summary`
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
 
 - `embeddings` - Vector representations for search (GPU mode only)
-  - Links to experiences/manuals via `entity_id` and `entity_type`
+  - Links to experiences/skills via `entity_id` and `entity_type`
   - Stores serialized vectors and embedding model version
 
 - `categories` - Metadata for each knowledge category
@@ -284,7 +284,7 @@ The authoritative per-user store. Contains tables for:
 
 ### 4.2. Local FAISS Index (GPU Mode Only)
 
-Performance layer for efficient vector search. Index is keyed by `experience_id` and `manual_id` and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
+Performance layer for efficient vector search. Index is keyed by `experience_id` and `skill_id` (legacy: `manual_id`) and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
 
 **Mode-Specific Behavior:**
 - **CPU Mode**: No FAISS index, search uses SQLite `LIKE` queries
@@ -393,10 +393,10 @@ The MCP server provides a simple, tool-based interface for AI assistants:
 **Available Tools:**
 
 - `list_categories()` - List all available category shelves
-- `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or manuals
+- `read_entries(entity_type, category_code, query/ids)` - Fetch experiences or skills
 - `create_entry(entity_type, category_code, data)` - Create new entry
 - `update_entry(entity_type, category_code, entry_id, updates)` - Update existing entry
-- `get_guidelines(guide_type)` - Return generator or evaluator workflow manual
+- `get_guidelines(guide_type)` - Return generator or evaluator workflow guide
 
 **Key Behaviors:**
 

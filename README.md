@@ -2,7 +2,8 @@
 
 Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
-For the full workflow philosophy see [doc/concept.md](doc/concept.md). For detailed operator procedures see [doc/manual.md](doc/manual.md).
+For the full workflow philosophy see [doc/concept.md](doc/concept.md). For setup, skills/experiences, and workflows, see the [operator guide](doc/manual.md).
+For the overnight curation overview, see [doc/experience_curation.md](doc/experience_curation.md).
 
 ## Architecture Overview
 
@@ -49,6 +50,18 @@ The API server automatically uses the backend from `runtime_config.json` - no ma
 If you have Python 3.13 and want GPU acceleration, install a compatible version (e.g., `brew install python@3.12` or `python3.12`) alongside it.
 
 **Need a guide?** If you are not confident with Python/FAISS/GPU setup, open this repo in your preferred code assistant (Claude Code, Codex, Cursor, Gemini CLI, etc.) and ask it to walk you through the install. Some steps may still need manual permission/security approvals, but an assistant can simplify the process. This project assumes an engineering audience, so leaning on a code assistant is expected.
+
+### LLM Access for Curation (Optional)
+- Only needed if you run the overnight curation. Choose one path:
+  1) **Commercial OpenAI-compatible API** (ChatGPT/Gemini): set the appropriate API key in `.env` (e.g., `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`). Use cheaper mini tiers; e.g., prefer `gpt-5-mini-2025-08-07` over `gpt-5.2-2025-12-11`, or prefer `gemini-3-flash-preview` over heavier Gemini models—the curation task doesn’t require the most expensive models.  
+  2) **Local endpoint (zero API cost, requires your GPU)**: LM Studio or Ollama on an OpenAI-compatible endpoint; set `api_base` in `scripts/scripts_config.yaml` to your local server (e.g., `http://localhost:11434/v1`), and set `LLM_API_KEY` to any placeholder if your local server ignores it. `gpt-oss-20b` is recommended.  
+- Keep API keys in `.env` (see `.env.sample`); do not commit them.
+- Dependencies: `requirements_apple.txt` and `requirements_nvidia.txt` already include `autogen` + `autogen-ext[openai]` for the agent.
+
+**Overnight curation defaults (config-driven):**
+- `curation_llm.llm_response_timeout` (seconds per LLM call)
+- `curation.thresholds.auto_dedup` (auto-merge threshold)
+See `doc/experience_curation.md` for the simplified runbook.
 
 ### Step 1: Install API Server
 
@@ -281,6 +294,9 @@ python scripts/setup/setup-gpu.py
 python scripts/setup/setup-gpu.py --select-models
 ```
 
+**Note for Users with Restricted Internet Access:**
+This system requires access to Hugging Face to download and load the embedding models needed for semantic search and curation workflows. Without access to Hugging Face, the system will use the local cache, if exists. if no exists, it will fall back to basic text search only, and advanced curation features that require semantic similarity (as described in doc/curation_sample.md) will not be available, although the Export Excel would be possible.
+
 ### Step 4: Start API Server
 
 **If continuing from Step 3 in the same terminal session:**
@@ -456,7 +472,7 @@ CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. 
 - `SEC` / `security_review` - Security review patterns and vulnerability checks
 - `ONC` / `oncall_runbook` - Incident response and on-call procedures
 
-**Full instructions:** See [doc/manual.md - Managing Categories](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
+**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
 
 
 ## Web Dashboards
@@ -481,7 +497,7 @@ Both dashboards share the same process as the API server, so every change is log
 ## Advanced References
 
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
-- Operator runbooks & API details: [doc/manual.md](doc/manual.md)
+- [Operator guide](doc/manual.md) (setup, skills/experiences, API details; file name is legacy)
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
 - Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
 
