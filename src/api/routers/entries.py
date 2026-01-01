@@ -22,6 +22,7 @@ from src.common.storage.repository import (
     CategorySkillRepository,
 )
 from src.common.dto.models import ExperienceWritePayload, format_validation_error, normalize_context
+from src.common.config.categories import get_categories
 from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ def read_entries(
 
         if request.entity_type not in {"experience", "skill"}:
             raise HTTPException(status_code=400, detail="Unsupported entity_type")
+        if request.entity_type == "skill" and not getattr(config, "skills_enabled", True):
+            raise HTTPException(status_code=404, detail="Skills are disabled")
 
         if request.entity_type == "experience":
             exp_repo = ExperienceRepository(session)
@@ -349,6 +352,8 @@ def create_entry(
     - <0.50 → write normally
     """
     try:
+        if request.entity_type == "skill" and not getattr(config, "skills_enabled", True):
+            raise HTTPException(status_code=404, detail="Skills are disabled")
         if request.entity_type == "experience":
             # Validate experience data before checking category to surface schema issues first
             try:
@@ -624,6 +629,8 @@ def update_entry(
 ):
     """Update an existing entry."""
     try:
+        if request.entity_type == "skill" and not getattr(config, "skills_enabled", True):
+            raise HTTPException(status_code=404, detail="Skills are disabled")
         # Validate category
         cat_repo = CategoryRepository(session)
         category = cat_repo.get_by_code(request.category_code)
@@ -735,6 +742,7 @@ def update_entry(
 @router.get("/export")
 def export_entries(
     session: Session = Depends(get_db_session),
+    config=Depends(get_config),
 ) -> Dict[str, Any]:
     """Export all entries for Sheets/backup clients.
 
@@ -742,12 +750,14 @@ def export_entries(
     for exporting to Google Sheets or other external systems.
     """
     try:
-        from src.common.storage.schema import Experience, CategorySkill, Category
+        from src.common.storage.schema import Experience, CategorySkill
 
         # Fetch all data
         experiences = session.query(Experience).all()
-        skills = session.query(CategorySkill).all()
-        categories = session.query(Category).all()
+        skills = []
+        if getattr(config, "skills_enabled", True):
+            skills = session.query(CategorySkill).all()
+        categories = get_categories()
 
         # Serialize to dicts
         experiences_data = []
@@ -790,10 +800,10 @@ def export_entries(
         categories_data = []
         for cat in categories:
             categories_data.append({
-                "code": cat.code,
-                "name": cat.name,
-                "description": cat.description,
-                "created_at": cat.created_at,
+                "code": cat["code"],
+                "name": cat["name"],
+                "description": cat["description"],
+                "created_at": None,
             })
 
         return {
@@ -815,6 +825,7 @@ def export_entries(
 @router.get("/export-csv")
 def export_entries_csv(
     session: Session = Depends(get_db_session),
+    config=Depends(get_config),
 ):
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
@@ -830,7 +841,7 @@ def export_entries_csv(
     from pathlib import Path
     from fastapi.responses import StreamingResponse
     from src.common.storage.repository import get_author
-    from src.common.storage.schema import Experience, CategorySkill, Category
+    from src.common.storage.schema import Experience, CategorySkill
 
     try:
         # Get username from system
@@ -838,8 +849,10 @@ def export_entries_csv(
 
         # Fetch all data
         experiences = session.query(Experience).all()
-        skills = session.query(CategorySkill).all()
-        categories = session.query(Category).all()
+        skills = []
+        if getattr(config, "skills_enabled", True):
+            skills = session.query(CategorySkill).all()
+        categories = get_categories()
 
         # Create in-memory zip file
         zip_buffer = io.BytesIO()
@@ -854,10 +867,10 @@ def export_entries_csv(
                 writer.writeheader()
                 for cat in categories:
                     writer.writerow({
-                        "code": cat.code,
-                        "name": cat.name,
-                        "description": cat.description or "",
-                        "created_at": cat.created_at.isoformat() if cat.created_at else "",
+                        "code": cat["code"],
+                        "name": cat["name"],
+                        "description": cat["description"],
+                        "created_at": "",
                     })
                 zip_file.writestr(f"{username}/categories.csv", csv_buffer.getvalue())
 

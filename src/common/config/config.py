@@ -22,6 +22,7 @@ Core environment variables:
 - CHL_DATABASE_PATH: Path to SQLite database file (optional; default: <experience_root>/chl.db; relative values resolve under <experience_root>)
 - CHL_DATABASE_ECHO: Enable SQLAlchemy SQL logging (optional, default: false)
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
+- CHL_SKILLS_ENABLED: Enable/disable skills feature (optional, default: true)
 
 Search & retrieval:
 - Backend is automatically determined from data/runtime_config.json (created by scripts/setup/check_api_env.py)
@@ -173,6 +174,7 @@ class Config:
 
         # Optional settings with defaults
         self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
+        self.skills_enabled = os.getenv("CHL_SKILLS_ENABLED", "true").lower() == "true"
 
         # Runtime configuration - determine backend from runtime_config.json
         # Fallback to environment variable if needed, then default to "cpu"

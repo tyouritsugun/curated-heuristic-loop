@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from src.mcp.errors import MCPError
-from src.mcp.core import get_cached_categories, set_categories_cache, request_api
+from src.mcp.core import get_cached_categories, set_categories_cache, request_api, config as runtime_config
 
 
 def list_categories() -> Dict[str, Any]:
@@ -57,6 +57,8 @@ def read_entries(
     Defaults: responses return previews unless you request body fields (e.g., fields=['playbook'] or ['content']); default limit is the server's read_details_limit (10). Listing everything with no category_code is blocked to avoid huge responses.
     """
     try:
+        if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):
+            raise MCPError("Skills are disabled in this installation.")
         payload: Dict[str, Any] = {
             "entity_type": entity_type,
         }
@@ -141,6 +143,8 @@ def create_entry(
         Each atomic piece should be self-contained and independently reusable.
     """
     try:
+        if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):
+            raise MCPError("Skills are disabled in this installation.")
         payload = {
             "entity_type": entity_type,
             "category_code": category_code,
@@ -168,6 +172,8 @@ def update_entry(
         - skill: title, content, summary
     """
     try:
+        if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):
+            raise MCPError("Skills are disabled in this installation.")
         payload = {
             "entity_type": entity_type,
             "category_code": category_code,
@@ -206,6 +212,8 @@ def check_duplicates(
     entries with read_entries and manually checking for overlap.
     """
     try:
+        if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):
+            raise MCPError("Skills are disabled in this installation.")
         payload: Dict[str, Any] = {
             "entity_type": entity_type,
             "category_code": category_code,

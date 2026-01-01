@@ -11,6 +11,11 @@
     <div>
       <h2>Configuration Status</h2>
       <p class="muted">Configuration is managed via <code>.env</code> file. Changes take effect immediately without restart.</p>
+      {% if skills_enabled is not none and not skills_enabled %}
+        <p class="muted" style="margin-top: 0.5rem;">
+          <strong>Skills are disabled.</strong> Skill read/write/import/export are hidden or skipped.
+        </p>
+      {% endif %}
     </div>
     <span class="status-pill {{ config_status.state }}">{{ config_status.headline }}</span>
   </header>

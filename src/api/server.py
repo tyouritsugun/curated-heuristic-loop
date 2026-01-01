@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
 
         app.state.settings_service = SettingsService(app.state.db.get_session, app.state.config.experience_root)
         app.state.settings_service.set_config(app.state.config)
-        app.state.worker_control_service = WorkerControlService(app.state.db.get_session)
+        app.state.worker_control_service = WorkerControlService(app.state.db.get_session, config=app.state.config)
         app.state.operations_service = OperationsService(
             session_factory=app.state.db.get_session,
             data_path=app.state.config.experience_root,

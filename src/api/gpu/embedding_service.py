@@ -29,12 +29,14 @@ class EmbeddingService:
         model_name: str,
         faiss_index_manager: Optional["FAISSIndexManager"] = None,
         max_tokens: int = 8000,
+        skills_enabled: bool = True,
     ):
         self.session = session
         self.embedding_client = embedding_client
         self.model_name = model_name
         self.faiss_index_manager = faiss_index_manager
         self.max_tokens = max_tokens
+        self.skills_enabled = skills_enabled
 
         self.emb_repo = EmbeddingRepository(session)
         self.exp_repo = ExperienceRepository(session)
@@ -156,6 +158,9 @@ class EmbeddingService:
             return False
 
     def generate_for_skill(self, skill_id: str) -> bool:
+        if not self.skills_enabled:
+            logger.info("Skipping skill embedding; skills are disabled.")
+            return False
         try:
             skill = self.skill_repo.get_by_id(skill_id)
             if not skill:
@@ -249,6 +254,8 @@ class EmbeddingService:
         )
 
     def get_pending_skills(self) -> List[CategorySkill]:
+        if not self.skills_enabled:
+            return []
         return (
             self.session.query(CategorySkill)
             .filter(
@@ -266,6 +273,8 @@ class EmbeddingService:
         )
 
     def get_failed_skills(self) -> List[CategorySkill]:
+        if not self.skills_enabled:
+            return []
         return (
             self.session.query(CategorySkill)
             .filter(CategorySkill.embedding_status == "failed")

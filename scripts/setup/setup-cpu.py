@@ -43,6 +43,7 @@ if root_str not in sys.path:
 
 # Ensure project root is importable and config is available
 from src.common.config.config import ensure_project_root_on_sys_path, get_config  # noqa: E402
+from src.common.config.categories import get_categories  # noqa: E402
 
 ensure_project_root_on_sys_path()
 
@@ -63,21 +64,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Starter category shelves (code, name, description)
-DEFAULT_CATEGORIES = [
-    ("FPD", "figma_page_design", "Capture heuristics for reviewing Figma designs and annotations."),
-    ("DSD", "database_schema_design", "Patterns for relational schema design and evolution."),
-    ("PGS", "page_specification", "End-to-end UX/page specification playbooks."),
-    ("TMG", "ticket_management", "Ticket lifecycle, prioritization, and workflow management."),
-    ("ADG", "architecture_design", "High-level application and system architecture decisions."),
-    ("MGC", "migration_code", "Database/application migration guidance."),
-    ("FTH", "frontend_html", "Frontend HTML/CSS implementation patterns."),
-    ("LPW", "laravel_php_web", "Laravel PHP web app patterns (routes, controllers, models, jobs)."),
-    ("PGT", "python_agent", "Python agent patterns and operational tips."),
-    ("PPT", "playwright_page_test", "Playwright page test strategies."),
-    ("EET", "e2e_test", "End-to-end testing guidance."),
-    ("PRQ", "pull_request", "Pull request authoring and review heuristics."),
-]
+DEFAULT_CATEGORIES = get_categories()
 
 # Sample seed data (inserted only if tables are empty)
 DEFAULT_EXPERIENCES = [
@@ -315,9 +302,13 @@ def seed_default_content(config) -> bool:
             category_codes = {c.code for c in categories}
 
             if not categories:
-                for code, name, description in DEFAULT_CATEGORIES:
-                    category_repo.create(code=code, name=name, description=description)
-                    category_codes.add(code)
+                for cat in DEFAULT_CATEGORIES:
+                    category_repo.create(
+                        code=cat["code"],
+                        name=cat["name"],
+                        description=cat["description"],
+                    )
+                    category_codes.add(cat["code"])
                 print(f"✓ Seeded {len(DEFAULT_CATEGORIES)} starter categories")
             else:
                 print(f"  (Categories already present: {len(categories)})")

@@ -408,7 +408,7 @@ To keep assistants from forgetting to call MCP tools and to prompt for reflectio
   - The assistant will know where to copy and whether needs to rename it to following the convention.
 
 These CHL instructions ensure the assistant:
-- Calls `list_categories()` and `get_guidelines()` at startup
+- Calls `list_categories()` and `get_guidelines()` at startup (guidelines are read from repo markdown files)
 - Uses CHL MCP tools for retrieval instead of guessing
 - Prompts for reflection and curation at conversation end
 

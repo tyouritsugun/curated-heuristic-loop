@@ -360,6 +360,7 @@ def _build_settings_context(
     snapshot = settings_service.snapshot(session)
     diagnostics_payload = settings_service.diagnostics(session)
     diagnostics = _normalize_diagnostics(diagnostics_payload)
+    skills_enabled = bool(getattr(config_obj, "skills_enabled", True))
     context = {
         "request": request,
         "snapshot": snapshot,
@@ -373,8 +374,9 @@ def _build_settings_context(
         "default_scripts_config_path": str(_default_scripts_config_path()),
         "embedding_choices": EMBEDDING_CHOICES,
         "reranker_choices": RERANKER_CHOICES,
-        "env_config_status": _get_env_config_status(snapshot=snapshot, diagnostics=diagnostics),
+        "env_config_status": _get_env_config_status(snapshot=snapshot, diagnostics=diagnostics, skills_enabled=skills_enabled),
         "search_mode": search_mode,
+        "skills_enabled": skills_enabled,
     }
     return context
 
@@ -397,6 +399,7 @@ def _build_operations_context(
     jobs = operations_service.list_recent(session, limit=jobs_limit)
     job_summaries = _summarize_job_runs(jobs, operations_service.last_runs_by_type(session))
     index_info = _build_index_info(search_service, config) if (config or search_service) else None
+    skills_enabled = bool(getattr(config, "skills_enabled", True)) if config else True
     return {
         "snapshot": telemetry_snapshot,
         "worker_status": worker_status,
@@ -405,7 +408,8 @@ def _build_operations_context(
         "job_summaries": job_summaries,
         "index_info": index_info,
         "active_page": "operations",
-        "env_config_status": _get_env_config_status(),
+        "env_config_status": _get_env_config_status(skills_enabled=skills_enabled),
+        "skills_enabled": skills_enabled,
     }
 
 
@@ -593,6 +597,7 @@ def _get_env_config_status(
     *,
     snapshot: Optional[dict] = None,
     diagnostics: Optional[dict] = None,
+    skills_enabled: bool = True,
 ) -> dict:
     import os
     from pathlib import Path
@@ -604,21 +609,15 @@ def _get_env_config_status(
     import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "")
     export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "")
 
-    import_worksheets = ", ".join(
-        [
-            os.getenv("IMPORT_WORKSHEET_CATEGORIES", "Categories"),
-            os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences"),
-            os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_MANUALS", "Skills")),
-        ]
-    )
+    import_worksheets = [os.getenv("IMPORT_WORKSHEET_CATEGORIES", "Categories"), os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences")]
+    if skills_enabled:
+        import_worksheets.append(os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_MANUALS", "Skills")))
+    import_worksheets = ", ".join(import_worksheets)
 
-    export_worksheets = ", ".join(
-        [
-            os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories"),
-            os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences"),
-            os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills")),
-        ]
-    )
+    export_worksheets = [os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories"), os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")]
+    if skills_enabled:
+        export_worksheets.append(os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills")))
+    export_worksheets = ", ".join(export_worksheets)
 
     credentials_state = "error"
     credentials_status = "Not configured"

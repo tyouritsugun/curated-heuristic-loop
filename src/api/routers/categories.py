@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from src.api.dependencies import get_db_session
+from src.api.dependencies import get_config
 from src.api.models import ListCategoriesResponse, CategoryResponse
 from src.common.storage.repository import CategoryRepository, ExperienceRepository, CategorySkillRepository
 
@@ -10,11 +11,12 @@ router = APIRouter(prefix="/api/v1/categories", tags=["categories"])
 
 
 @router.get("/", response_model=ListCategoriesResponse)
-def list_categories(session: Session = Depends(get_db_session)):
+def list_categories(session: Session = Depends(get_db_session), config=Depends(get_config)):
     """List all available category shelves with entry counts."""
     cat_repo = CategoryRepository(session)
     exp_repo = ExperienceRepository(session)
     skill_repo = CategorySkillRepository(session)
+    skills_enabled = bool(getattr(config, "skills_enabled", True))
 
     categories = cat_repo.get_all()
 
@@ -26,8 +28,8 @@ def list_categories(session: Session = Depends(get_db_session)):
                 description=cat.description,
                 created_at=cat.created_at.isoformat() if cat.created_at else None,
                 experience_count=len(exp_repo.get_by_category(cat.code)),
-                skill_count=len(skill_repo.get_by_category(cat.code)),
-                total_count=len(exp_repo.get_by_category(cat.code)) + len(skill_repo.get_by_category(cat.code)),
+                skill_count=len(skill_repo.get_by_category(cat.code)) if skills_enabled else 0,
+                total_count=len(exp_repo.get_by_category(cat.code)) + (len(skill_repo.get_by_category(cat.code)) if skills_enabled else 0),
             )
             for cat in categories
         ]

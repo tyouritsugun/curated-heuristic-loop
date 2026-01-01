@@ -2,14 +2,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, Literal, Dict, Any
+from pathlib import Path
 
 from src.api.dependencies import get_db_session, get_config
-from src.common.storage.repository import CategorySkillRepository, CategoryRepository
-from src.common.config.config import Config
+from src.common.config.config import Config, PROJECT_ROOT
 
 router = APIRouter(prefix="/api/v1/guidelines", tags=["guidelines"])
 
-GUIDELINES_CATEGORY = "GLN"
 GUIDE_TITLE_MAP = {
     "generator": "Generator workflow guidelines",
     "evaluator": "Evaluator workflow guidelines",
@@ -51,39 +50,34 @@ def get_guidelines(
             detail=f"Unknown guide type '{guide_type}'. Use 'generator' or 'evaluator'."
         )
 
-    cat_repo = CategoryRepository(session)
-    skill_repo = CategorySkillRepository(session)
+    if guide_type == "generator":
+        md_path = PROJECT_ROOT / "generator.md"
+    else:
+        if config.search_mode == "cpu":
+            md_path = PROJECT_ROOT / "evaluator_cpu.md"
+        else:
+            md_path = PROJECT_ROOT / "evaluator.md"
 
-    category = cat_repo.get_by_code(GUIDELINES_CATEGORY)
-    if not category:
+    if not md_path.exists():
         raise HTTPException(
             status_code=404,
-            detail="Guidelines category not found. Run 'uv run python scripts/seed_default_content.py' to seed it."
+            detail=f"Guidelines file not found: {md_path}"
         )
 
-    skills = skill_repo.get_by_category(GUIDELINES_CATEGORY)
-    skill = next((s for s in skills if s.title == title), None)
-    if not skill:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Guideline '{title}' not found. Update generator.md/evaluator.md/evaluator_cpu.md and run "
-                "'uv run python scripts/seed_default_content.py'."
-            )
-        )
+    content = md_path.read_text(encoding="utf-8").strip()
 
     return {
         "meta": {
-            "code": category.code,
-            "name": category.name,
+            "code": "GLN",
+            "name": "chl_guidelines",
             "search_mode": config.search_mode,
         },
         "skill": {
-            "id": skill.id,
-            "title": skill.title,
-            "content": skill.content,
-            "summary": skill.summary,
-            "updated_at": skill.updated_at,
-            "author": skill.author,
+            "id": f"GLN-{guide_type}-markdown",
+            "title": title,
+            "content": content,
+            "summary": title,
+            "updated_at": None,
+            "author": None,
         },
     }

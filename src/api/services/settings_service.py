@@ -574,6 +574,7 @@ class SettingsService:
         import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "").strip()
         export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "").strip()
         validated_at = None
+        skills_enabled = bool(getattr(self._config, "skills_enabled", True))
 
         if import_sheet_id or export_sheet_id:
             # Using .env configuration
@@ -607,7 +608,7 @@ class SettingsService:
                 missing.append("categories")
             if not settings.experiences_sheet_id:
                 missing.append("experiences")
-            if not settings.skills_sheet_id:
+            if skills_enabled and not settings.skills_sheet_id:
                 missing.append("skills")
             if missing:
                 return DiagnosticStatus(

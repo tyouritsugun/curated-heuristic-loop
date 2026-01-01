@@ -366,14 +366,20 @@ class OperationsService:
         2. Without payload: Fetch data from Google Sheets and import (used by the web UI)
         """
         from src.api.services.import_service import ImportService
+        from src.common.config.config import get_config
         import os
         from pathlib import Path
 
         try:
+            config = get_config()
+            skills_enabled = bool(getattr(config, "skills_enabled", True))
+
             # Get sheets data from payload (sent by HTTP client)
             categories_rows = payload.get("categories") or []
             experiences_rows = payload.get("experiences") or []
             skills_rows = payload.get("skills") or payload.get("manuals") or []
+            if not skills_enabled:
+                skills_rows = []
 
             # If no payload provided, fetch from Google Sheets directly
             if not categories_rows:
@@ -404,11 +410,14 @@ class OperationsService:
                 # Fetch from configured worksheets
                 categories_rows = sheets_client.read_worksheet(spreadsheet_id, "Categories")
                 experiences_rows = sheets_client.read_worksheet(spreadsheet_id, "Experiences")
-                
-                # Try "Skills" first (new), fall back to "Manuals" (legacy) for backward compatibility
-                skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
-                if not skills_rows:
-                    skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
+
+                if skills_enabled:
+                    # Try "Skills" first (new), fall back to "Manuals" (legacy) for backward compatibility
+                    skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
+                    if not skills_rows:
+                        skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
+                else:
+                    skills_rows = []
 
                 logger.info(
                     "Fetched from Google Sheets: %d categories, %d experiences, %d skills",
@@ -417,7 +426,7 @@ class OperationsService:
                     len(skills_rows),
                 )
 
-                if not categories_rows:
+                if not experiences_rows and not skills_rows:
                     return {
                         "success": True,
                         "counts": {"categories": 0, "experiences": 0, "skills": 0},
@@ -531,9 +540,10 @@ class OperationsService:
         """Export database entries to Google Sheets."""
         import os
         from pathlib import Path
-        from src.common.storage.schema import Experience, CategorySkill, Category
+        from src.common.storage.schema import Experience, CategorySkill
         from src.common.storage.sheets_client import SheetsClient
-        from src.common.config.config import PROJECT_ROOT
+        from src.common.config.config import PROJECT_ROOT, get_config
+        from src.common.config.categories import get_categories
 
         try:
             delay = float(payload.get("_test_delay", 0) or 0)
@@ -559,10 +569,15 @@ class OperationsService:
         if not credentials_path.exists():
             raise ValueError(f"Credential file not found: {credentials_path}")
 
-        # Query all data from database
-        categories = session.query(Category).order_by(Category.code).all()
+        config = get_config()
+        skills_enabled = bool(getattr(config, "skills_enabled", True))
+
+        # Query data from database (categories from canonical taxonomy)
+        categories = get_categories()
         experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
-        skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+        skills = []
+        if skills_enabled:
+            skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
 
         # Initialize sheets client
         sheets_client = SheetsClient(str(credentials_path))
@@ -575,12 +590,7 @@ class OperationsService:
         # Export Categories
         categories_headers = ["code", "name", "description", "created_at"]
         categories_rows = [
-            [
-                cat.code,
-                cat.name,
-                cat.description or "",
-                cat.created_at.isoformat() if cat.created_at else "",
-            ]
+            [cat["code"], cat["name"], cat["description"], ""]
             for cat in categories
         ]
         sheets_client.write_worksheet(
@@ -615,27 +625,28 @@ class OperationsService:
             readonly_cols=[0, 6],  # id and updated_at are readonly
         )
 
-        # Export Skills
-        skills_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
-        skills_rows = [
-            [
-                skill.id,
-                skill.category_code,
-                skill.title,
-                skill.content or "",
-                skill.summary or "",
-                skill.updated_at.isoformat() if skill.updated_at else "",
-                skill.author or "",
+        # Export Skills (if enabled)
+        if skills_enabled:
+            skills_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
+            skills_rows = [
+                [
+                    skill.id,
+                    skill.category_code,
+                    skill.title,
+                    skill.content or "",
+                    skill.summary or "",
+                    skill.updated_at.isoformat() if skill.updated_at else "",
+                    skill.author or "",
+                ]
+                for skill in skills
             ]
-            for skill in skills
-        ]
-        sheets_client.write_worksheet(
-            spreadsheet_id,
-            skills_worksheet,
-            skills_headers,
-            skills_rows,
-            readonly_cols=[0, 5],  # id and updated_at are readonly
-        )
+            sheets_client.write_worksheet(
+                spreadsheet_id,
+                skills_worksheet,
+                skills_headers,
+                skills_rows,
+                readonly_cols=[0, 5],  # id and updated_at are readonly
+            )
 
         logger.info(
             "Export completed: %d categories, %d experiences, %d skills to spreadsheet %s",
@@ -662,12 +673,16 @@ class OperationsService:
         - file_path: path to the Excel file to import
         """
         from src.api.services.import_service import ImportService
+        from src.common.config.config import get_config
         import os
         from pathlib import Path
         import pandas as pd
         import zipfile
 
         try:
+            config = get_config()
+            skills_enabled = bool(getattr(config, "skills_enabled", True))
+
             # Get file path from payload
             file_path = payload.get("file_path")
             if not file_path:
@@ -695,41 +710,29 @@ class OperationsService:
                 logger.info(f"File {file_path} might be .xls format, proceeding with import attempt")
 
             # Read Excel file - assume same structure as Google Sheets
-            # Read sheets: Categories, Experiences, Skills (fallback to Manuals)
+            # Categories sheet is optional (taxonomy is code-defined)
+            categories_df = pd.DataFrame()
+            experiences_df = pd.DataFrame()
+            skills_df = pd.DataFrame()
+
             try:
                 categories_df = pd.read_excel(file_path, sheet_name='Categories', engine='openpyxl')
+            except Exception:
+                logger.info("Categories sheet not found or unreadable; skipping.")
+
+            try:
                 experiences_df = pd.read_excel(file_path, sheet_name='Experiences', engine='openpyxl')
+            except Exception:
+                experiences_df = pd.DataFrame()
+
+            if skills_enabled:
                 try:
                     skills_df = pd.read_excel(file_path, sheet_name='Skills', engine='openpyxl')
                 except Exception:
-                    skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
-            except Exception as e:
-                logger.warning(f"Could not read specific sheets, trying alternative approach: {e}")
-                # If specific sheet names don't exist, try default sheet or give error
-                try:
-                    # Try reading the default sheet and see if it has the expected columns
-                    default_df = pd.read_excel(file_path, engine='openpyxl')
-                    # Check if this contains categories data based on expected columns
-                    if 'code' in default_df.columns and 'name' in default_df.columns:
-                        categories_df = default_df
-                        experiences_df = pd.DataFrame()  # Empty
-                        skills_df = pd.DataFrame()  # Empty
-                        logger.warning(f"Excel file had only one sheet, assuming it contains categories data")
-                    else:
-                        raise e
-                except Exception:
-                    # Try reading with xlrd for older .xls format as fallback
                     try:
-                        categories_df = pd.read_excel(file_path, sheet_name='Categories')
-                        experiences_df = pd.read_excel(file_path, sheet_name='Experiences')
-                        try:
-                            skills_df = pd.read_excel(file_path, sheet_name='Skills')
-                        except Exception:
-                            skills_df = pd.read_excel(file_path, sheet_name='Manuals')
+                        skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
                     except Exception:
-                        raise ValueError(
-                            "Could not read Excel file. Expected sheets: 'Categories', 'Experiences', 'Skills'"
-                        )
+                        skills_df = pd.DataFrame()
 
             # Convert DataFrames to the format expected by import_service
             categories_rows = categories_df.to_dict('records') if not categories_df.empty else []
@@ -775,9 +778,13 @@ class OperationsService:
         import os
         from pathlib import Path
         import pandas as pd
-        from src.common.storage.schema import Experience, CategorySkill, Category
+        from src.common.storage.schema import Experience, CategorySkill
+        from src.common.config.config import get_config
+        from src.common.config.categories import get_categories
 
         try:
+            config = get_config()
+            skills_enabled = bool(getattr(config, "skills_enabled", True))
             # Get export path from payload or use default
             export_path = payload.get("export_path")
             if not export_path:
@@ -790,19 +797,21 @@ class OperationsService:
             # Create directory if it doesn't exist
             export_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Query all data from database
-            categories = session.query(Category).order_by(Category.code).all()
+            # Query all data from database (categories from canonical taxonomy)
+            categories = get_categories()
             experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
-            skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+            skills = []
+            if skills_enabled:
+                skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
 
             # Convert to DataFrames
             categories_data = []
             for cat in categories:
                 categories_data.append({
-                    "code": cat.code,
-                    "name": cat.name,
-                    "description": cat.description or "",
-                    "created_at": cat.created_at.isoformat() if cat.created_at else "",
+                    "code": cat["code"],
+                    "name": cat["name"],
+                    "description": cat["description"],
+                    "created_at": "",
                 })
             categories_df = pd.DataFrame(categories_data)
 
@@ -821,24 +830,27 @@ class OperationsService:
                 })
             experiences_df = pd.DataFrame(experiences_data)
 
-            skills_data = []
-            for skill in skills:
-                skills_data.append({
-                    "id": skill.id,
-                    "category_code": skill.category_code,
-                    "title": skill.title,
-                    "content": skill.content or "",
-                    "summary": skill.summary or "",
-                    "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
-                    "author": skill.author or "",
-                })
-            skills_df = pd.DataFrame(skills_data)
+            skills_df = pd.DataFrame()
+            if skills_enabled:
+                skills_data = []
+                for skill in skills:
+                    skills_data.append({
+                        "id": skill.id,
+                        "category_code": skill.category_code,
+                        "title": skill.title,
+                        "content": skill.content or "",
+                        "summary": skill.summary or "",
+                        "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+                        "author": skill.author or "",
+                    })
+                skills_df = pd.DataFrame(skills_data)
 
             # Write to Excel file with multiple sheets
             with pd.ExcelWriter(export_path, engine='openpyxl') as writer:
                 categories_df.to_excel(writer, sheet_name='Categories', index=False)
                 experiences_df.to_excel(writer, sheet_name='Experiences', index=False)
-                skills_df.to_excel(writer, sheet_name='Skills', index=False)
+                if skills_enabled:
+                    skills_df.to_excel(writer, sheet_name='Skills', index=False)
 
             logger.info(
                 "Excel export completed: %d categories, %d experiences, %d skills to %s",

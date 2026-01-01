@@ -65,6 +65,11 @@ TOOL_INDEX = [
         "example": {"guide_type": "generator"},
     },
     {
+        "name": "read_guidelines",
+        "description": "Read generator/evaluator guidelines directly from repo markdown files.",
+        "example": {"guide_type": "generator"},
+    },
+    {
         "name": "check_duplicates",
         "description": "Check for potential duplicate entries before calling create_entry. Unavailable in CPU mode; fall back to comparison via read_entries.",
         "example": {
@@ -203,10 +208,23 @@ def build_handshake_payload() -> Dict[str, Any]:
                 "Install ML extras and rebuild embeddings to restore semantic search."
             )
 
+        tool_index = deepcopy(TOOL_INDEX)
+        if config and not getattr(config, "skills_enabled", True):
+            for tool in tool_index:
+                if tool["name"] in {"read_entries", "create_entry", "update_entry", "check_duplicates"}:
+                    tool["description"] = tool["description"].replace("experiences or skills", "experiences")
+                    tool["description"] = tool["description"].replace("experience or skill", "experience")
+                if tool["name"] == "update_entry":
+                    tool["example"] = {
+                        "entity_type": "experience",
+                        "category_code": "PGS",
+                        "entry_id": "EXP-PGS-20250115-104200123456",
+                        "updates": {"playbook": "Adds audit checklist step."},
+                    }
         return {
             "version": SERVER_VERSION,
             "workflow_mode": workflow_mode_payload(),
-            "tool_index": TOOL_INDEX,
+            "tool_index": tool_index,
             "search": search_payload,
             "categories": categories_data.get("categories", []),
             "mode": {

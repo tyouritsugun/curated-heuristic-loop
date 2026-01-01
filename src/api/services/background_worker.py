@@ -42,6 +42,7 @@ class BackgroundEmbeddingWorker:
         poll_interval: float = 5.0,
         batch_size: int = 10,
         max_tokens: int = 8000,
+        skills_enabled: bool = True,
     ):
         """Initialize background worker.
 
@@ -61,6 +62,7 @@ class BackgroundEmbeddingWorker:
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.max_tokens = max_tokens
+        self.skills_enabled = skills_enabled
 
         # Worker state
         self._thread: Optional[threading.Thread] = None
@@ -244,6 +246,7 @@ class BackgroundEmbeddingWorker:
                 model_name=self.model_name,
                 faiss_index_manager=self.faiss_manager,
                 max_tokens=self.max_tokens,
+                skills_enabled=self.skills_enabled,
             )
 
             # Process pending embeddings (limited by batch_size)
