@@ -2,12 +2,13 @@
 
 ## Goal
 Import external skills (Claude Code, Codex) into CHL and export skills for team curation and distribution.
+This phase also implements **bidirectional converters** so CHL can import from and export back to ChatGPT/Claude formats.
 
 **⚠️ Phase Requirement**: This entire phase requires `CHL_SKILLS_ENABLED=true`. The import pipeline depends on CHL database for storing processed metadata (outlines, categories, embeddings) needed for duplicate detection and team curation. Users with `ENABLED=false` cannot participate in skill import or curation.
 
 ## Inputs
 - Claude Code: `~/.claude/skills/` or `.claude/skills/` with `SKILL.md` per directory.
-- Codex: `~/.codex/skills/` with JSON skill files.
+- ChatGPT/Codex: `~/.codex/skills/` with JSON skill files.
 - Note: formats can vary; parser should be tolerant.
 
 ## Import pipeline
@@ -53,6 +54,7 @@ Import external skills (Claude Code, Codex) into CHL and export skills for team 
 
 ## Source of truth
 CHL is the source-of-truth for skills when enabled.
+External skills are imported into CHL and can be exported back to ChatGPT/Claude via converters.
 
 **Configuration** (see doc/config/skills_access_control.md for details):
 - `CHL_SKILLS_ENABLED=true|false` (default: `true`, from Phase 0).
@@ -103,8 +105,58 @@ Note: This is a legacy field inherited from experiences. For skills, it primaril
 - Gate skill import/export based on `skills_enabled` flag.
 - Validate category codes during import; emit actionable remediation if missing.
 - Implement LLM-based merge decision for high-similarity duplicates (using scripts/curation/agents/prompts/skill_merge_decision.yaml).
-- Add bidirectional converters (implementation details in separate spec).
 - Implement category mapping with confidence thresholds (using scripts/curation/agents/prompts/skill_category_mapping.yaml).
+- **Implement bidirectional converters**:
+  - Claude → CHL import (SKILL.md parser)
+  - ChatGPT/Codex → CHL import (JSON parser)
+  - CHL → Claude export (SKILL.md emitter)
+  - CHL → ChatGPT/Codex export (JSON emitter)
+
+## Use cases (current + future)
+### Use case 1 (current scope)
+- User enables skills, imports external skills if any, uses CHL skills directly.
+- When team curation is needed: export from local `chl.db` → Carlos → import curated results back.
+
+### Use case 2 (future scope)
+- User keeps skills disabled for daily use.
+- Temporarily enables skills only to import/export with Carlos or external tools.
+- Does not write persistent local skills beyond transient conversion steps.
+
+## Scripts architecture (prep for future scope)
+We already have experience curation under `scripts/curation/`. To avoid disruption,
+add a **skills-specific lane** and keep experience scripts as-is for now.
+
+```
+scripts/curation/
+  common/                # shared utils (existing)
+  merge/                 # experience curation (existing)
+  overnight/             # experience curation (existing)
+  prepass/               # experience curation (existing)
+  analysis/              # experience curation (existing)
+  skills/
+    import/
+      claude/            # Claude → CHL parser (SKILL.md)
+      chatgpt/           # ChatGPT/Codex → CHL parser (JSON)
+    export/
+      claude/            # CHL → Claude emitter (SKILL.md)
+      chatgpt/           # CHL → ChatGPT/Codex emitter (JSON)
+    curation/
+      outline/
+      dedupe/
+      merge/
+    shared/
+      normalize.py       # normalize fields (title/content/summary/category_code)
+      validators.py      # schema validation + category checks
+      io.py              # filesystem helpers + path discovery
+```
+
+**Future consolidation**: once the skill pipeline stabilizes, consolidate the
+experience curation scripts into a unified structure (e.g., `scripts/curation/experience/`)
+so both domains share a consistent layout and CLI entrypoints.
+
+**Non-goal (this phase)**: Do not move or refactor existing experience curation
+scripts. They remain in their current locations to avoid breaking workflows
+while the skills pipeline is introduced.
 
 ## Risks and constraints
 - LLM outline generation requires network access; cache results.
