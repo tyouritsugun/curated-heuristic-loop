@@ -21,7 +21,7 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
    - Curation DB now contains all member skills (isolated from production).
 2. Generate outlines
    - For each skill without outline: LLM generates structured outline (same format as import).
-   - Store outline in `summary` field.
+   - Store outline in `metadata.chl.outline`.
 3. Candidate grouping
    - Group skills by `category_code`.
    - Within each category: generate embeddings for outlines.
@@ -77,11 +77,13 @@ When LLM proposes merge (high overlap detected):
 Merge these two skills into one comprehensive skill:
 
 Skill A (by {author_a}):
-Title: {title_a}
+Name: {name_a}
+Description: {description_a}
 Content: {content_a}
 
 Skill B (by {author_b}):
-Title: {title_b}
+Name: {name_b}
+Description: {description_b}
 Content: {content_b}
 
 Requirements:
@@ -93,7 +95,8 @@ Requirements:
 6. Note conflicting information in [Alternatives] section if present.
 
 Output merged skill:
-Title: [synthesized title]
+Name: [synthesized name]
+Description: [synthesized description]
 Content: [merged content with clear sections]
 
 Metadata:
@@ -112,7 +115,7 @@ Metadata:
   - `split_skill_id`: New focused skill after split.
   - `split_group_id`: Links all skills from same split operation.
   - `decision_id`, `curator`, `timestamp`, `model`, `prompt_path`, `raw_response`.
-- **Outline storage**: Use existing `summary` field in `category_skills`.
+- **Outline storage**: Use `metadata.chl.outline` in `skills`.
 
 ## Conflict resolution
 **Scenario 1: Both authors modified global skill**

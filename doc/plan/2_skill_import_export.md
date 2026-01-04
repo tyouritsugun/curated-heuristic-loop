@@ -13,7 +13,7 @@ This phase also implements **bidirectional converters** so CHL can import from a
 
 ## Import pipeline
 1. Discover and parse
-   - Detect source type and extract title, content, summary, tags, and raw metadata.
+   - Detect source type and extract name, description, content, optional fields, and raw metadata.
 2. Generate outline
    - LLM generates structured outline from content using scripts/curation/agents/prompts/skill_outline_generation.yaml
    - Outline format (defined in prompt):
@@ -27,7 +27,7 @@ This phase also implements **bidirectional converters** so CHL can import from a
      ```
 3. Category mapping
    - LLM chooses best-fit category from complete predefined category list using scripts/curation/agents/prompts/skill_category_mapping.yaml
-   - Input: skill title, content, outline + all category codes/names/descriptions.
+   - Input: skill name, description, content, outline + all category codes/names/descriptions.
    - LLM must pick one category (no UNCAT fallback); chooses nearest match.
    - Thresholds: >=0.90 auto-assign, 0.70-0.89 flag for review, <0.70 require manual override.
    - If category not found in local taxonomy, import must block and emit a remediation list.
@@ -40,12 +40,12 @@ This phase also implements **bidirectional converters** so CHL can import from a
      * Score 0.70-0.84: Flag as potential duplicate for manual review
      * Score <0.70: Treat as distinct skill
    - LLM returns: should_merge (bool), confidence, reasoning, merged_content (if applicable).
-   - Fallback to title/keyword similarity in CPU mode.
+   - Fallback to name/description keyword similarity in CPU mode.
 5. Review bundle
    - Emit review file (CSV or JSON) with proposed category, confidence, duplicate/merge hints, outline preview, and source path.
 6. Import
-   - Insert into `category_skills` with generated id.
-   - Store outline in `summary` field.
+   - Insert into `skills` table with generated id.
+   - Store outline in `metadata.chl.outline`.
    - Set `embedding_status=pending`, `source=imported_claude|imported_codex`, `author` from OS user.
    - Set `sync_status` (see sync_status semantics below).
 7. Post-import
@@ -101,7 +101,7 @@ Note: This is a legacy field inherited from experiences. For skills, it primaril
 - ✅ Create LLM prompt templates (completed in scripts/curation/agents/prompts/).
 - ✅ Document toggle behavior (completed in doc/config/skills_access_control.md).
 - Add outline generation step to import pipeline (LLM call using scripts/curation/agents/prompts/skill_outline_generation.yaml).
-- Store outline in `category_skills.summary` field.
+- Store outline in `metadata.chl.outline`.
 - Gate skill import/export based on `skills_enabled` flag.
 - Validate category codes during import; emit actionable remediation if missing.
 - Implement LLM-based merge decision for high-similarity duplicates (using scripts/curation/agents/prompts/skill_merge_decision.yaml).
@@ -145,7 +145,7 @@ scripts/curation/
       dedupe/
       merge/
     shared/
-      normalize.py       # normalize fields (title/content/summary/category_code)
+      normalize.py       # normalize fields (name/description/content/category_code)
       validators.py      # schema validation + category checks
       io.py              # filesystem helpers + path discovery
 ```
