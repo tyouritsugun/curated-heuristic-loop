@@ -42,8 +42,8 @@
 
 | Field | Agent Skills Standard | Claude Code | OpenAI Codex |
 |-------|----------------------|-------------|--------------|
-| **name** | ✅ Required (1-64 chars, kebab-case) | ✅ Required | ✅ Required |
-| **description** | ✅ Required (1-1024 chars) | ✅ Required (max 1024) | ✅ Required |
+| **name** | ✅ Required (1-64 chars, kebab-case) | ✅ Required | ✅ Required (<=100 chars) |
+| **description** | ✅ Required (1-1024 chars) | ✅ Required (max 1024) | ✅ Required (max 500, single-line) |
 | **Directory name** | Must match `name` | Must match `name` | Must match `name` |
 | **Body format** | Markdown (no restrictions) | Markdown (keep <500 lines) | Markdown |
 
@@ -68,7 +68,7 @@ CREATE TABLE skills (
   name TEXT NOT NULL UNIQUE,              -- Kebab-case identifier, 1-64 chars (e.g., "page-spec-checklist")
 
   -- Required Content (Agent Skills Standard)
-  description TEXT NOT NULL,              -- Keyword-rich trigger description, 1-1024 chars
+  description TEXT NOT NULL,              -- Keyword-rich trigger description, 1-1024 chars (export caps may be lower)
   content TEXT NOT NULL,                  -- Markdown body (no YAML frontmatter)
 
   -- CHL Organization (internal only, not exported)
@@ -79,10 +79,10 @@ CREATE TABLE skills (
   compatibility TEXT,                     -- Environment requirements (1-500 chars)
 
   -- Metadata (JSON for flexible key-value storage)
-  metadata TEXT,                          -- JSON: {"short-description": "...", "author": "...", ...}
+  metadata TEXT,                          -- JSON string map: {"short-description": "...", "author": "...", ...}
 
   -- Platform-Specific Features
-  allowed_tools TEXT,                     -- Comma-separated: "Read, Grep, Glob, Bash"
+  allowed_tools TEXT,                     -- JSON array: ["Read", "Grep", "Glob", "Bash"]
   model TEXT,                             -- Model preference: "claude-sonnet-4-5", etc.
 
   -- Audit Trail
@@ -104,9 +104,6 @@ CREATE TABLE skills (
   ),
   CONSTRAINT compatibility_length CHECK (
     compatibility IS NULL OR LENGTH(compatibility) BETWEEN 1 AND 500
-  ),
-  CONSTRAINT content_not_empty CHECK (
-    LENGTH(TRIM(content)) > 0
   ),
   FOREIGN KEY (category_code) REFERENCES categories(code)
 );
@@ -138,8 +135,8 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 #### Optional Fields
 - **license**: License identifier (e.g., "MIT")
 - **compatibility**: Environment requirements (1-500 chars)
-- **metadata**: JSON key-value (short-description, author, version, tags)
-- **allowed_tools**: Comma-separated list (Claude Code only)
+- **metadata**: JSON string map (short-description, author, version, tags). Prefer flat keys (e.g., `chl.category_code`)
+- **allowed_tools**: JSON array of tool names (exported as space-delimited for standard)
 - **model**: Model preference (Claude Code only)
 
 #### Design Decisions
@@ -148,10 +145,13 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 3. **Metadata as JSON**: Flexible, avoids schema changes
 4. **Content purity**: Store markdown only, generate frontmatter on export
 5. **Platform isolation**: Optional fields for platform-specific features
+6. **Target validation**: Apply stricter per-platform limits at export time
 
 #### Codex Compatibility Note
-Codex follows the Agent Skills Standard for `name` and `description` constraints.
-We enforce the Agent Skills Standard limits in DB and validate on export.
+Codex follows the Agent Skills Standard format but adds stricter limits:
+- `name` may be up to 100 chars (we still enforce 1-64 for standard)
+- `description` must be single-line and **<= 500 chars**
+We enforce the Agent Skills Standard limits in DB and validate on export per target.
 
 ## 4) Migration Strategy
 
@@ -196,7 +196,7 @@ Check before deployment:
 - Descriptions present (no TODOs, 1-1024 chars)
 - No duplicate names
 - Valid category codes
-- Non-empty content
+- Content present for CHL authoring (allow empty if strict standard compatibility is needed)
 
 ## 5) MCP API Changes
 
@@ -217,6 +217,11 @@ Skill outputs should match Agent Skills Standard fields:
 ### Write payload validation
 - Enforce kebab-case `name` (1-64 chars) and description length (1-1024).
 - Reject unknown category codes.
+
+### Export target validation (per platform)
+- **Agent Skills Standard / Claude Code**: `name` 1-64 chars, `description` 1-1024 chars
+- **OpenAI Codex**: `name` <= 100 chars; `description` **single-line** and <= 500 chars
+- **All targets**: `allowed-tools` is optional; ignore if empty
 
 ## 6) Sheets/Excel Columns (skills)
 To keep UI import/export aligned with the standard:
@@ -250,9 +255,9 @@ Optional directories (future):
 ```
 
 ### Field Transformations (DB -> YAML)
-- `allowed_tools` -> `allowed-tools`
-- `category_code` -> `metadata.chl.category_code`
-- `metadata` JSON string -> YAML key-value pairs under `metadata`
+- `allowed_tools` (JSON array) -> `allowed-tools` (space-delimited for standard; comma-delimited for Claude Code export only)
+- `category_code` -> `metadata["chl.category_code"]` (flattened key)
+- `metadata` JSON string -> YAML key-value pairs under `metadata` (flat keys preferred)
 
 ### Example Export Output
 Database record:
@@ -264,9 +269,9 @@ Database record:
   "content": "# Instructions\n\n...",
   "category_code": "PGS",
   "license": "MIT",
-  "allowed_tools": "Read, Grep, Glob",
+  "allowed_tools": "[\"Read\", \"Grep\", \"Glob\"]",
   "model": "claude-sonnet-4-5",
-  "metadata": "{\"author\": \"CHL Team\", \"version\": \"1.0\"}"
+  "metadata": "{\"author\": \"CHL Team\", \"version\": \"1.0\", \"chl.category_code\": \"PGS\"}"
 }
 ```
 
@@ -276,13 +281,12 @@ Generated SKILL.md:
 name: page-spec-checklist
 description: Generate UI page specifications...
 license: MIT
-allowed-tools: Read, Grep, Glob
+allowed-tools: Read Grep Glob
 model: claude-sonnet-4-5
 metadata:
   author: CHL Team
   version: "1.0"
-  chl:
-    category_code: PGS
+  chl.category_code: PGS
 ---
 
 # Instructions
@@ -307,9 +311,9 @@ Optional subdirectories are ignored in v1 but reserved for future use.
    - Parse YAML between `---` markers
    - Validate required fields: `name`, `description`
 2. Field mapping (YAML -> DB):
-   - `allowed-tools` -> `allowed_tools`
-   - `metadata.chl.category_code` -> `category_code`
-   - Other `metadata.*` -> JSON string in `metadata`
+   - `allowed-tools` -> `allowed_tools` (accept comma- or space-delimited; normalize to JSON array)
+   - `metadata["chl.category_code"]` -> `category_code`
+   - Other `metadata.*` -> JSON string in `metadata` (flattened keys)
 3. Validation:
    - Directory name must exactly match `name`
    - `name` must pass kebab-case validation
@@ -330,12 +334,12 @@ To support large skill sets and fast startup:
 | Field           | Standard Export | Claude Code Export | Notes                               |
 |----------------|------------------|--------------------|-------------------------------------|
 | name           | ✅               | ✅                 | Required                            |
-| description    | ✅               | ✅                 | Required                            |
+| description    | ✅               | ✅                 | Required (Codex: <= 500, single-line) |
 | content        | ✅               | ✅                 | Markdown body                       |
 | license        | ✅               | ✅                 | Optional                            |
 | compatibility  | ✅               | ✅                 | Optional                            |
 | metadata       | ✅               | ✅                 | Optional                            |
-| allowed-tools  | ⚪               | ✅                 | Experimental in standard; comma-separated |
+| allowed-tools  | ⚪               | ✅                 | Experimental in standard; space-delimited (Claude Code export may be comma-delimited) |
 | model          | ❌               | ✅                 | Claude Code only                    |
 | category_code  | ❌               | ❌                 | CHL internal                        |
 | id             | ❌               | ❌                 | CHL internal                        |
@@ -343,6 +347,7 @@ To support large skill sets and fast startup:
 ## 11) Success Criteria
 
 - Schema: Valid names (kebab-case), descriptions (1-1024 chars), no duplicates, valid categories
+- Export: Codex requires single-line `description` <= 500 chars; validate on export
 - Integration: MCP tools enforce constraints, queries work, round-trip successful
 - Breaking change: No backward compatibility, migration script required
 
@@ -384,8 +389,8 @@ To support large skill sets and fast startup:
    - Future: Add bundle mode that copies optional directories.
 
 2. **Metadata format**  
-   - Storage: JSON string in DB `metadata` field.  
-   - Export: Convert to YAML key-value under `metadata`.  
+   - Storage: JSON string in DB `metadata` field (string map; prefer flat keys).  
+   - Export: Convert to YAML key-value under `metadata` (flat keys preferred).  
    - Special keys:  
      - `short-description`: Optional user-facing summary (Codex compatible).  
      - `chl.*`: Reserved namespace for CHL-internal fields.  
@@ -393,7 +398,7 @@ To support large skill sets and fast startup:
 
 3. **Category in export**  
    - Standard exports (Agent Skills / Claude / Codex): do **not** include `category_code`.  
-   - CHL roundtrip exports: include `metadata.chl.category_code` to preserve internal mapping.
+   - CHL roundtrip exports: include `metadata["chl.category_code"]` to preserve internal mapping.
 
 ## 16) References
 
