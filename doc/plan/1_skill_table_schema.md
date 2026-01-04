@@ -62,9 +62,9 @@
 ### Database Schema (SQLite)
 
 ```sql
-CREATE TABLE skills (
+CREATE TABLE category_skills (
   -- Primary Identity
-  id TEXT PRIMARY KEY,                    -- Internal CHL ID (e.g., "SKL-PGS-20250104-...")
+  id TEXT PRIMARY KEY,                    -- Internal CHL ID (e.g., "MNL-PGS-20250104-..." legacy prefix)
   name TEXT NOT NULL UNIQUE,              -- Kebab-case identifier, 1-64 chars (e.g., "page-spec-checklist")
 
   -- Required Content (Agent Skills Standard)
@@ -109,16 +109,16 @@ CREATE TABLE skills (
 );
 
 -- Indexes for Performance
-CREATE INDEX idx_skills_category ON skills(category_code);
-CREATE INDEX idx_skills_name ON skills(name);
-CREATE INDEX idx_skills_updated ON skills(updated_at DESC);
+CREATE INDEX idx_skills_category ON category_skills(category_code);
+CREATE INDEX idx_skills_name ON category_skills(name);
+CREATE INDEX idx_skills_updated ON category_skills(updated_at DESC);
 
 -- Full-text Search (if needed)
 CREATE VIRTUAL TABLE skills_fts USING fts5(
   name,
   description,
   content,
-  content=skills,
+  content=category_skills,
   content_rowid=rowid
 );
 ```
@@ -126,7 +126,7 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 ### Field Specifications
 
 #### Required Fields
-- **id**: Internal CHL ID (e.g., `SKL-PGS-20250104-103045123456`), auto-generated
+- **id**: Internal CHL ID (e.g., `MNL-PGS-20250104-103045123456`), auto-generated (legacy prefix)
 - **name**: Kebab-case identifier (1-64 chars), matches directory name, e.g., `page-spec-checklist`
 - **description**: Keyword-rich trigger (1-1024 chars), includes what/when/keywords users say
 - **content**: Pure markdown instructions (no frontmatter), <500 lines recommended
@@ -255,7 +255,7 @@ Optional directories (future):
 ```
 
 ### Field Transformations (DB -> YAML)
-- `allowed_tools` (JSON array) -> `allowed-tools` (space-delimited for standard; comma-delimited for Claude Code export only)
+- `allowed_tools` (JSON array) -> `allowed-tools` (space-delimited for standard; comma-delimited for Claude Code export)
 - `category_code` -> `metadata["chl.category_code"]` (flattened key)
 - `metadata` JSON string -> YAML key-value pairs under `metadata` (flat keys preferred)
 
@@ -339,7 +339,7 @@ To support large skill sets and fast startup:
 | license        | ✅               | ✅                 | Optional                            |
 | compatibility  | ✅               | ✅                 | Optional                            |
 | metadata       | ✅               | ✅                 | Optional                            |
-| allowed-tools  | ⚪               | ✅                 | Experimental in standard; space-delimited (Claude Code export may be comma-delimited) |
+| allowed-tools  | ⚪               | ✅                 | Experimental in standard; space-delimited (Claude Code export is comma-delimited) |
 | model          | ❌               | ✅                 | Claude Code only                    |
 | category_code  | ❌               | ❌                 | CHL internal                        |
 | id             | ❌               | ❌                 | CHL internal                        |
@@ -398,7 +398,8 @@ To support large skill sets and fast startup:
 
 3. **Category in export**  
    - Standard exports (Agent Skills / Claude / Codex): do **not** include `category_code`.  
-   - CHL roundtrip exports: include `metadata["chl.category_code"]` to preserve internal mapping.
+   - CHL roundtrip exports: include `metadata["chl.category_code"]` to preserve internal mapping.  
+   - Sheets/Excel exports omit the Categories sheet; category mapping is preserved only via `metadata["chl.category_code"]`.
 
 ## 16) References
 
