@@ -46,6 +46,7 @@ import logging
 import os
 import subprocess
 import shutil
+import sqlite3
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
@@ -417,11 +418,53 @@ def setup_credentials(config) -> bool:
         return False
 
 
+def _legacy_skill_schema_detected(db_path: Path) -> bool:
+    if not db_path.exists():
+        return False
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='category_skills'"
+            ).fetchone()
+            if row is None:
+                return False
+            columns = {col[1] for col in conn.execute("PRAGMA table_info(category_skills)")}
+            return "name" not in columns or "description" not in columns
+    except Exception as exc:
+        logger.warning("Failed to inspect database schema at %s: %s", db_path, exc)
+        return False
+
+
+def _reset_legacy_db(config) -> None:
+    db_path = Path(config.database_path)
+    if db_path.exists():
+        db_path.unlink()
+        for suffix in ("-wal", "-shm"):
+            stale_path = Path(f"{db_path}{suffix}")
+            if stale_path.exists():
+                stale_path.unlink()
+    print("⚠ Legacy skills schema detected; removed existing DB:")
+    print(f"  {db_path}")
+
+    faiss_dir = Path(config.faiss_index_path)
+    if faiss_dir.exists():
+        shutil.rmtree(faiss_dir)
+        print("⚠ Legacy FAISS index removed:")
+        print(f"  {faiss_dir}")
+        print("  Rebuild embeddings after setup if you need vector search.")
+        faiss_dir.mkdir(parents=True, exist_ok=True)
+        print(f"✓ FAISS index directory: {faiss_dir}")
+
+
 def initialize_database(config) -> tuple[bool, dict]:
     """Initialize database and create tables"""
     logger.info("Initializing database...")
 
     try:
+        db_path = Path(config.database_path)
+        if _legacy_skill_schema_detected(db_path):
+            _reset_legacy_db(config)
+
         db = Database(config.database_path, echo=False)
         db.init_database()
         # Ensure base tables exist for fresh installs
