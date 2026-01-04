@@ -101,6 +101,10 @@ class OperationsService:
         self._handlers["rebuild-index"] = self._rebuild_index_handler
         self._handlers["export"] = self._export_snapshot_handler
         self._handlers["export-snapshot"] = self._export_snapshot_handler
+        self._handlers["import-claude"] = self._import_claude_handler
+        self._handlers["export-claude"] = self._export_claude_handler
+        self._handlers["import-codex"] = self._import_codex_handler
+        self._handlers["export-codex"] = self._export_codex_handler
 
         # Legacy aliases (kept for compatibility with old job names in DB)
         self._handlers["import"] = self._import_sheets_handler
@@ -856,6 +860,243 @@ class OperationsService:
         except Exception as exc:
             logger.exception("Excel export failed")
             raise ValueError(f"Excel export operation failed: {exc}") from exc
+
+    def _import_claude_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        return self._import_skill_md_handler(payload, session, source="imported_claude")
+
+    def _import_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        return self._import_skill_md_handler(payload, session, source="imported_codex")
+
+    def _export_claude_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        return self._export_skill_md_handler(payload, session, target="claude")
+
+    def _export_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        return self._export_skill_md_handler(payload, session, target="codex")
+
+    def _import_skill_md_handler(
+        self,
+        payload: Dict[str, Any],
+        session: Session,
+        *,
+        source: str,
+    ) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        from src.common.config.categories import get_all_codes
+        from src.common.storage.repository import CategorySkillRepository, get_author
+        from src.common.storage.schema import CategorySkill
+        from src.common.skills.skill_md import parse_skill_md
+
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return {"success": False, "counts": {"skills": 0}, "message": "Skills are disabled"}
+
+        base_dir = self._resolve_skill_base_dir(payload, source=source)
+        if not base_dir.exists():
+            raise ValueError(f"Skills directory not found: {base_dir}")
+
+        default_category_code = _normalize_text(payload.get("default_category_code"))
+        on_conflict = _normalize_text(payload.get("on_conflict")) or "skip"
+        allow_category_overwrite = bool(payload.get("allow_category_overwrite", False))
+        require_dir_match = bool(payload.get("require_dir_match", True))
+        continue_on_error = bool(payload.get("continue_on_error", True))
+
+        valid_codes = set(get_all_codes())
+        repo = CategorySkillRepository(session)
+        author = get_author()
+
+        imported = 0
+        updated = 0
+        skipped = 0
+        errors: list[dict[str, str]] = []
+
+        for skill_path in self._iter_skill_md_paths(base_dir):
+            try:
+                skill_data = parse_skill_md(
+                    skill_path,
+                    require_dir_match=require_dir_match,
+                    default_category_code=default_category_code,
+                )
+                category_code = skill_data["category_code"].upper()
+                if category_code not in valid_codes:
+                    raise ValueError(f"Unknown category_code '{category_code}'")
+
+                existing = (
+                    session.query(CategorySkill)
+                    .filter(CategorySkill.name == skill_data["name"])
+                    .one_or_none()
+                )
+                if existing:
+                    if on_conflict == "skip":
+                        skipped += 1
+                        continue
+                    if on_conflict == "error":
+                        raise ValueError(f"Skill already exists: {skill_data['name']}")
+                    if on_conflict != "update":
+                        raise ValueError(f"Unsupported on_conflict option: {on_conflict}")
+
+                    updates = {
+                        "name": skill_data["name"],
+                        "description": skill_data["description"],
+                        "content": skill_data["content"],
+                        "license": skill_data.get("license"),
+                        "compatibility": skill_data.get("compatibility"),
+                        "allowed_tools": skill_data.get("allowed_tools"),
+                        "metadata": skill_data.get("metadata"),
+                        "model": skill_data.get("model"),
+                    }
+                    repo.update(existing.id, updates)
+                    if allow_category_overwrite and existing.category_code != category_code:
+                        existing.category_code = category_code
+                    existing.source = source
+                    existing.author = author
+                    updated += 1
+                else:
+                    repo.create(
+                        {
+                            "category_code": category_code,
+                            "name": skill_data["name"],
+                            "description": skill_data["description"],
+                            "content": skill_data["content"],
+                            "license": skill_data.get("license"),
+                            "compatibility": skill_data.get("compatibility"),
+                            "allowed_tools": skill_data.get("allowed_tools"),
+                            "metadata": skill_data.get("metadata"),
+                            "model": skill_data.get("model"),
+                            "source": source,
+                            "author": author,
+                            "sync_status": 1,
+                            "embedding_status": "pending",
+                        }
+                    )
+                    imported += 1
+            except Exception as exc:
+                errors.append({"path": str(skill_path), "error": str(exc)})
+                if not continue_on_error:
+                    raise
+
+        message = (
+            f"Imported {imported} skills"
+            + (f", updated {updated}" if updated else "")
+            + (f", skipped {skipped}" if skipped else "")
+        )
+        if errors:
+            message += f", {len(errors)} errors"
+
+        return {
+            "success": len(errors) == 0,
+            "counts": {
+                "imported": imported,
+                "updated": updated,
+                "skipped": skipped,
+                "errors": len(errors),
+            },
+            "errors": errors,
+            "message": message,
+        }
+
+    def _export_skill_md_handler(
+        self,
+        payload: Dict[str, Any],
+        session: Session,
+        *,
+        target: str,
+    ) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        from src.common.storage.schema import CategorySkill
+        from src.common.skills.skill_md import build_skill_md
+
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return {"success": False, "counts": {"skills": 0}, "message": "Skills are disabled"}
+
+        base_dir = self._resolve_skill_base_dir(payload, target=target)
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        allowed_tools_delimiter = payload.get("allowed_tools_delimiter")
+        if not allowed_tools_delimiter:
+            allowed_tools_delimiter = "comma" if target == "claude" else "space"
+
+        overwrite = bool(payload.get("overwrite", False))
+        category_code = _normalize_text(payload.get("category_code"))
+
+        query = session.query(CategorySkill)
+        if category_code:
+            query = query.filter(CategorySkill.category_code == category_code.upper())
+        skills = query.order_by(CategorySkill.updated_at.desc()).all()
+
+        exported = 0
+        skipped = 0
+        errors: list[dict[str, str]] = []
+
+        for skill in skills:
+            skill_dir = base_dir / skill.name
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            skill_path = skill_dir / "SKILL.md"
+            if skill_path.exists() and not overwrite:
+                skipped += 1
+                continue
+            try:
+                if target == "codex":
+                    description = (skill.description or "").strip()
+                    if "\n" in description:
+                        raise ValueError("Codex export requires single-line description")
+                    if len(description) > 500:
+                        raise ValueError("Codex export requires description <= 500 characters")
+                payload_text = build_skill_md(skill, allowed_tools_delimiter=allowed_tools_delimiter)
+                skill_path.write_text(payload_text, encoding="utf-8")
+                exported += 1
+            except Exception as exc:
+                errors.append({"path": str(skill_path), "error": str(exc)})
+
+        message = f"Exported {exported} skills"
+        if skipped:
+            message += f", skipped {skipped}"
+        if errors:
+            message += f", {len(errors)} errors"
+
+        return {
+            "success": len(errors) == 0,
+            "export_path": str(base_dir),
+            "counts": {
+                "exported": exported,
+                "skipped": skipped,
+                "errors": len(errors),
+            },
+            "errors": errors,
+            "message": message,
+        }
+
+    @staticmethod
+    def _resolve_skill_base_dir(payload: Dict[str, Any], *, source: str | None = None, target: str | None = None) -> Path:
+        path_value = payload.get("path")
+        if path_value:
+            return Path(path_value).expanduser()
+
+        if target == "codex" or source == "imported_codex":
+            candidates = [
+                Path.cwd() / ".codex" / "skills",
+                Path.home() / ".codex" / "skills",
+            ]
+        else:
+            candidates = [
+                Path.cwd() / ".claude" / "skills",
+                Path.home() / ".claude" / "skills",
+            ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[-1]
+
+    @staticmethod
+    def _iter_skill_md_paths(base_dir: Path):
+        if not base_dir.exists():
+            return []
+        for child in base_dir.iterdir():
+            if child.is_dir():
+                skill_md = child / "SKILL.md"
+                if skill_md.is_file():
+                    yield skill_md
 
 
 __all__ = [

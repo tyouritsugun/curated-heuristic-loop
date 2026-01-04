@@ -2,14 +2,14 @@
 
 ## Goal
 Import external skills (Claude Code, Codex) into CHL and export skills for team curation and distribution.
-This phase also implements **bidirectional converters** so CHL can import from and export back to ChatGPT/Claude formats.
+This phase also implements **bidirectional converters** so CHL can import from and export back to Claude/Codex formats.
 
-**⚠️ Phase Requirement**: This entire phase requires `CHL_SKILLS_ENABLED=true`. The import pipeline depends on CHL database for storing processed metadata (outlines, categories, embeddings) needed for duplicate detection and team curation. Users with `ENABLED=false` cannot participate in skill import or curation.
+**⚠️ Phase Requirement**: This entire phase requires `CHL_SKILLS_ENABLED=true`. The import pipeline depends on CHL database for storing processed metadata (outlines, categories, embeddings) needed for duplicate detection and team curation. Users with `CHL_SKILLS_ENABLED=false` cannot participate in skill import or curation.
 
 ## Inputs
 - Claude Code: `~/.claude/skills/` or `.claude/skills/` with `SKILL.md` per directory.
-- ChatGPT/Codex: `~/.codex/skills/` with JSON skill files.
-- Note: formats can vary; parser should be tolerant.
+- Codex: `~/.codex/skills/` with JSON skill files.
+- Note: formats can vary; parser should be tolerant and preserve unknown fields.
 
 ## Import pipeline
 1. Discover and parse
@@ -44,8 +44,8 @@ This phase also implements **bidirectional converters** so CHL can import from a
 5. Review bundle
    - Emit review file (CSV or JSON) with proposed category, confidence, duplicate/merge hints, outline preview, and source path.
 6. Import
-   - Insert into `skills` table with generated id.
-   - Store outline in `metadata.chl.outline`.
+   - Insert into `category_skills` table with generated id.
+   - Store outline in `metadata` under flat key `chl.outline`.
    - Set `embedding_status=pending`, `source=imported_claude|imported_codex`, `author` from OS user.
    - Set `sync_status` (see sync_status semantics below).
 7. Post-import
@@ -54,7 +54,7 @@ This phase also implements **bidirectional converters** so CHL can import from a
 
 ## Source of truth
 CHL is the source-of-truth for skills when enabled.
-External skills are imported into CHL and can be exported back to ChatGPT/Claude via converters.
+External skills are imported into CHL and can be exported back to Claude/Codex via converters.
 
 **Configuration** (see doc/config/skills_access_control.md for details):
 - `CHL_SKILLS_ENABLED=true|false` (default: `true`, from Phase 0).
@@ -64,12 +64,40 @@ External skills are imported into CHL and can be exported back to ChatGPT/Claude
 ## Export paths
 
 **For curation** (member exports):
-- `GET /api/v1/entries/export-csv` from `chl.db` → produces `categories.csv`, `experiences.csv`, `skills.csv`.
+- `GET /api/v1/entries/export-csv` from `chl.db` → produces `experiences.csv`, `skills.csv` (no categories export).
 - All exports go to `data/curation/members/<user>/` for merge.
 
 **For team distribution** (after curation):
 - Curated skills exported via `/operations` to Google Sheets.
 - Team imports via `/operations` → updates `chl.db`.
+
+## Spreadsheet/CSV schema (skills)
+The skills worksheet and CSV export must use the **new** schema and column names:
+
+```
+id
+category_code
+name
+description
+content
+license
+compatibility
+metadata
+allowed_tools
+model
+source
+author
+embedding_status
+created_at
+updated_at
+synced_at
+exported_at
+```
+
+**Notes**:
+- `metadata` is a JSON string with **flat keys** (e.g., `{"chl.outline": "...", "chl.category_code": "PGS"}`).
+- `allowed_tools` is stored internally as a JSON array string; import should accept list, comma-delimited, or space-delimited input.
+- Categories are **not** exported/imported via Sheets; `category_code` must match the local taxonomy.
 
 ## sync_status semantics (legacy field)
 `sync_status` values for skills:
@@ -85,32 +113,33 @@ External skills are imported into CHL and can be exported back to ChatGPT/Claude
 Note: This is a legacy field inherited from experiences. For skills, it primarily distinguishes active (1) from inactive (0, 2).
 
 ## Category governance
-- Categories are team-owned and published via shared Sheets by team admin (Carlos).
-- Categories must be complete and predefined before import.
+- Categories are team-owned and predefined in code, then published via shared Sheets by team admin (Carlos).
+- Categories must be complete and predefined before import (skills import must validate `category_code` against the local taxonomy).
 - LLM always chooses nearest category from existing list (no UNCAT).
 - If new category needed: Admin adds to category list → publishes to Sheets → users sync via `/operations` → re-import skills with new category.
 - Recommendation: Start with comprehensive category taxonomy covering all expected skill domains.
-- **Category operations**:
-  - **Creation**: Admin-only (via category management interface)
-  - **Export to Sheets**: Admin-only (publishes team taxonomy)
-  - **Import/sync from Sheets**: All users (downloads published taxonomy)
-  - **Skill mapping**: All users (map skills to existing categories during import)
+**Category operations**:
+- **Creation**: Admin-only (via category management interface)
+- **Publish to Sheets**: Admin-only (publishes team taxonomy)
+- **Sync from Sheets**: All users (downloads published taxonomy)
+- **Skill mapping**: All users (map skills to existing categories during import)
 
 ## Required system changes
 - ✅ Add `CHL_SKILLS_ENABLED` env var (completed in Phase 0).
 - ✅ Create LLM prompt templates (completed in scripts/curation/agents/prompts/).
 - ✅ Document toggle behavior (completed in doc/config/skills_access_control.md).
 - Add outline generation step to import pipeline (LLM call using scripts/curation/agents/prompts/skill_outline_generation.yaml).
-- Store outline in `metadata.chl.outline`.
+- Store outline in `metadata` under flat key `chl.outline`.
 - Gate skill import/export based on `skills_enabled` flag.
 - Validate category codes during import; emit actionable remediation if missing.
 - Implement LLM-based merge decision for high-similarity duplicates (using scripts/curation/agents/prompts/skill_merge_decision.yaml).
 - Implement category mapping with confidence thresholds (using scripts/curation/agents/prompts/skill_category_mapping.yaml).
 - **Implement bidirectional converters**:
   - Claude → CHL import (SKILL.md parser)
-  - ChatGPT/Codex → CHL import (JSON parser)
+  - Codex → CHL import (JSON parser)
   - CHL → Claude export (SKILL.md emitter)
-  - CHL → ChatGPT/Codex export (JSON emitter)
+  - CHL → Codex export (JSON emitter)
+  - Export must emit `allowed-tools` as comma-delimited for Claude; space-delimited for the Agent Skills standard.
 
 ## Use cases (current + future)
 ### Use case 1 (current scope)
@@ -136,17 +165,17 @@ scripts/curation/
   skills/
     import/
       claude/            # Claude → CHL parser (SKILL.md)
-      chatgpt/           # ChatGPT/Codex → CHL parser (JSON)
+      codex/             # Codex → CHL parser (JSON)
     export/
       claude/            # CHL → Claude emitter (SKILL.md)
-      chatgpt/           # CHL → ChatGPT/Codex emitter (JSON)
+      codex/             # CHL → Codex emitter (JSON)
     curation/
       outline/
       dedupe/
       merge/
     shared/
-      normalize.py       # normalize fields (name/description/content/category_code)
-      validators.py      # schema validation + category checks
+      normalize.py       # normalize fields (name/description/content/category_code/allowed_tools/metadata)
+      validators.py      # schema validation + category checks + non-empty content
       io.py              # filesystem helpers + path discovery
 ```
 

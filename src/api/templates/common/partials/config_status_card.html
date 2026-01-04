@@ -133,6 +133,45 @@
     </div>
   </div>
 
+  {% if skills_enabled %}
+    <div class="config-status-grid" style="margin-top: 1.5rem;">
+      <div class="config-section">
+        <div class="section-header">
+          <h3 style="margin: 0;">External Skills (Claude/Codex)</h3>
+          <p class="muted" style="margin: 0.25rem 0 0;">Default paths: <code>~/.claude/skills</code>, <code>~/.codex/skills</code></p>
+        </div>
+        <div class="section-header" style="margin-top: 0.75rem;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding-right: 0.5rem; width: 50%;">
+                <form hx-post="/ui/operations/run/import-claude" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                  <button type="submit" class="section-title-button" style="width: 100%;">Import Claude SKILL.md</button>
+                </form>
+              </td>
+              <td style="padding-left: 0.5rem; width: 50%;">
+                <form hx-post="/ui/operations/run/export-claude" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                  <button type="submit" class="section-title-button" style="width: 100%;">Export Claude SKILL.md</button>
+                </form>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-right: 0.5rem; padding-top: 0.5rem; width: 50%;">
+                <form hx-post="/ui/operations/run/import-codex" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                  <button type="submit" class="section-title-button" style="width: 100%;">Import Codex Skills</button>
+                </form>
+              </td>
+              <td style="padding-left: 0.5rem; padding-top: 0.5rem; width: 50%;">
+                <form hx-post="/ui/operations/run/export-codex" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                  <button type="submit" class="section-title-button" style="width: 100%;">Export Codex Skills</button>
+                </form>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
   {% if is_partial and (message or error) %}
     {% with oob=True %}
       {% include "common/partials/flash.html" %}
