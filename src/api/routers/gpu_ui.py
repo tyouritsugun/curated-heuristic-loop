@@ -716,7 +716,14 @@ async def run_operation_from_ui(
         except json.JSONDecodeError as exc:
             target_template = (
                 "common/partials/config_status_card.html"
-                if operation_type in ("import", "export")
+                if operation_type in {
+                    "import",
+                    "export",
+                    "import-claude",
+                    "export-claude",
+                    "import-codex",
+                    "export-codex",
+                }
                 else "common/partials/ops_operations_card.html"
             )
             return _render_operation_result(
@@ -733,7 +740,15 @@ async def run_operation_from_ui(
     def _target_for(op: str) -> str:
         return (
             "common/partials/config_status_card.html"
-            if op in {"import", "export", "guidelines"}
+            if op in {
+                "import",
+                "export",
+                "guidelines",
+                "import-claude",
+                "export-claude",
+                "import-codex",
+                "export-codex",
+            }
             else "common/partials/ops_operations_card.html"
         )
 
