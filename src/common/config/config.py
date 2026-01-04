@@ -22,6 +22,9 @@ Core environment variables:
 - CHL_DATABASE_PATH: Path to SQLite database file (optional; default: <experience_root>/chl.db; relative values resolve under <experience_root>)
 - CHL_DATABASE_ECHO: Enable SQLAlchemy SQL logging (optional, default: false)
 - CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
+- CHL_SKILLS_ENABLED: Enable/disable skills feature entirely (optional, default: true)
+  - false: All skill operations blocked (read AND write)
+  - true: Skills enabled (read/write/import/export/curation)
 
 Search & retrieval:
 - Backend is automatically determined from data/runtime_config.json (created by scripts/setup/check_api_env.py)
@@ -173,6 +176,7 @@ class Config:
 
         # Optional settings with defaults
         self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
+        self.skills_enabled = os.getenv("CHL_SKILLS_ENABLED", "true").lower() == "true"
 
         # Runtime configuration - determine backend from runtime_config.json
         # Fallback to environment variable if needed, then default to "cpu"
@@ -274,6 +278,27 @@ class Config:
     def is_semantic_enabled(self) -> bool:
         """True when semantic/vector components are enabled (GPU backends)."""
         return self.backend != "cpu"
+
+    # ------------------------------------------------------------------
+    # Skills access helpers
+    # ------------------------------------------------------------------
+    def skills_read_allowed(self) -> bool:
+        """True when skill read operations are allowed.
+
+        Hierarchy:
+        - If skills_enabled=false: NO (all operations blocked)
+        - If skills_enabled=true: YES (regardless of mode)
+        """
+        return self.skills_enabled
+
+    def skills_write_allowed(self) -> bool:
+        """True when skill write operations (create/update) are allowed.
+
+        Hierarchy:
+        - If skills_enabled=false: NO (all operations blocked)
+        - If skills_enabled=true: YES (full access)
+        """
+        return self.skills_enabled
 
     def _validate_paths(self):
         """Validate that configured paths exist"""

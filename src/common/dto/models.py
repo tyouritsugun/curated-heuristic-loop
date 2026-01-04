@@ -8,6 +8,7 @@ not import these models directly.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -55,21 +56,45 @@ class ExperienceWritePayload(BaseModel):
 class SkillWritePayload(BaseModel):
     """Validated payload for creating a skill entry."""
 
-    title: str = Field(
+    name: str = Field(
         ...,
         min_length=1,
-        max_length=120,
-        description="Title of the skill (1-120 characters)",
+        max_length=64,
+        description="Skill identifier (1-64 chars, lowercase kebab-case)",
+    )
+    description: str = Field(
+        ...,
+        min_length=1,
+        max_length=1024,
+        description="Short trigger description (1-1024 chars)",
     )
     content: str = Field(
         ...,
         min_length=1,
         description="Full markdown content of the skill",
     )
-    summary: str | None = Field(
-        None,
-        description="Optional brief summary of the skill content",
-    )
+    license: str | None = Field(None, description="Optional license identifier")
+    compatibility: str | None = Field(None, description="Optional compatibility notes")
+    metadata: Dict[str, Any] | str | None = Field(None, description="Optional metadata map or JSON string")
+    allowed_tools: list[str] | str | None = Field(None, description="Optional allowed tool list")
+    model: str | None = Field(None, description="Optional model preference")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_name(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        name = data.get("name")
+        if isinstance(name, str):
+            data["name"] = name.strip()
+        description = data.get("description")
+        if isinstance(description, str):
+            data["description"] = description.strip()
+        return data
+
+    @model_validator(mode="after")
+    def _validate_name_format(self) -> "SkillWritePayload":
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", self.name):
+            raise ValueError("name must be lowercase kebab-case (a-z0-9, hyphens, no consecutive hyphens)")
+        return self
 
 
 # Backward compatibility alias

@@ -66,20 +66,20 @@ python scripts/setup/setup-cpu.py
 
 ### 1.3. Import Default Content
 
-After setup, import the default content (categories, sample entries, and guidelines) from Google Sheets:
+After setup, import the default content (sample entries) from Google Sheets:
 
 1. Ensure `IMPORT_SPREADSHEET_ID` is set in your `.env` (use the value from `.env.sample` for demo data)
 2. Start the API server: `uvicorn src.api.server:app --host 127.0.0.1 --port 8000`
 3. Open the Settings dashboard: http://127.0.0.1:8000/settings
 4. Click **Import Spreadsheet**
 
-This operation imports all data from the configured Google Sheet, including:
+This operation imports data from the configured Google Sheet, including:
 
-- Categories (TMG, PGT, etc.)
 - Sample entries (bug reporting guidance, etc.)
-- Guidelines (generator.md and evaluator.md)
 - SQLite database population
 - Embedding generation and FAISS indexing (GPU mode only)
+
+Categories are seeded from the code-defined taxonomy, and guidelines are read directly from `generator.md` / `evaluator.md` / `evaluator_cpu.md`.
 
 ## 2. Understanding CHL's Knowledge Structure
 
@@ -263,70 +263,26 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Managing Categories
 
-Categories define the organizational "shelves" where experiences and skills are stored. The 12 default categories above are seeded during setup, but you can add custom categories for your team's specific workflows.
+Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; the Categories sheet is export-only for sharing.
 
 #### Adding New Categories
 
-Categories are managed via Google Sheets import. Follow these steps:
-
-**1. Export your current database (creates a backup):**
-   - Open http://127.0.0.1:8000/settings
-   - Click **Export Spreadsheet**
-   - This writes all data to your export spreadsheet (configured as `EXPORT_SPREADSHEET_ID` in `.env`)
-
-**2. Save the export as a timestamped backup (recommended):**
-   - Open the export spreadsheet in Google Sheets
-   - Click **File → Make a copy**
-   - Rename to include timestamp (e.g., "CHL Export 2025-01-22")
-   - Move to a backup folder in your Google Drive
-   - This preserves a snapshot of your data before making changes
-
-**3. Copy category data to your import spreadsheet:**
-   - In the export spreadsheet, go to the **Categories** worksheet
-   - Select all rows (including header)
-   - Copy to clipboard
-   - Open your import spreadsheet (configured as `IMPORT_SPREADSHEET_ID` in `.env`)
-   - Create or navigate to the **Categories** worksheet
-   - Paste the data
-
-**4. Add your new category:**
-   - Add a new row to the Categories worksheet with these columns:
-     - `code`: Short uppercase identifier (3-4 letters, e.g., "DEP")
-     - `name`: Descriptive snake_case name (e.g., "deployment_procedures")
-     - `description`: Brief explanation of what this category contains
-     - `created_at`: Leave empty (auto-generated on import)
-
-**Example new categories:**
-
-| code | name | description | created_at |
-|------|------|-------------|------------|
-| DEP | deployment_procedures | Deployment checklists and rollback procedures | |
-| SEC | security_review | Security review patterns and vulnerability checks | |
-| ONC | oncall_runbook | Incident response and on-call procedures | |
-| DES | design_system | Design system patterns and component guidelines | |
-
-**5. Import the updated data:**
-   - Open http://127.0.0.1:8000/operations
-   - Click **Run Import**
-   - This replaces your local database with the import spreadsheet data
-
-**6. Verify the new category:**
-   - Check the MCP client (e.g., ask your assistant to "List available categories")
-   - Or visit http://127.0.0.1:8000/api/v1/categories/ to see all categories
+1. Update `src/common/config/categories.py` with the new category (code/name/description).
+2. Commit and share the change with the team.
+3. Run setup or import to seed the updated taxonomy into local databases.
+4. Verify via MCP `list_categories` or `GET /api/v1/categories/`.
 
 #### Important Notes
 
-- **Import is destructive**: The import operation replaces ALL local data with spreadsheet data. Always export and back up your current data first.
-- **Team coordination**: If multiple team members are adding categories, coordinate via the shared import spreadsheet to avoid conflicts.
-- **Category naming**: Choose short, memorable codes (3-4 uppercase letters) and descriptive snake_case names.
-- **Backup habit**: Make it a habit to rename exported spreadsheets with timestamps and save them to Google Drive for version history.
+- **Import is destructive**: The import operation replaces local experience/skill data (categories are re-seeded from code).
+- **Category naming**: Use short, memorable codes (3-4 uppercase letters) and descriptive snake_case names.
+- **Team coordination**: Treat taxonomy changes like code changes (review + merge).
 
 #### Category Best Practices
 
-- **Be specific**: Create categories for distinct workflow types (e.g., "deployment_procedures" vs. "infrastructure_management")
-- **Avoid overlap**: Don't create multiple categories that could store the same type of knowledge
-- **Start small**: Begin with 2-3 custom categories and add more as your team's needs become clear
-- **Document purpose**: Use clear descriptions so team members know what each category is for
+- **Be specific**: Create categories for distinct workflow types.
+- **Avoid overlap**: Don't create multiple categories that could store the same type of knowledge.
+- **Document purpose**: Use clear descriptions so team members know what each category is for.
 
 ### 6.3. Environment Variables
 While `scripts/scripts_config.yaml` is preferred, the scripts and server can be configured with environment variables. Key variables include:

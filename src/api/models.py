@@ -120,8 +120,8 @@ class DuplicateCheckRequest(BaseModel):
 
     entity_type: str = Field(..., description="'experience' or 'skill'")
     category_code: Optional[str] = None
-    title: str
-    content: str
+    title: str = Field(..., description="Title (experience) or name (skill)")
+    content: str = Field(..., description="Playbook (experience) or content/description (skill)")
     limit: Optional[int] = 1
     threshold: Optional[float] = None
 

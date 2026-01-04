@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from src.common.storage.schema import (
     FAISSMetadata,
     utc_now,
 )
+from src.common.config.categories import get_all_codes, get_categories
+from src.common.config.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,29 @@ class ImportService:
         """
         logger.info("Starting import from sheets")
 
+        config = get_config()
+        skills_enabled = bool(getattr(config, "skills_enabled", True))
+        valid_codes = set(get_all_codes())
+
+        def _collect_codes(rows: List[Dict[str, Any]], key: str) -> set[str]:
+            codes = set()
+            for row in rows:
+                code = row.get(key)
+                if code:
+                    codes.add(str(code).strip().upper())
+            return codes
+
+        # Validate category codes (categories sheet is validation-only)
+        category_codes = _collect_codes(categories_rows, "code")
+        exp_codes = _collect_codes(experiences_rows, "category_code")
+        skill_codes = _collect_codes(skills_rows, "category_code") if skills_enabled else set()
+        unknown = (category_codes | exp_codes | skill_codes) - valid_codes
+        if unknown:
+            raise ValueError(
+                "Import blocked: unknown category codes "
+                f"{sorted(unknown)}. Valid codes: {sorted(valid_codes)}."
+            )
+
         # Clear FAISS index files before clearing database
         if self.faiss_index_dir.exists():
             logger.info("Clearing FAISS index files from %s", self.faiss_index_dir)
@@ -78,7 +104,8 @@ class ImportService:
             session.execute(text("DELETE FROM embeddings"))
             session.execute(text("DELETE FROM faiss_metadata"))
             session.execute(text("DELETE FROM experiences"))
-            session.execute(text("DELETE FROM category_skills"))
+            if skills_enabled:
+                session.execute(text("DELETE FROM category_skills"))
             session.execute(text("DELETE FROM categories"))
             session.flush()
         except Exception:
@@ -88,26 +115,26 @@ class ImportService:
             session.execute(text("DELETE FROM embeddings"))
             session.execute(text("DELETE FROM faiss_metadata"))
             session.execute(text("DELETE FROM experiences"))
-            session.execute(text("DELETE FROM category_skills"))
+            if skills_enabled:
+                session.execute(text("DELETE FROM category_skills"))
             session.execute(text("DELETE FROM categories"))
             session.execute(text("PRAGMA foreign_keys=ON"))
             session.flush()
 
         now_iso = utc_now()
 
-        # Import categories
-        categories_count = 0
-        for row in categories_rows:
-            code = self._require_value(row, "code", "Category").upper()
-            name = self._require_value(row, "name", "Category")
-            category = Category(
-                code=code,
-                name=name,
-                description=self._str_or_none(row.get("description")),
-                created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
+        # Seed categories from canonical taxonomy
+        categories = get_categories()
+        for cat in categories:
+            session.add(
+                Category(
+                    code=cat["code"],
+                    name=cat["name"],
+                    description=cat["description"],
+                    created_at=now_iso,
+                )
             )
-            session.add(category)
-            categories_count += 1
+        categories_count = len(categories)
 
         # Import experiences
         experiences_count = 0
@@ -136,31 +163,41 @@ class ImportService:
             session.add(exp)
             experiences_count += 1
 
-        # Import skills
+        # Import skills (if enabled)
         skills_count = 0
-        for row in skills_rows:
-            try:
-                skill = CategorySkill(
-                    id=self._require_value(row, "id", "Skill"),
-                    category_code=self._require_value(row, "category_code", "Skill").upper(),
-                    title=self._require_value(row, "title", "Skill"),
-                    content=self._require_value(row, "content", "Skill"),
-                    summary=self._str_or_none(row.get("summary")),
-                    source=self._str_or_none(row.get("source")) or "local",
-                    sync_status=self._int_or_default(row.get("sync_status"), default=1),
-                    author=self._str_or_none(row.get("author")),
-                    embedding_status="pending",
-                    created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
-                    updated_at=self._datetime_or_none(row.get("updated_at")) or now_iso,
-                    synced_at=self._datetime_or_none(row.get("synced_at")),
-                    exported_at=self._datetime_or_none(row.get("exported_at")),
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Invalid skill row (id={row.get('id', '<missing>')}) - {exc}"
-                ) from exc
-            session.add(skill)
-            skills_count += 1
+        if skills_enabled:
+            for row in skills_rows:
+                try:
+                    name = row.get("name") or row.get("title")
+                    description = row.get("description") or row.get("summary")
+                    if name is None or description is None:
+                        raise ValueError("Missing required fields: name/description")
+                    skill = CategorySkill(
+                        id=self._require_value(row, "id", "Skill"),
+                        category_code=self._require_value(row, "category_code", "Skill").upper(),
+                        name=self._require_value({"name": name}, "name", "Skill"),
+                        description=self._require_value({"description": description}, "description", "Skill"),
+                        content=self._require_value(row, "content", "Skill"),
+                        license=self._str_or_none(row.get("license")),
+                        compatibility=self._str_or_none(row.get("compatibility")),
+                        metadata_json=self._str_or_none(row.get("metadata")),
+                        allowed_tools=self._normalize_allowed_tools(row.get("allowed_tools")),
+                        model=self._str_or_none(row.get("model")),
+                        source=self._str_or_none(row.get("source")) or "local",
+                        sync_status=self._int_or_default(row.get("sync_status"), default=1),
+                        author=self._str_or_none(row.get("author")),
+                        embedding_status="pending",
+                        created_at=self._datetime_or_none(row.get("created_at")) or now_iso,
+                        updated_at=self._datetime_or_none(row.get("updated_at")) or now_iso,
+                        synced_at=self._datetime_or_none(row.get("synced_at")),
+                        exported_at=self._datetime_or_none(row.get("exported_at")),
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid skill row (id={row.get('id', '<missing>')}) - {exc}"
+                    ) from exc
+                session.add(skill)
+                skills_count += 1
 
         session.commit()
 
@@ -184,6 +221,27 @@ class ImportService:
             return None
         value = str(value).strip()
         return value if value else None
+
+    @staticmethod
+    def _normalize_allowed_tools(value: object | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            parts = [str(item).strip() for item in value if str(item).strip()]
+            return json.dumps(parts) if parts else None
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            if raw.startswith("[") and raw.endswith("]"):
+                return raw
+            if "," in raw:
+                parts = [part.strip() for part in raw.split(",")]
+            else:
+                parts = [part.strip() for part in raw.split()]
+            parts = [part for part in parts if part]
+            return json.dumps(parts) if parts else None
+        return json.dumps([str(value).strip()])
 
     @staticmethod
     def _datetime_or_none(value: str | datetime | None) -> datetime | None:

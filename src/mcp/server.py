@@ -223,8 +223,10 @@ def init_server() -> None:
             entity_type = "experience"
             fields = ["playbook", "section", "title"]
         elif upper.startswith("MNL-"):
+            if config and not getattr(config, "skills_enabled", True):
+                raise MCPError("Skills are disabled in this installation.")
             entity_type = "skill"
-            fields = ["content", "summary", "title"]
+            fields = ["content", "name", "description", "license", "compatibility", "metadata", "allowed_tools", "model"]
         else:
             raise MCPError("entry_id must start with EXP- or MNL-")
 
@@ -240,6 +242,8 @@ def init_server() -> None:
         entity_type = entity_type or "experience"
         if entity_type not in {"experience", "skill"}:
             raise MCPError("entity_type must be 'experience' or 'skill'")
+        if entity_type == "skill" and config and not getattr(config, "skills_enabled", True):
+            raise MCPError("Skills are disabled in this installation.")
         limit_int = int(limit)
         resp = read_entries(entity_type=entity_type, category_code=category_code, limit=limit_int)
         return json.dumps(resp, ensure_ascii=False, indent=2)

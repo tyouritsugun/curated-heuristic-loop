@@ -29,6 +29,7 @@ def unified_search(
     request: UnifiedSearchRequest,
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),
+    config=Depends(get_config),
     x_chl_session: Optional[str] = Header(None, alias="X-CHL-Session"),
 ):
     """
@@ -40,6 +41,11 @@ def unified_search(
     try:
         if search_service is None:
             raise HTTPException(status_code=503, detail="Search service not initialized")
+
+        if request.types and "skill" in request.types and not getattr(config, "skills_enabled", True):
+            if request.types == ["skill"]:
+                raise HTTPException(status_code=404, detail="Skills are disabled")
+            request.types = [t for t in request.types if t != "skill"]
 
         # Session ID resolution: header takes precedence over body
         session_id = x_chl_session or request.session_id
@@ -173,13 +179,13 @@ def unified_search(
                     continue
 
                 # Generate heading and snippet
-                heading = extract_heading(entity.content, fallback=entity.title)
+                heading = extract_heading(entity.content, fallback=entity.name)
                 snippet, _ = generate_snippet(entity.content, max_length=request.snippet_len)
 
                 result_dict = {
                     "entity_id": r.entity_id,
                     "entity_type": r.entity_type,
-                    "title": entity.title,
+                    "title": entity.name,
                     "section": None,  # Skills don't have sections
                     "score": r.score or 0.0,
                     "rank": r.rank,
@@ -196,8 +202,8 @@ def unified_search(
                 # Add full bodies if requested via fields
                 if request.fields and "content" in request.fields:
                     result_dict["content"] = entity.content
-                if request.fields and "summary" in request.fields:
-                    result_dict["summary"] = entity.summary
+                if request.fields and "description" in request.fields:
+                    result_dict["description"] = entity.description
 
             else:
                 continue
@@ -268,33 +274,18 @@ def search_health(
 
     # Totals
     report["totals"]["experiences"] = session.query(Experience).count()
-    report["totals"]["skills"] = session.query(CategorySkill).count()
+    report["totals"]["skills"] = 0
+    if getattr(config, "skills_enabled", True):
+        report["totals"]["skills"] = session.query(CategorySkill).count()
 
     # Embedding status (entity tables as source of truth)
-    pending = (
-        session.query(Experience)
-        .filter(Experience.embedding_status == "pending")
-        .count()
-        + session.query(CategorySkill)
-        .filter(CategorySkill.embedding_status == "pending")
-        .count()
-    )
-    embedded = (
-        session.query(Experience)
-        .filter(Experience.embedding_status == "embedded")
-        .count()
-        + session.query(CategorySkill)
-        .filter(CategorySkill.embedding_status == "embedded")
-        .count()
-    )
-    failed = (
-        session.query(Experience)
-        .filter(Experience.embedding_status == "failed")
-        .count()
-        + session.query(CategorySkill)
-        .filter(CategorySkill.embedding_status == "failed")
-        .count()
-    )
+    pending = session.query(Experience).filter(Experience.embedding_status == "pending").count()
+    embedded = session.query(Experience).filter(Experience.embedding_status == "embedded").count()
+    failed = session.query(Experience).filter(Experience.embedding_status == "failed").count()
+    if getattr(config, "skills_enabled", True):
+        pending += session.query(CategorySkill).filter(CategorySkill.embedding_status == "pending").count()
+        embedded += session.query(CategorySkill).filter(CategorySkill.embedding_status == "embedded").count()
+        failed += session.query(CategorySkill).filter(CategorySkill.embedding_status == "failed").count()
     report["embedding_status"] = {
         "pending": pending,
         "embedded": embedded,
@@ -349,6 +340,7 @@ def find_duplicates(
     request: DuplicateCheckRequest,
     session: Session = Depends(get_db_session),
     search_service=Depends(get_search_service),
+    config=Depends(get_config),
 ) -> DuplicateCheckResponse:
     """
     Lightweight duplicate check for a proposed entry.
@@ -360,6 +352,8 @@ def find_duplicates(
         raise HTTPException(status_code=503, detail="Search service not initialized")
 
     try:
+        if request.entity_type == "skill" and not getattr(config, "skills_enabled", True):
+            raise HTTPException(status_code=404, detail="Skills are disabled")
         candidates = search_service.find_duplicates(
             session=session,
             title=request.title,

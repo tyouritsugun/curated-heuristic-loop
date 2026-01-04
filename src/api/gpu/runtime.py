@@ -47,12 +47,14 @@ class GpuOperationsModeAdapter(OperationsModeAdapter):
         vector_provider=None,
         session_factory=None,
         model_name: Optional[str] = None,
+        skills_enabled: bool = True,
     ):
         self._embedding_client = embedding_client
         self._thread_safe_faiss = thread_safe_faiss
         self._vector_provider = vector_provider
         self._session_factory = session_factory
         self._model_name = model_name
+        self._skills_enabled = skills_enabled
 
     def can_run_vector_jobs(self) -> bool:
         return (
@@ -77,6 +79,7 @@ class GpuOperationsModeAdapter(OperationsModeAdapter):
             model_name=self._model_name
             or getattr(self._embedding_client, "model_name", "unknown"),
             faiss_index_manager=self._thread_safe_faiss,
+            skills_enabled=self._skills_enabled,
         )
         return service, session
 
@@ -298,6 +301,7 @@ def _build_worker_stack(
             poll_interval=poll_interval,
             batch_size=batch_size,
             max_tokens=8000,
+            skills_enabled=bool(getattr(config, "skills_enabled", True)),
         )
 
         pool = WorkerPool(worker)
@@ -372,6 +376,7 @@ def build_gpu_runtime(
             vector_provider=vector_provider,
             session_factory=db.get_session,
             model_name=getattr(config, "embedding_model", None),
+            skills_enabled=bool(getattr(config, "skills_enabled", True)),
         ),
         diagnostics_adapter=GpuDiagnosticsAdapter(),
         background_worker=background_worker,

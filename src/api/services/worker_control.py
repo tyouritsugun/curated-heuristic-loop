@@ -17,9 +17,10 @@ class WorkerUnavailableError(RuntimeError):
 class WorkerControlService:
     """Wraps worker pool operations with queue insights."""
 
-    def __init__(self, session_factory, pool_getter=None):
+    def __init__(self, session_factory, pool_getter=None, config=None):
         self._session_factory = session_factory
         self._pool_getter = pool_getter or (lambda: None)
+        self._config = config
 
     def set_pool_getter(self, pool_getter):
         """Dynamically override the worker pool getter."""
@@ -67,11 +68,16 @@ class WorkerControlService:
     def _queue_depth(self, session: Session) -> Dict[str, Any]:
         # Pending and processing are tracked separately for smoother UI feedback
         pending_exp = session.query(Experience).filter(Experience.embedding_status == "pending").count()
-        pending_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "pending").count()
         processing_exp = session.query(Experience).filter(Experience.embedding_status == "processing").count()
-        processing_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "processing").count()
         failed_exp = session.query(Experience).filter(Experience.embedding_status == "failed").count()
-        failed_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "failed").count()
+        skills_enabled = bool(getattr(self._config, "skills_enabled", True))
+        pending_man = 0
+        processing_man = 0
+        failed_man = 0
+        if skills_enabled:
+            pending_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "pending").count()
+            processing_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "processing").count()
+            failed_man = session.query(CategorySkill).filter(CategorySkill.embedding_status == "failed").count()
         return {
             "pending": {
                 "experiences": pending_exp,

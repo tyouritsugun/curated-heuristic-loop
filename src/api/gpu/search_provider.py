@@ -179,10 +179,7 @@ class VectorFAISSProvider(SearchProvider):
     ) -> List[DuplicateCandidate]:
         """Find potential duplicates using vector similarity."""
         try:
-            if entity_type == "experience":
-                query_text = f"{title}\n\n{content}"
-            else:
-                query_text = content
+            query_text = f"{title}\n\n{content}"
 
             try:
                 query_embedding = self.embedding_client.encode_single(query_text)
@@ -224,7 +221,7 @@ class VectorFAISSProvider(SearchProvider):
                 if mapping["entity_type"] == "experience":
                     summary = entity.playbook[:200] if getattr(entity, "playbook", None) else None
                 else:
-                    summary = entity.summary or (
+                    summary = entity.description or (
                         entity.content[:200] if getattr(entity, "content", None) else None
                     )
 
@@ -233,7 +230,7 @@ class VectorFAISSProvider(SearchProvider):
                         "entity_id": mapping["entity_id"],
                         "entity_type": entity_type,
                         "score": float(score),
-                        "title": entity.title,
+                        "title": entity.name if entity_type == "skill" else entity.title,
                         "summary": summary,
                     }
                 )
@@ -337,7 +334,7 @@ class VectorFAISSProvider(SearchProvider):
                     if candidate["entity_type"] == "experience":
                         text = f"{entity.title}\n\n{entity.playbook}"
                     else:
-                        text = entity.content or entity.title
+                        text = f"{entity.name}\n\n{entity.description}\n\n{entity.content}"
                     texts.append(text)
                 else:
                     texts.append("")

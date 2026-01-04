@@ -56,12 +56,12 @@ TOOL_INDEX = [
             "entity_type": "skill",
             "category_code": "PGS",
             "entry_id": "MNL-PGS-20250115-104200123456",
-            "updates": {"summary": "Adds audit checklist step."},
+            "updates": {"description": "Adds audit checklist step."},
         },
     },
     {
         "name": "get_guidelines",
-        "description": "Return the generator or evaluator workflow guide seeded in GLN.",
+        "description": "Return the generator or evaluator workflow guide from local markdown files.",
         "example": {"guide_type": "generator"},
     },
     {
@@ -203,10 +203,23 @@ def build_handshake_payload() -> Dict[str, Any]:
                 "Install ML extras and rebuild embeddings to restore semantic search."
             )
 
+        tool_index = deepcopy(TOOL_INDEX)
+        if config and not getattr(config, "skills_enabled", True):
+            for tool in tool_index:
+                if tool["name"] in {"read_entries", "create_entry", "update_entry", "check_duplicates"}:
+                    tool["description"] = tool["description"].replace("experiences or skills", "experiences")
+                    tool["description"] = tool["description"].replace("experience or skill", "experience")
+                if tool["name"] == "update_entry":
+                    tool["example"] = {
+                        "entity_type": "experience",
+                        "category_code": "PGS",
+                        "entry_id": "EXP-PGS-20250115-104200123456",
+                        "updates": {"playbook": "Adds audit checklist step."},
+                    }
         return {
             "version": SERVER_VERSION,
             "workflow_mode": workflow_mode_payload(),
-            "tool_index": TOOL_INDEX,
+            "tool_index": tool_index,
             "search": search_payload,
             "categories": categories_data.get("categories", []),
             "mode": {

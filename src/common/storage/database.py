@@ -293,6 +293,15 @@ class Database:
             if not _has_column(conn, "worker_metrics", "payload"):
                 _add_column("worker_metrics", "payload", "TEXT")
 
+            # Skill schema guard: ensure category_skills matches new schema
+            if _has_table(conn, "category_skills") and (
+                not _has_column(conn, "category_skills", "name")
+                or not _has_column(conn, "category_skills", "description")
+            ):
+                raise RuntimeError(
+                    "category_skills schema is outdated. Run the skill schema migration in scripts/ to migrate."
+                )
+
 
 # Global database instance (will be initialized by config)
 _db_instance: Database | None = None

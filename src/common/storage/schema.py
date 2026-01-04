@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Boolean,
+    CheckConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -58,12 +59,31 @@ class Experience(Base):
 
 class CategorySkill(Base):
     __tablename__ = "category_skills"
+    __table_args__ = (
+        CheckConstraint("LENGTH(name) BETWEEN 1 AND 64", name="skills_name_length"),
+        CheckConstraint("name = lower(name)", name="skills_name_lowercase"),
+        CheckConstraint("LENGTH(description) BETWEEN 1 AND 1024", name="skills_description_length"),
+        CheckConstraint(
+            "compatibility IS NULL OR LENGTH(compatibility) BETWEEN 1 AND 500",
+            name="skills_compatibility_length",
+        ),
+        CheckConstraint(
+            "name GLOB '[a-z0-9]*' AND name GLOB '*[a-z0-9]' "
+            "AND name NOT GLOB '*--*' AND name NOT GLOB '*[^a-z0-9-]*'",
+            name="skills_name_format",
+        ),
+    )
 
     id = Column(String(64), primary_key=True)
     category_code = Column(String(16), ForeignKey("categories.code"), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
+    name = Column(String(64), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
-    summary = Column(Text, nullable=True)
+    license = Column(String(64), nullable=True)
+    compatibility = Column(String(500), nullable=True)
+    metadata_json = Column("metadata", Text, nullable=True)
+    allowed_tools = Column(Text, nullable=True)
+    model = Column(String(128), nullable=True)
     source = Column(String(32), nullable=False, default="local")
     sync_status = Column(Integer, nullable=False, default=1)
     author = Column(String(255), nullable=True)

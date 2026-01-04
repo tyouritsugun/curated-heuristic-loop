@@ -33,6 +33,8 @@ import sys
 import json
 import logging
 import os
+import shutil
+import sqlite3
 from pathlib import Path
 
 # Ensure repo root is on sys.path
@@ -43,6 +45,7 @@ if root_str not in sys.path:
 
 # Ensure project root is importable and config is available
 from src.common.config.config import ensure_project_root_on_sys_path, get_config  # noqa: E402
+from src.common.config.categories import get_categories  # noqa: E402
 
 ensure_project_root_on_sys_path()
 
@@ -63,21 +66,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Starter category shelves (code, name, description)
-DEFAULT_CATEGORIES = [
-    ("FPD", "figma_page_design", "Capture heuristics for reviewing Figma designs and annotations."),
-    ("DSD", "database_schema_design", "Patterns for relational schema design and evolution."),
-    ("PGS", "page_specification", "End-to-end UX/page specification playbooks."),
-    ("TMG", "ticket_management", "Ticket lifecycle, prioritization, and workflow management."),
-    ("ADG", "architecture_design", "High-level application and system architecture decisions."),
-    ("MGC", "migration_code", "Database/application migration guidance."),
-    ("FTH", "frontend_html", "Frontend HTML/CSS implementation patterns."),
-    ("LPW", "laravel_php_web", "Laravel PHP web app patterns (routes, controllers, models, jobs)."),
-    ("PGT", "python_agent", "Python agent patterns and operational tips."),
-    ("PPT", "playwright_page_test", "Playwright page test strategies."),
-    ("EET", "e2e_test", "End-to-end testing guidance."),
-    ("PRQ", "pull_request", "Pull request authoring and review heuristics."),
-]
+DEFAULT_CATEGORIES = get_categories()
 
 # Sample seed data (inserted only if tables are empty)
 DEFAULT_EXPERIENCES = [
@@ -110,7 +99,8 @@ DEFAULT_EXPERIENCES = [
 DEFAULT_MANUALS = [
     {
         "category_code": "PGS",
-        "title": "Page specification checklist",
+        "name": "page-specification-checklist",
+        "description": "Checklist for drafting a new page specification.",
         "content": (
             "1. Identify primary user goal and success metrics.\n"
             "2. Summarize the user journey covering entry, Happy Path, edge cases.\n"
@@ -118,7 +108,12 @@ DEFAULT_MANUALS = [
             "4. Capture accessibility and performance notes.\n"
             "5. End with open questions and follow-up owners."
         ),
-        "summary": "Checklist the team uses when drafting a new page specification.",
+        "metadata": {
+            "version": "1.0",
+            "author": "CHL Team",
+            "tags": ["checklist", "page-spec", "qa"],
+            "chl.category_code": "PGS",
+        },
     }
 ]
 
@@ -261,11 +256,51 @@ def setup_credentials(config) -> bool:
         return False
 
 
+def _legacy_skill_schema_detected(db_path: Path) -> bool:
+    if not db_path.exists():
+        return False
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='category_skills'"
+            ).fetchone()
+            if row is None:
+                return False
+            columns = {col[1] for col in conn.execute("PRAGMA table_info(category_skills)")}
+            return "name" not in columns or "description" not in columns
+    except Exception as exc:
+        logger.warning("Failed to inspect database schema at %s: %s", db_path, exc)
+        return False
+
+
+def _reset_legacy_db(config) -> None:
+    db_path = Path(config.database_path)
+    if db_path.exists():
+        db_path.unlink()
+        for suffix in ("-wal", "-shm"):
+            stale_path = Path(f"{db_path}{suffix}")
+            if stale_path.exists():
+                stale_path.unlink()
+    print("⚠ Legacy skills schema detected; removed existing DB:")
+    print(f"  {db_path}")
+
+    faiss_dir = Path(config.faiss_index_path)
+    if faiss_dir.exists():
+        shutil.rmtree(faiss_dir)
+        print("⚠ Legacy FAISS index removed:")
+        print(f"  {faiss_dir}")
+        print("  Rebuild embeddings after setup if you need vector search.")
+
+
 def initialize_database(config) -> tuple[bool, dict]:
     """Initialize database and create tables"""
     logger.info("Initializing database...")
 
     try:
+        db_path = Path(config.database_path)
+        if _legacy_skill_schema_detected(db_path):
+            _reset_legacy_db(config)
+
         db = Database(config.database_path, echo=False)
         db.init_database()
         # Ensure base tables exist for fresh installs
@@ -315,9 +350,13 @@ def seed_default_content(config) -> bool:
             category_codes = {c.code for c in categories}
 
             if not categories:
-                for code, name, description in DEFAULT_CATEGORIES:
-                    category_repo.create(code=code, name=name, description=description)
-                    category_codes.add(code)
+                for cat in DEFAULT_CATEGORIES:
+                    category_repo.create(
+                        code=cat["code"],
+                        name=cat["name"],
+                        description=cat["description"],
+                    )
+                    category_codes.add(cat["code"])
                 print(f"✓ Seeded {len(DEFAULT_CATEGORIES)} starter categories")
             else:
                 print(f"  (Categories already present: {len(categories)})")

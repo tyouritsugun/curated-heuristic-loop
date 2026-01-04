@@ -176,13 +176,20 @@ class CategorySkillRepository:
     def create(self, skill_data: dict) -> CategorySkill:
         category_code = skill_data["category_code"]
         now = utc_now()
+        allowed_tools = self._normalize_allowed_tools(skill_data.get("allowed_tools"))
+        metadata = self._normalize_metadata(skill_data.get("metadata"))
 
         skill = CategorySkill(
             id=generate_skill_id(category_code),
             category_code=category_code,
-            title=skill_data["title"],
+            name=skill_data["name"],
+            description=skill_data["description"],
             content=skill_data["content"],
-            summary=skill_data.get("summary"),
+            license=skill_data.get("license"),
+            compatibility=skill_data.get("compatibility"),
+            metadata_json=metadata,
+            allowed_tools=allowed_tools,
+            model=skill_data.get("model"),
             source=skill_data.get("source", "local"),
             sync_status=skill_data.get("sync_status", 1),
             author=skill_data.get("author", get_author()),
@@ -227,24 +234,86 @@ class CategorySkillRepository:
         if skill is None:
             raise ValueError(f"Skill not found: {skill_id}")
 
-        allowed = {"title", "content", "summary"}
+        allowed = {
+            "name",
+            "description",
+            "content",
+            "license",
+            "compatibility",
+            "metadata",
+            "allowed_tools",
+            "model",
+        }
         invalid = set(updates) - allowed
         if invalid:
             raise ValueError(f"Unsupported fields: {', '.join(sorted(invalid))}")
 
-        if "title" in updates:
-            skill.title = str(updates["title"]).strip()
+        if "name" in updates:
+            skill.name = str(updates["name"]).strip()
+        if "description" in updates:
+            skill.description = str(updates["description"]).strip()
         if "content" in updates:
             skill.content = str(updates["content"])
-        if "summary" in updates:
-            summary = updates["summary"]
-            skill.summary = None if summary is None else str(summary)
+        if "license" in updates:
+            license_value = updates["license"]
+            skill.license = None if license_value is None else str(license_value)
+        if "compatibility" in updates:
+            compatibility = updates["compatibility"]
+            skill.compatibility = None if compatibility is None else str(compatibility)
+        if "metadata" in updates:
+            skill.metadata_json = self._normalize_metadata(updates.get("metadata"))
+        if "allowed_tools" in updates:
+            skill.allowed_tools = self._normalize_allowed_tools(updates.get("allowed_tools"))
+        if "model" in updates:
+            model_value = updates["model"]
+            skill.model = None if model_value is None else str(model_value)
 
         # Any update to a skill should trigger re-embedding.
         skill.embedding_status = "pending"
         skill.updated_at = utc_now()
         self.session.flush()
         return skill
+
+    @staticmethod
+    def _normalize_allowed_tools(value: object | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return json.dumps([str(item).strip() for item in value if str(item).strip()])
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            # Accept comma- or space-delimited strings and normalize to JSON list.
+            if "," in raw:
+                parts = [part.strip() for part in raw.split(",")]
+            else:
+                parts = [part.strip() for part in raw.split()]
+            parts = [part for part in parts if part]
+            return json.dumps(parts) if parts else None
+        return json.dumps([str(value).strip()])
+
+    @staticmethod
+    def _normalize_metadata(value: object | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        if isinstance(value, dict):
+            flattened: dict[str, object] = {}
+
+            def _flatten(obj: dict, prefix: str = "") -> None:
+                for key, item in obj.items():
+                    key_name = f"{prefix}.{key}" if prefix else str(key)
+                    if isinstance(item, dict):
+                        _flatten(item, key_name)
+                    else:
+                        flattened[key_name] = item
+
+            _flatten(value)
+            return json.dumps(flattened, ensure_ascii=False)
+        return json.dumps({"value": value}, ensure_ascii=False)
 
 
 class EmbeddingRepository:
