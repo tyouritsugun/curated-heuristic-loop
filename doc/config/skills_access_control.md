@@ -92,5 +92,5 @@ export CHL_SKILLS_ENABLED=false
 
 ## See Also
 
-- [Skill Import/Export Plan](../plan/1_skill_import_export.md)
+- [Skill Import/Export Plan](../plan/2_skill_import_export.md)
 - [Skill Curation Preparation](../plan/0_skill_curation_prepare.md)
