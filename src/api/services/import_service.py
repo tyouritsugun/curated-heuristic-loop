@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -167,12 +168,21 @@ class ImportService:
         if skills_enabled:
             for row in skills_rows:
                 try:
+                    name = row.get("name") or row.get("title")
+                    description = row.get("description") or row.get("summary")
+                    if name is None or description is None:
+                        raise ValueError("Missing required fields: name/description")
                     skill = CategorySkill(
                         id=self._require_value(row, "id", "Skill"),
                         category_code=self._require_value(row, "category_code", "Skill").upper(),
-                        title=self._require_value(row, "title", "Skill"),
+                        name=self._require_value({"name": name}, "name", "Skill"),
+                        description=self._require_value({"description": description}, "description", "Skill"),
                         content=self._require_value(row, "content", "Skill"),
-                        summary=self._str_or_none(row.get("summary")),
+                        license=self._str_or_none(row.get("license")),
+                        compatibility=self._str_or_none(row.get("compatibility")),
+                        metadata_json=self._str_or_none(row.get("metadata")),
+                        allowed_tools=self._normalize_allowed_tools(row.get("allowed_tools")),
+                        model=self._str_or_none(row.get("model")),
                         source=self._str_or_none(row.get("source")) or "local",
                         sync_status=self._int_or_default(row.get("sync_status"), default=1),
                         author=self._str_or_none(row.get("author")),
@@ -211,6 +221,27 @@ class ImportService:
             return None
         value = str(value).strip()
         return value if value else None
+
+    @staticmethod
+    def _normalize_allowed_tools(value: object | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            parts = [str(item).strip() for item in value if str(item).strip()]
+            return json.dumps(parts) if parts else None
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            if raw.startswith("[") and raw.endswith("]"):
+                return raw
+            if "," in raw:
+                parts = [part.strip() for part in raw.split(",")]
+            else:
+                parts = [part.strip() for part in raw.split()]
+            parts = [part for part in parts if part]
+            return json.dumps(parts) if parts else None
+        return json.dumps([str(value).strip()])
 
     @staticmethod
     def _datetime_or_none(value: str | datetime | None) -> datetime | None:

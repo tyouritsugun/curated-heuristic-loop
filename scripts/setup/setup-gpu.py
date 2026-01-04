@@ -152,7 +152,8 @@ DEFAULT_EXPERIENCES = [
 DEFAULT_MANUALS = [
     {
         "category_code": "PGS",
-        "title": "Page specification checklist",
+        "name": "page-specification-checklist",
+        "description": "Checklist for drafting a new page specification.",
         "content": (
             "1. Identify primary user goal and success metrics.\n"
             "2. Summarize the user journey covering entry, Happy Path, edge cases.\n"
@@ -160,7 +161,12 @@ DEFAULT_MANUALS = [
             "4. Capture accessibility and performance notes.\n"
             "5. End with open questions and follow-up owners."
         ),
-        "summary": "Checklist the team uses when drafting a new page specification.",
+        "metadata": {
+            "version": "1.0",
+            "author": "CHL Team",
+            "tags": ["checklist", "page-spec", "qa"],
+            "chl.category_code": "PGS",
+        },
     }
 ]
 

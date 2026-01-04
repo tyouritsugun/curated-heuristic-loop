@@ -89,13 +89,20 @@ def read_entries(
                         filtered["playbook_truncated"] = entry.get("playbook_truncated", False)
                     filtered_entries.append(filtered)
                 else:  # skill
-                    # Skills: id, title, content (or content_preview if not full)
-                    filtered = {"id": entry.get("id"), "title": entry.get("title")}
+                    # Skills: id, name, description, content (or content_preview if not full)
+                    filtered = {
+                        "id": entry.get("id"),
+                        "name": entry.get("name"),
+                        "description": entry.get("description"),
+                    }
                     if "content" in entry:
                         filtered["content"] = entry["content"]
                     elif "content_preview" in entry:
                         filtered["content_preview"] = entry["content_preview"]
                         filtered["content_truncated"] = entry.get("content_truncated", False)
+                    for key in ("license", "compatibility", "metadata", "allowed_tools", "model"):
+                        if key in entry:
+                            filtered[key] = entry.get(key)
                     filtered_entries.append(filtered)
 
             response["entries"] = filtered_entries
@@ -169,7 +176,7 @@ def update_entry(
 
     Allowed fields:
         - experience: title, playbook, context, section (use force_contextual=true to set section='contextual')
-        - skill: title, content, summary
+        - skill: name, description, content, license, compatibility, metadata, allowed_tools, model
     """
     try:
         if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):

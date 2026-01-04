@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import logging
+import re
 
 from src.api.dependencies import get_db_session, get_search_service, get_config
 from src.api.models import (
@@ -21,7 +22,12 @@ from src.common.storage.repository import (
     ExperienceRepository,
     CategorySkillRepository,
 )
-from src.common.dto.models import ExperienceWritePayload, format_validation_error, normalize_context
+from src.common.dto.models import (
+    ExperienceWritePayload,
+    SkillWritePayload,
+    format_validation_error,
+    normalize_context,
+)
 from src.common.config.categories import get_categories
 from pydantic import ValidationError as PydanticValidationError
 
@@ -237,7 +243,8 @@ def read_entries(
 
                     entry = {
                         "id": man.id,
-                        "title": man.title,
+                        "name": man.name,
+                        "description": man.description,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
@@ -261,8 +268,16 @@ def read_entries(
 
                         if "content" in request.fields:
                             entry["content"] = man.content
-                        if "summary" in request.fields:
-                            entry["summary"] = man.summary
+                        if "license" in request.fields:
+                            entry["license"] = man.license
+                        if "compatibility" in request.fields:
+                            entry["compatibility"] = man.compatibility
+                        if "metadata" in request.fields:
+                            entry["metadata"] = man.metadata_json
+                        if "allowed_tools" in request.fields:
+                            entry["allowed_tools"] = man.allowed_tools
+                        if "model" in request.fields:
+                            entry["model"] = man.model
 
                     entries.append(entry)
             else:
@@ -288,7 +303,8 @@ def read_entries(
 
                     entry = {
                         "id": man.id,
-                        "title": man.title,
+                        "name": man.name,
+                        "description": man.description,
                         "embedding_status": getattr(man, "embedding_status", None),
                         "updated_at": man.updated_at,
                         "author": man.author,
@@ -306,8 +322,16 @@ def read_entries(
 
                         if "content" in request.fields:
                             entry["content"] = man.content
-                        if "summary" in request.fields:
-                            entry["summary"] = man.summary
+                        if "license" in request.fields:
+                            entry["license"] = man.license
+                        if "compatibility" in request.fields:
+                            entry["compatibility"] = man.compatibility
+                        if "metadata" in request.fields:
+                            entry["metadata"] = man.metadata_json
+                        if "allowed_tools" in request.fields:
+                            entry["allowed_tools"] = man.allowed_tools
+                        if "model" in request.fields:
+                            entry["model"] = man.model
 
                     entries.append(entry)
 
@@ -486,21 +510,14 @@ def create_entry(
             )
 
         elif request.entity_type == "skill":
-            # Basic validation
-            title = request.data.get("title")
-            content = request.data.get("content")
-            summary = request.data.get("summary")
-
-            if not title or len(title) > 120:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Title must be 1-120 characters"
-                )
-            if not content:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Content cannot be empty"
-                )
+            # Validate skill payload
+            try:
+                validated = SkillWritePayload.model_validate({**request.data})
+            except PydanticValidationError as exc:
+                raise HTTPException(status_code=400, detail=format_validation_error(exc))
+            name = validated.name
+            description = validated.description
+            content = validated.content
 
             cat_repo = CategoryRepository(session)
             category = cat_repo.get_by_code(request.category_code)
@@ -521,10 +538,12 @@ def create_entry(
 
                 def run_duplicate_check():
                     try:
+                        duplicate_title = name
+                        duplicate_content = f"{description}\n\n{content}".strip()
                         result_container["candidates"] = search_service.find_duplicates(
                             session=session,
-                            title=title,
-                            content=content,
+                            title=duplicate_title,
+                            content=duplicate_content,
                             entity_type="skill",
                             category_code=request.category_code,
                             exclude_id=None,
@@ -552,17 +571,27 @@ def create_entry(
             skill_repo = CategorySkillRepository(session)
             new_skill = skill_repo.create({
                 "category_code": request.category_code,
-                "title": title,
+                "name": name,
+                "description": description,
                 "content": content,
-                "summary": summary,
+                "license": validated.license,
+                "compatibility": validated.compatibility,
+                "metadata": validated.metadata,
+                "allowed_tools": validated.allowed_tools,
+                "model": validated.model,
             })
             skill_id = new_skill.id
 
             skill_dict = {
                 "id": new_skill.id,
-                "title": new_skill.title,
+                "name": new_skill.name,
+                "description": new_skill.description,
                 "content": new_skill.content,
-                "summary": new_skill.summary,
+                "license": new_skill.license,
+                "compatibility": new_skill.compatibility,
+                "metadata": new_skill.metadata_json,
+                "allowed_tools": new_skill.allowed_tools,
+                "model": new_skill.model,
                 "embedding_status": getattr(new_skill, "embedding_status", None),
                 "updated_at": new_skill.updated_at,
                 "author": new_skill.author,
@@ -694,7 +723,16 @@ def update_entry(
             )
 
         elif request.entity_type == "skill":
-            allowed_fields = {"title", "content", "summary"}
+            allowed_fields = {
+                "name",
+                "description",
+                "content",
+                "license",
+                "compatibility",
+                "metadata",
+                "allowed_tools",
+                "model",
+            }
             if not request.updates:
                 raise HTTPException(status_code=400, detail="No updates provided")
             invalid = set(request.updates.keys()) - allowed_fields
@@ -704,6 +742,24 @@ def update_entry(
                     detail=f"Unsupported update fields: {', '.join(sorted(invalid))}"
                 )
 
+            if "name" in request.updates:
+                name_value = str(request.updates["name"]).strip()
+                if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name_value):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="name must be lowercase kebab-case (a-z0-9, hyphens, no consecutive hyphens)",
+                    )
+                request.updates["name"] = name_value
+
+            if "description" in request.updates:
+                desc_value = str(request.updates["description"]).strip()
+                if not (1 <= len(desc_value) <= 1024):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="description must be 1-1024 characters",
+                    )
+                request.updates["description"] = desc_value
+
             skill_repo = CategorySkillRepository(session)
             try:
                 updated = skill_repo.update(request.entry_id, dict(request.updates))
@@ -712,9 +768,14 @@ def update_entry(
 
             skill_dict = {
                 "id": updated.id,
-                "title": updated.title,
+                "name": updated.name,
+                "description": updated.description,
                 "content": updated.content,
-                "summary": updated.summary,
+                "license": updated.license,
+                "compatibility": updated.compatibility,
+                "metadata": updated.metadata_json,
+                "allowed_tools": updated.allowed_tools,
+                "model": updated.model,
                 "embedding_status": getattr(updated, "embedding_status", None),
                 "updated_at": updated.updated_at,
                 "author": updated.author,
@@ -746,7 +807,7 @@ def export_entries(
 ) -> Dict[str, Any]:
     """Export all entries for Sheets/backup clients.
 
-    Returns all experiences, skills, and categories in a format suitable
+    Returns all experiences and skills in a format suitable
     for exporting to Google Sheets or other external systems.
     """
     try:
@@ -757,7 +818,6 @@ def export_entries(
         skills = []
         if getattr(config, "skills_enabled", True):
             skills = session.query(CategorySkill).all()
-        categories = get_categories()
 
         # Serialize to dicts
         experiences_data = []
@@ -784,9 +844,14 @@ def export_entries(
             skills_data.append({
                 "id": skill.id,
                 "category_code": skill.category_code,
-                "title": skill.title,
+                "name": skill.name,
+                "description": skill.description,
                 "content": skill.content,
-                "summary": skill.summary,
+                "license": skill.license,
+                "compatibility": skill.compatibility,
+                "metadata": skill.metadata_json,
+                "allowed_tools": skill.allowed_tools,
+                "model": skill.model,
                 "source": skill.source,
                 "sync_status": skill.sync_status,
                 "author": skill.author,
@@ -797,23 +862,12 @@ def export_entries(
                 "exported_at": skill.exported_at,
             })
 
-        categories_data = []
-        for cat in categories:
-            categories_data.append({
-                "code": cat["code"],
-                "name": cat["name"],
-                "description": cat["description"],
-                "created_at": None,
-            })
-
         return {
             "experiences": experiences_data,
             "skills": skills_data,
-            "categories": categories_data,
             "count": {
                 "experiences": len(experiences_data),
                 "skills": len(skills_data),
-                "categories": len(categories_data),
             }
         }
 
@@ -830,7 +884,6 @@ def export_entries_csv(
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
     Returns a zip file named {username}.export.zip containing:
-    - {username}/categories.csv
     - {username}/experiences.csv
     - {username}/skills.csv
     """
@@ -852,28 +905,11 @@ def export_entries_csv(
         skills = []
         if getattr(config, "skills_enabled", True):
             skills = session.query(CategorySkill).all()
-        categories = get_categories()
 
         # Create in-memory zip file
         zip_buffer = io.BytesIO()
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # Export categories
-            if categories:
-                csv_buffer = io.StringIO()
-                writer = csv.DictWriter(csv_buffer, fieldnames=[
-                    "code", "name", "description", "created_at"
-                ])
-                writer.writeheader()
-                for cat in categories:
-                    writer.writerow({
-                        "code": cat["code"],
-                        "name": cat["name"],
-                        "description": cat["description"],
-                        "created_at": "",
-                    })
-                zip_file.writestr(f"{username}/categories.csv", csv_buffer.getvalue())
-
             # Export experiences
             if experiences:
                 csv_buffer = io.StringIO()
@@ -905,7 +941,16 @@ def export_entries_csv(
             if skills:
                 csv_buffer = io.StringIO()
                 writer = csv.DictWriter(csv_buffer, fieldnames=[
-                    "id", "category_code", "title", "content", "summary",
+                    "id",
+                    "category_code",
+                    "name",
+                    "description",
+                    "content",
+                    "license",
+                    "compatibility",
+                    "metadata",
+                    "allowed_tools",
+                    "model",
                     "source", "author", "embedding_status",
                     "created_at", "updated_at", "synced_at", "exported_at"
                 ])
@@ -914,9 +959,14 @@ def export_entries_csv(
                     writer.writerow({
                         "id": skill.id,
                         "category_code": skill.category_code,
-                        "title": skill.title,
+                        "name": skill.name,
+                        "description": skill.description,
                         "content": skill.content,
-                        "summary": skill.summary or "",
+                        "license": skill.license or "",
+                        "compatibility": skill.compatibility or "",
+                        "metadata": skill.metadata_json or "",
+                        "allowed_tools": skill.allowed_tools or "",
+                        "model": skill.model or "",
                         "source": skill.source or "",
                         "author": skill.author or "",
                         "embedding_status": skill.embedding_status or "",
@@ -932,9 +982,8 @@ def export_entries_csv(
         filename = f"{username}.zip"
 
         logger.info(
-            "CSV export created for user=%s: %d categories, %d experiences, %d skills",
+            "CSV export created for user=%s: %d experiences, %d skills",
             username,
-            len(categories),
             len(experiences),
             len(skills),
         )

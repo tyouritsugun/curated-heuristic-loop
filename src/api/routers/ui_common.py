@@ -609,12 +609,12 @@ def _get_env_config_status(
     import_sheet_id = os.getenv("IMPORT_SPREADSHEET_ID", "")
     export_sheet_id = os.getenv("EXPORT_SPREADSHEET_ID", "")
 
-    import_worksheets = [os.getenv("IMPORT_WORKSHEET_CATEGORIES", "Categories"), os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences")]
+    import_worksheets = [os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences")]
     if skills_enabled:
         import_worksheets.append(os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_MANUALS", "Skills")))
     import_worksheets = ", ".join(import_worksheets)
 
-    export_worksheets = [os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories"), os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")]
+    export_worksheets = [os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")]
     if skills_enabled:
         export_worksheets.append(os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills")))
     export_worksheets = ", ".join(export_worksheets)

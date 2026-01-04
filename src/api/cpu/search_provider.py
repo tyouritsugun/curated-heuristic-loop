@@ -123,18 +123,18 @@ class SQLiteTextProvider(SearchProvider):
 
         filters = [
             or_(
-                CategorySkill.title.like(pattern),
+                CategorySkill.name.like(pattern),
+                CategorySkill.description.like(pattern),
                 CategorySkill.content.like(pattern),
-                CategorySkill.summary.like(pattern),
             )
         ]
         for token in tokens:
             token_pattern = f"%{token}%"
             filters.append(
                 or_(
-                    CategorySkill.title.ilike(token_pattern),
+                    CategorySkill.name.ilike(token_pattern),
+                    CategorySkill.description.ilike(token_pattern),
                     CategorySkill.content.ilike(token_pattern),
-                    CategorySkill.summary.ilike(token_pattern),
                 )
             )
 
@@ -239,7 +239,7 @@ class SQLiteTextProvider(SearchProvider):
     ) -> List[DuplicateCandidate]:
         candidates: List[DuplicateCandidate] = []
 
-        q = session.query(CategorySkill).filter(CategorySkill.title.ilike(title))
+        q = session.query(CategorySkill).filter(CategorySkill.name.ilike(title))
         if category_code:
             q = q.filter(CategorySkill.category_code == category_code)
         if exclude_id:
@@ -253,14 +253,14 @@ class SQLiteTextProvider(SearchProvider):
                     score=1.0,
                     reason=SearchReason.TEXT_DUPLICATE,
                     provider="sqlite_text",
-                    title=skill.title,
-                    summary=skill.summary or (skill.content[:200] if skill.content else None),
+                    title=skill.name,
+                    summary=skill.description or (skill.content[:200] if skill.content else None),
                 )
             )
 
         if not candidates:
             pattern = f"%{title}%"
-            q = session.query(CategorySkill).filter(CategorySkill.title.like(pattern))
+            q = session.query(CategorySkill).filter(CategorySkill.name.like(pattern))
             if category_code:
                 q = q.filter(CategorySkill.category_code == category_code)
             if exclude_id:
@@ -274,8 +274,8 @@ class SQLiteTextProvider(SearchProvider):
                         score=0.75,
                         reason=SearchReason.TEXT_DUPLICATE,
                         provider="sqlite_text",
-                        title=skill.title,
-                        summary=skill.summary or (skill.content[:200] if skill.content else None),
+                        title=skill.name,
+                        summary=skill.description or (skill.content[:200] if skill.content else None),
                     )
                 )
 

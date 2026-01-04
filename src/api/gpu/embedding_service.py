@@ -181,7 +181,7 @@ class EmbeddingService:
                 except Exception:
                     pass
 
-            content = skill.content
+            content = f"{skill.name}\n\n{skill.description}\n\n{skill.content}"
             try:
                 embedding = self.embedding_client.encode_single(content)
             except EmbeddingClientError as exc:

@@ -56,7 +56,7 @@ TOOL_INDEX = [
             "entity_type": "skill",
             "category_code": "PGS",
             "entry_id": "MNL-PGS-20250115-104200123456",
-            "updates": {"summary": "Adds audit checklist step."},
+            "updates": {"description": "Adds audit checklist step."},
         },
     },
     {

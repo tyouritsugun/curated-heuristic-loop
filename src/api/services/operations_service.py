@@ -375,7 +375,7 @@ class OperationsService:
             skills_enabled = bool(getattr(config, "skills_enabled", True))
 
             # Get sheets data from payload (sent by HTTP client)
-            categories_rows = payload.get("categories") or []
+            categories_rows: list[dict] = []
             experiences_rows = payload.get("experiences") or []
             skills_rows = payload.get("skills") or payload.get("manuals") or []
             if not skills_enabled:
@@ -408,7 +408,6 @@ class OperationsService:
                 sheets_client = SheetsClient(str(credentials_path))
 
                 # Fetch from configured worksheets
-                categories_rows = sheets_client.read_worksheet(spreadsheet_id, "Categories")
                 experiences_rows = sheets_client.read_worksheet(spreadsheet_id, "Experiences")
 
                 if skills_enabled:
@@ -420,8 +419,7 @@ class OperationsService:
                     skills_rows = []
 
                 logger.info(
-                    "Fetched from Google Sheets: %d categories, %d experiences, %d skills",
-                    len(categories_rows),
+                    "Fetched from Google Sheets: %d experiences, %d skills",
                     len(experiences_rows),
                     len(skills_rows),
                 )
@@ -429,7 +427,7 @@ class OperationsService:
                 if not experiences_rows and not skills_rows:
                     return {
                         "success": True,
-                        "counts": {"categories": 0, "experiences": 0, "skills": 0},
+                        "counts": {"experiences": 0, "skills": 0},
                         "message": "No data found in Google Sheets",
                     }
 
@@ -456,8 +454,8 @@ class OperationsService:
 
             return {
                 "success": True,
-                "counts": counts,
-                "message": f"Imported {counts['experiences']} experiences, {counts['skills']} skills, {counts['categories']} categories"
+                "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
+                "message": f"Imported {counts['experiences']} experiences, {counts['skills']} skills",
             }
 
         except Exception as exc:
@@ -572,8 +570,7 @@ class OperationsService:
         config = get_config()
         skills_enabled = bool(getattr(config, "skills_enabled", True))
 
-        # Query data from database (categories from canonical taxonomy)
-        categories = get_categories()
+        # Query data from database (categories are code-defined; not exported)
         experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
         skills = []
         if skills_enabled:
@@ -583,23 +580,8 @@ class OperationsService:
         sheets_client = SheetsClient(str(credentials_path))
 
         # Get worksheet names from environment (with defaults)
-        categories_worksheet = os.getenv("EXPORT_WORKSHEET_CATEGORIES", "Categories")
         experiences_worksheet = os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")
         skills_worksheet = os.getenv("EXPORT_WORKSHEET_SKILLS", "Skills")
-
-        # Export Categories
-        categories_headers = ["code", "name", "description", "created_at"]
-        categories_rows = [
-            [cat["code"], cat["name"], cat["description"], ""]
-            for cat in categories
-        ]
-        sheets_client.write_worksheet(
-            spreadsheet_id,
-            categories_worksheet,
-            categories_headers,
-            categories_rows,
-            readonly_cols=[3],  # created_at is readonly
-        )
 
         # Export Experiences
         experiences_headers = ["id", "category_code", "section", "title", "playbook", "context", "updated_at", "author", "source"]
@@ -627,14 +609,32 @@ class OperationsService:
 
         # Export Skills (if enabled)
         if skills_enabled:
-            skills_headers = ["id", "category_code", "title", "content", "summary", "updated_at", "author"]
+            skills_headers = [
+                "id",
+                "category_code",
+                "name",
+                "description",
+                "content",
+                "license",
+                "compatibility",
+                "metadata",
+                "allowed_tools",
+                "model",
+                "updated_at",
+                "author",
+            ]
             skills_rows = [
                 [
                     skill.id,
                     skill.category_code,
-                    skill.title,
+                    skill.name,
+                    skill.description,
                     skill.content or "",
-                    skill.summary or "",
+                    skill.license or "",
+                    skill.compatibility or "",
+                    skill.metadata_json or "",
+                    skill.allowed_tools or "",
+                    skill.model or "",
                     skill.updated_at.isoformat() if skill.updated_at else "",
                     skill.author or "",
                 ]
@@ -645,12 +645,11 @@ class OperationsService:
                 skills_worksheet,
                 skills_headers,
                 skills_rows,
-                readonly_cols=[0, 5],  # id and updated_at are readonly
+                readonly_cols=[0, 10],  # id and updated_at are readonly
             )
 
         logger.info(
-            "Export completed: %d categories, %d experiences, %d skills to spreadsheet %s",
-            len(categories),
+            "Export completed: %d experiences, %d skills to spreadsheet %s",
             len(experiences),
             len(skills),
             spreadsheet_id[:8],
@@ -661,9 +660,8 @@ class OperationsService:
             "counts": {
                 "experiences": len(experiences),
                 "skills": len(skills),
-                "categories": len(categories),
             },
-            "message": f"Exported to Google Sheets: {len(categories)} categories, {len(experiences)} experiences, {len(skills)} skills",
+            "message": f"Exported to Google Sheets: {len(experiences)} experiences, {len(skills)} skills",
         }
 
     def _import_excel_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
@@ -710,15 +708,8 @@ class OperationsService:
                 logger.info(f"File {file_path} might be .xls format, proceeding with import attempt")
 
             # Read Excel file - assume same structure as Google Sheets
-            # Categories sheet is optional (taxonomy is code-defined)
-            categories_df = pd.DataFrame()
             experiences_df = pd.DataFrame()
             skills_df = pd.DataFrame()
-
-            try:
-                categories_df = pd.read_excel(file_path, sheet_name='Categories', engine='openpyxl')
-            except Exception:
-                logger.info("Categories sheet not found or unreadable; skipping.")
 
             try:
                 experiences_df = pd.read_excel(file_path, sheet_name='Experiences', engine='openpyxl')
@@ -735,7 +726,7 @@ class OperationsService:
                         skills_df = pd.DataFrame()
 
             # Convert DataFrames to the format expected by import_service
-            categories_rows = categories_df.to_dict('records') if not categories_df.empty else []
+            categories_rows = []
             experiences_rows = experiences_df.to_dict('records') if not experiences_df.empty else []
             skills_rows = skills_df.to_dict('records') if not skills_df.empty else []
 
@@ -762,8 +753,8 @@ class OperationsService:
 
             return {
                 "success": True,
-                "counts": counts,
-                "message": f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills, {counts['categories']} categories"
+                "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
+                "message": f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills",
             }
 
         except Exception as exc:
@@ -798,23 +789,12 @@ class OperationsService:
             export_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Query all data from database (categories from canonical taxonomy)
-            categories = get_categories()
             experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
             skills = []
             if skills_enabled:
                 skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
 
             # Convert to DataFrames
-            categories_data = []
-            for cat in categories:
-                categories_data.append({
-                    "code": cat["code"],
-                    "name": cat["name"],
-                    "description": cat["description"],
-                    "created_at": "",
-                })
-            categories_df = pd.DataFrame(categories_data)
-
             experiences_data = []
             for exp in experiences:
                 experiences_data.append({
@@ -837,9 +817,14 @@ class OperationsService:
                     skills_data.append({
                         "id": skill.id,
                         "category_code": skill.category_code,
-                        "title": skill.title,
+                        "name": skill.name,
+                        "description": skill.description,
                         "content": skill.content or "",
-                        "summary": skill.summary or "",
+                        "license": skill.license or "",
+                        "compatibility": skill.compatibility or "",
+                        "metadata": skill.metadata_json or "",
+                        "allowed_tools": skill.allowed_tools or "",
+                        "model": skill.model or "",
                         "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
                         "author": skill.author or "",
                     })
@@ -847,14 +832,12 @@ class OperationsService:
 
             # Write to Excel file with multiple sheets
             with pd.ExcelWriter(export_path, engine='openpyxl') as writer:
-                categories_df.to_excel(writer, sheet_name='Categories', index=False)
                 experiences_df.to_excel(writer, sheet_name='Experiences', index=False)
                 if skills_enabled:
                     skills_df.to_excel(writer, sheet_name='Skills', index=False)
 
             logger.info(
-                "Excel export completed: %d categories, %d experiences, %d skills to %s",
-                len(categories),
+                "Excel export completed: %d experiences, %d skills to %s",
                 len(experiences),
                 len(skills),
                 export_path,
@@ -866,9 +849,8 @@ class OperationsService:
                 "counts": {
                     "experiences": len(experiences),
                     "skills": len(skills),
-                    "categories": len(categories),
                 },
-                "message": f"Exported to Excel: {len(categories)} categories, {len(experiences)} experiences, {len(skills)} skills",
+                "message": f"Exported to Excel: {len(experiences)} experiences, {len(skills)} skills",
             }
 
         except Exception as exc:

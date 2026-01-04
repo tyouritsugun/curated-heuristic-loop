@@ -226,7 +226,7 @@ def init_server() -> None:
             if config and not getattr(config, "skills_enabled", True):
                 raise MCPError("Skills are disabled in this installation.")
             entity_type = "skill"
-            fields = ["content", "summary", "title"]
+            fields = ["content", "name", "description", "license", "compatibility", "metadata", "allowed_tools", "model"]
         else:
             raise MCPError("entry_id must start with EXP- or MNL-")
 

@@ -179,13 +179,13 @@ def unified_search(
                     continue
 
                 # Generate heading and snippet
-                heading = extract_heading(entity.content, fallback=entity.title)
+                heading = extract_heading(entity.content, fallback=entity.name)
                 snippet, _ = generate_snippet(entity.content, max_length=request.snippet_len)
 
                 result_dict = {
                     "entity_id": r.entity_id,
                     "entity_type": r.entity_type,
-                    "title": entity.title,
+                    "title": entity.name,
                     "section": None,  # Skills don't have sections
                     "score": r.score or 0.0,
                     "rank": r.rank,
@@ -202,8 +202,8 @@ def unified_search(
                 # Add full bodies if requested via fields
                 if request.fields and "content" in request.fields:
                     result_dict["content"] = entity.content
-                if request.fields and "summary" in request.fields:
-                    result_dict["summary"] = entity.summary
+                if request.fields and "description" in request.fields:
+                    result_dict["description"] = entity.description
 
             else:
                 continue
