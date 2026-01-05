@@ -20,6 +20,7 @@ import argparse
 import csv
 import sys
 import shutil
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.common.storage.database import Database
 from src.common.storage.schema import Category, Experience, CategorySkill
+from src.common.config.categories import get_categories
 from scripts._config_loader import load_scripts_config
 
 
@@ -84,6 +86,12 @@ def parse_datetime(dt_str: str):
         return dt
     except (ValueError, AttributeError):
         return None
+
+
+def slugify(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
+    text = re.sub(r"-{2,}", "-", text).strip("-")
+    return text
 
 
 def main():
@@ -155,27 +163,40 @@ def main():
     session = Session()
 
     try:
-        # Import categories
+        # Import categories (prefer merged CSV if present; else seed from canonical taxonomy)
         print("Importing categories...")
         skipped_categories = 0
-        for row in categories_data:
-            code = (row.get("code") or "").strip()
-            name = (row.get("name") or "").strip()
-            if not code or not name:
-                skipped_categories += 1
-                continue
-            category = Category(
-                code=code,
-                name=name,
-                description=row.get("description") or None,
-                created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
-            )
-            session.add(category)
-
-        session.commit()
-        print(f"✓ Imported {len(categories_data) - skipped_categories} categories")
-        if skipped_categories:
-            print(f"  Skipped {skipped_categories} empty/invalid category rows")
+        if categories_data:
+            for row in categories_data:
+                code = (row.get("code") or "").strip()
+                name = (row.get("name") or "").strip()
+                if not code or not name:
+                    skipped_categories += 1
+                    continue
+                category = Category(
+                    code=code,
+                    name=name,
+                    description=row.get("description") or None,
+                    created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+                )
+                session.add(category)
+            session.commit()
+            print(f"✓ Imported {len(categories_data) - skipped_categories} categories")
+            if skipped_categories:
+                print(f"  Skipped {skipped_categories} empty/invalid category rows")
+        else:
+            categories = get_categories()
+            for cat in categories:
+                session.add(
+                    Category(
+                        code=cat["code"],
+                        name=cat["name"],
+                        description=cat["description"],
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+            session.commit()
+            print(f"✓ Seeded {len(categories)} categories from canonical taxonomy")
         print()
 
         # Import experiences
@@ -218,20 +239,36 @@ def main():
         # Import skills
         print("Importing skills...")
         skipped_skills = 0
+        used_names = set()
         for row in skills_data:
             skill_id = (row.get("id") or "").strip()
             category_code = (row.get("category_code") or "").strip()
-            title = (row.get("title") or "").strip()
+            name_raw = (row.get("name") or row.get("title") or "").strip()
+            description = (row.get("description") or row.get("summary") or "").strip()
             content = (row.get("content") or "").strip()
-            if not skill_id or not category_code or not title or not content:
+            if not skill_id or not category_code or not name_raw or not description or not content:
                 skipped_skills += 1
                 continue
+            name = slugify(name_raw)
+            if not name:
+                name = slugify(skill_id) or skill_id.lower()
+            base_name = name
+            counter = 2
+            while name in used_names:
+                name = f"{base_name}-{counter}"
+                counter += 1
+            used_names.add(name)
             skill = CategorySkill(
                 id=skill_id,
                 category_code=category_code,
-                title=title,
+                name=name,
+                description=description,
                 content=content,
-                summary=row.get("summary") or None,
+                license=row.get("license") or None,
+                compatibility=row.get("compatibility") or None,
+                metadata_json=row.get("metadata") or None,
+                allowed_tools=row.get("allowed_tools") or None,
+                model=row.get("model") or None,
                 source=row.get("source") or "local",
                 sync_status=0,  # Always set to 0 (PENDING) for curation regardless of source value
                 author=row.get("author") or None,

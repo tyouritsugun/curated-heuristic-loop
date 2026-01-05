@@ -15,6 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-atomicity-pre-pass", action="store_true", help="Skip atomicity pre-pass")
     parser.add_argument("--with-rerank", action="store_true", help="Enable rerank when building communities")
     parser.add_argument("--resume", action="store_true", help="Resume existing state (skip --reset-state)")
+    parser.add_argument("--dry-run", action="store_true", help="Print planned commands without executing")
     return parser.parse_args()
 
 
@@ -33,6 +34,27 @@ def main() -> int:
     print("Starting overnight run (steps 3–8)...", flush=True)
     print("- To adjust behavior, edit scripts/scripts_config.yaml", flush=True)
     print("- To adjust the prompt, edit scripts/curation/agents/prompts/curation_prompt.yaml", flush=True)
+
+    if args.dry_run:
+        print("\nDry run: no commands will be executed.")
+        planned = []
+        if not args.skip_atomicity_pre_pass:
+            planned.append([py, "scripts/curation/experience/prepass/atomicity_split_prepass.py", *db_args])
+        planned.append([py, "scripts/curation/experience/merge/build_curation_index.py", *db_args])
+        planned.append([py, "scripts/curation/experience/merge/find_pending_dups.py", *db_args])
+        build_comm_cmd = [py, "scripts/curation/experience/merge/build_communities.py", *db_args]
+        if args.with_rerank:
+            build_comm_cmd.append("--with-rerank")
+        planned.append(build_comm_cmd)
+        loop_cmd = [py, str(script)]
+        if not args.resume:
+            loop_cmd.append("--reset-state")
+        loop_cmd.extend(db_args)
+        planned.append(loop_cmd)
+        planned.append([py, "scripts/curation/experience/export_curated.py", *db_args])
+        for cmd in planned:
+            print("  ", " ".join(cmd))
+        return 0
 
     try:
         if not args.skip_atomicity_pre_pass:

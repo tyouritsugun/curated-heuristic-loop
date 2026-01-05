@@ -216,7 +216,7 @@ def main():
         if pending_skills:
             print(f"Processing skills: 0/{len(pending_skills)}", end="", flush=True)
             for i, skill in enumerate(pending_skills, 1):
-                content = f"{skill.title}\n\n{skill.content}"
+                content = f"{skill.name}\n\n{skill.description}\n\n{skill.content}"
 
                 try:
                     # Mark as processing
