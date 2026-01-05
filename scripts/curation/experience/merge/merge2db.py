@@ -42,11 +42,11 @@ def main() -> int:
         print(f"\n❌ LLM health check failed: {exc}")
         return 1
 
-    merge_cmd = [py, "scripts/curation/merge/merge_exports.py"]
+    merge_cmd = [py, "scripts/curation/experience/merge/merge_exports.py"]
     if args.inputs:
         merge_cmd.extend(["--inputs", *args.inputs])
 
-    import_cmd = [py, "scripts/curation/merge/import_to_curation_db.py"]
+    import_cmd = [py, "scripts/curation/experience/merge/import_to_curation_db.py"]
 
     try:
         run_step("Merge member exports", merge_cmd)
@@ -58,7 +58,7 @@ def main() -> int:
     print("\n✅ merge2db complete.")
     print()
     print("Next step: Run the overnight pipeline")
-    print("  python scripts/curation/overnight/run_curation_overnight.py")
+    print("  python scripts/curation/experience/overnight/run_curation_overnight.py")
     return 0
 
 

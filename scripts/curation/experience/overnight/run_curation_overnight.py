@@ -20,9 +20,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     py = sys.executable
-    script = Path("scripts/curation/overnight/run_curation_loop.py")
+    script = Path("scripts/curation/experience/overnight/run_curation_loop.py")
     if not script.exists():
-        print("❌ scripts/curation/overnight/run_curation_loop.py not found")
+        print("❌ scripts/curation/experience/overnight/run_curation_loop.py not found")
         return 1
 
     args = parse_args()
@@ -37,14 +37,14 @@ def main() -> int:
     try:
         if not args.skip_atomicity_pre_pass:
             subprocess.run(
-                [py, "scripts/curation/prepass/atomicity_split_prepass.py", *db_args],
+                [py, "scripts/curation/experience/prepass/atomicity_split_prepass.py", *db_args],
                 check=True,
             )
 
-        subprocess.run([py, "scripts/curation/merge/build_curation_index.py", *db_args], check=True)
-        subprocess.run([py, "scripts/curation/merge/find_pending_dups.py", *db_args], check=True)
+        subprocess.run([py, "scripts/curation/experience/merge/build_curation_index.py", *db_args], check=True)
+        subprocess.run([py, "scripts/curation/experience/merge/find_pending_dups.py", *db_args], check=True)
 
-        build_comm_cmd = [py, "scripts/curation/merge/build_communities.py", *db_args]
+        build_comm_cmd = [py, "scripts/curation/experience/merge/build_communities.py", *db_args]
         if args.with_rerank:
             build_comm_cmd.append("--with-rerank")
         subprocess.run(build_comm_cmd, check=True)
@@ -55,7 +55,7 @@ def main() -> int:
         loop_cmd.extend(db_args)
         subprocess.run(loop_cmd, check=True)
 
-        subprocess.run([py, "scripts/curation/export_curated.py", *db_args], check=True)
+        subprocess.run([py, "scripts/curation/experience/export_curated.py", *db_args], check=True)
     except subprocess.CalledProcessError as exc:
         print(f"\n❌ Overnight run failed: {exc}")
         return exc.returncode

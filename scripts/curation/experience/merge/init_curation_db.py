@@ -8,10 +8,10 @@ workflow.
 
 Usage:
     # With default path from scripts_config.yaml:
-    python scripts/curation/merge/init_curation_db.py
+    python scripts/curation/experience/merge/init_curation_db.py
 
     # With explicit path:
-    python scripts/curation/merge/init_curation_db.py --db-path data/curation/chl_curation.db
+    python scripts/curation/experience/merge/init_curation_db.py --db-path data/curation/chl_curation.db
 """
 
 import argparse

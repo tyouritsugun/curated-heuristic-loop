@@ -8,9 +8,13 @@ This is the short “why/how” for Carlos (or anyone running the overnight agen
 - Stops early if progress is small to avoid wasting time/money.
 - Writes a `morning_report.md` for review.
 
-## One‑command overnight run
+## One‑command overnight run (experiences only)
 ```bash
-python scripts/curation/overnight/run_curation_overnight.py
+python scripts/curation/experience/overnight/run_curation_overnight.py
+```
+## One‑command overnight run (experiences + skills)
+```bash
+python scripts/curation/common/overnight_all.py
 ```
 Defaults are read from:
 - `scripts/scripts_config.yaml`
@@ -54,7 +58,11 @@ Short sample flow for Alice, Bob, and a curator (Carlos) using the semi-auto cur
 ## 2) Curator Merge + Import (wrapped)
 After unzipping member exports into `data/curation/members/`, run:
 ```bash
-python scripts/curation/merge/merge2db.py
+python scripts/curation/common/merge_all.py
+```
+If you only need experiences, you can still use:
+```bash
+python scripts/curation/experience/merge/merge2db.py
 ```
 This includes a quick LLM health check plus merge + import.
 
@@ -62,11 +70,11 @@ This includes a quick LLM health check plus merge + import.
 - Defaults are in `scripts/scripts_config.yaml` and the prompt in `scripts/curation/agents/prompts/curation_prompt.yaml`.
 - If you need to override behavior, edit those files instead of CLI flags.
 ```bash
-python scripts/curation/overnight/run_curation_overnight.py
+python scripts/curation/common/overnight_all.py
 ```
 If incoming data is already atomic, skip the pre-pass:
 ```bash
-python scripts/curation/overnight/run_curation_overnight.py --skip-atomicity-pre-pass
+python scripts/curation/experience/overnight/run_curation_overnight.py --skip-atomicity-pre-pass
 ```
 Note: the overnight wrapper uses `data/curation-copy/.curation_state_loop.json` by default (safe for reruns).
 Key knobs (in `scripts/scripts_config.yaml`):
@@ -114,4 +122,4 @@ data/curation/
 
 ## Notes
 - `sync_status`: `0=PENDING`, `1=SYNCED`, `2=REJECTED`.
-- Communities are per-category; skills stay out of the loop by default.
+- Communities are per-category; skills can be included via `overnight_all.py`.

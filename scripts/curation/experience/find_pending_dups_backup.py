@@ -8,16 +8,16 @@ them by similarity threshold. In solo mode, it compares pending vs pending.
 
 Usage:
     # Find duplicates with table output (default)
-    python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db
+    python scripts/curation/experience/merge/find_pending_dups.py --db-path data/curation/chl_curation.db
     
     # Find duplicates in solo mode (pending vs pending)
-    python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db --compare-pending
+    python scripts/curation/experience/merge/find_pending_dups.py --db-path data/curation/chl_curation.db --compare-pending
     
     # Run interactive review session
-    python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db --interactive --bucket high
+    python scripts/curation/experience/merge/find_pending_dups.py --db-path data/curation/chl_curation.db --interactive --bucket high
     
     # Export to JSON
-    python scripts/curation/find_pending_dups.py --db-path data/curation/chl_curation.db --format json
+    python scripts/curation/experience/merge/find_pending_dups.py --db-path data/curation/chl_curation.db --format json
 """
 
 import argparse
@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent  
-sys.path.insert(0, str(project_root.parent))  
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker

@@ -8,7 +8,7 @@
 ## 0) Prerequisites and dependencies
 ### Execution order
 1. Section 2 (category taxonomy) must complete before Section 3 (skills flag).
-2. Section 1 (table rename) happens during plan 3 implementation.
+2. Section 1 (table rename) happens during plan 4 implementation.
 3. Sections 2 and 3 must complete before plan 2 starts.
 
 ### External dependencies
@@ -22,7 +22,7 @@
 - Skills can be fully disabled via config (affects existing workflows).
 
 ## 1) Experience table prefixes (avoid collisions)
-### Status: deferred to plan 3
+### Status: deferred to plan 4
 ### Proposed naming
 - `curation_decisions` → **`experience_curation_decisions`**
 - `split_provenance` (experience) → **`experience_split_provenance`** (already in schema; keep as canonical)
@@ -37,11 +37,11 @@ We will create skill-level curation tables. Prefixing experience tables prevents
 - SQLAlchemy schema: rename `CurationDecision.__tablename__`.
 - Schema bootstrapping/migrations: ensure new table name and data migration or alias.
 - Scripts in `scripts/curation/`:
-  - `scripts/curation/export_manual_queue.py` (SQL query)
-  - `scripts/curation/merge/init_curation_db.py` (table list)
+  - `scripts/curation/experience/export_manual_queue.py` (SQL query)
+  - `scripts/curation/experience/merge/init_curation_db.py` (table list)
 - Docs mentioning curation_decisions:
   - `doc/experience_curation.md`
-  - `doc/plan/3_skill_curation.md` (decision log naming)
+  - `doc/plan/4_skill_curation.md` (decision log naming)
 
 ### Migration plan
 - No migration support needed. The rename impacts only temporary curation tables (intermediate outputs).

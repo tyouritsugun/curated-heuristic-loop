@@ -12,12 +12,12 @@ This script:
 
 Usage:
     # With explicit paths:
-    python scripts/curation/merge/merge_exports.py \\
+    python scripts/curation/experience/merge/merge_exports.py \\
         --inputs data/curation/members/alice data/curation/members/bob \\
         --output data/curation/merged
 
     # With defaults from scripts_config.yaml:
-    python scripts/curation/merge/merge_exports.py
+    python scripts/curation/experience/merge/merge_exports.py
 """
 
 import argparse

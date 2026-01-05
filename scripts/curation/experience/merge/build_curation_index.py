@@ -10,10 +10,10 @@ IMPORTANT: The API server must be stopped before running this script to avoid
 
 Usage:
     # With default path from scripts_config.yaml:
-    python scripts/curation/merge/build_curation_index.py
+    python scripts/curation/experience/merge/build_curation_index.py
 
     # With explicit path:
-    python scripts/curation/merge/build_curation_index.py \\
+    python scripts/curation/experience/merge/build_curation_index.py \\
         --db-path data/curation/chl_curation.db
 """
 

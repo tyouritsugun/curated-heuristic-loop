@@ -8,24 +8,24 @@ structure as member exports (categories.csv, experiences.csv, skills.csv) plus e
 
 Usage:
     # Default export (TSV)
-    python scripts/curation/export_curated.py \\
+    python scripts/curation/experience/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved
 
     # Include CSV files as well
-    python scripts/curation/export_curated.py \\
+    python scripts/curation/experience/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved \\
         --csv
 
     # Include rejected entries
-    python scripts/curation/export_curated.py \\
+    python scripts/curation/experience/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved \\
         --include-rejected
 
     # Dry run (don't write files)
-    python scripts/curation/export_curated.py \\
+    python scripts/curation/experience/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved \\
         --dry-run
@@ -38,8 +38,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent  
-sys.path.insert(0, str(project_root.parent))  
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

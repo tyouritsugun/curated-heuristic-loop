@@ -366,7 +366,7 @@ def main() -> None:
         index_dir = Path(cur_cfg.get("faiss_index_dir", db_path.parent / "faiss_index"))
         if not index_dir.exists():
             print(f"❌ FAISS index directory not found: {index_dir}")
-            print("   Run scripts/curation/merge/build_curation_index.py first.")
+            print("   Run scripts/curation/experience/merge/build_curation_index.py first.")
             sys.exit(1)
 
         sample_vec = next(iter(vectors.values()))

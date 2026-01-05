@@ -8,16 +8,16 @@ them by similarity threshold. In solo mode, it compares pending vs pending.
 
 Usage:
     # Auto-merge obvious duplicates (default: high similarity bucket)
-    python scripts/curation/merge/find_pending_dups.py
+    python scripts/curation/experience/merge/find_pending_dups.py
 
     # Find duplicates in solo mode (pending vs pending)
-    python scripts/curation/merge/find_pending_dups.py --compare-pending
+    python scripts/curation/experience/merge/find_pending_dups.py --compare-pending
 
     # Export to JSON format (no DB changes)
-    python scripts/curation/merge/find_pending_dups.py --format json --dry-run
+    python scripts/curation/experience/merge/find_pending_dups.py --format json --dry-run
 
     # Override default database path (if needed)
-    python scripts/curation/merge/find_pending_dups.py --db-path /custom/path/chl_curation.db
+    python scripts/curation/experience/merge/find_pending_dups.py --db-path /custom/path/chl_curation.db
 """
 
 import argparse

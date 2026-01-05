@@ -41,20 +41,20 @@ def main() -> int:
     args = parse_args()
     py = sys.executable
 
-    merge_cmd = [py, "scripts/curation/merge/merge_exports.py"]
+    merge_cmd = [py, "scripts/curation/experience/merge/merge_exports.py"]
     if args.inputs:
         merge_cmd.extend(["--inputs", *args.inputs])
 
-    init_cmd = [py, "scripts/curation/merge/init_curation_db.py", "--db-path", args.db_path]
+    init_cmd = [py, "scripts/curation/experience/merge/init_curation_db.py", "--db-path", args.db_path]
     if args.force_db:
         init_cmd.append("--force")
 
-    import_cmd = [py, "scripts/curation/merge/import_to_curation_db.py", "--db-path", args.db_path]
-    build_index_cmd = [py, "scripts/curation/merge/build_curation_index.py", "--db-path", args.db_path]
-    dedup_cmd = [py, "scripts/curation/merge/find_pending_dups.py", "--db-path", args.db_path]
+    import_cmd = [py, "scripts/curation/experience/merge/import_to_curation_db.py", "--db-path", args.db_path]
+    build_index_cmd = [py, "scripts/curation/experience/merge/build_curation_index.py", "--db-path", args.db_path]
+    dedup_cmd = [py, "scripts/curation/experience/merge/find_pending_dups.py", "--db-path", args.db_path]
     build_comm_cmd = [
         py,
-        "scripts/curation/merge/build_communities.py",
+        "scripts/curation/experience/merge/build_communities.py",
         "--db-path",
         args.db_path,
         "--refresh-neighbors",

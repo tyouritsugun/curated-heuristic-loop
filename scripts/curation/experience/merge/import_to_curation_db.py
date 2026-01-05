@@ -8,10 +8,10 @@ marked with embedding_status='pending' for later processing.
 
 Usage:
     # With default paths from scripts_config.yaml:
-    python scripts/curation/merge/import_to_curation_db.py
+    python scripts/curation/experience/merge/import_to_curation_db.py
 
     # With explicit paths:
-    python scripts/curation/merge/import_to_curation_db.py \\
+    python scripts/curation/experience/merge/import_to_curation_db.py \\
         --input data/curation/merged \\
         --db-path data/curation/chl_curation.db
 """

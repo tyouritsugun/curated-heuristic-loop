@@ -1,11 +1,11 @@
 # Skill Curation Plan
 
 ## Goal
-Merge, split, and distribute skills after import. Low volume implies LLM-assisted manual review, not overnight automation.
+Merge, split, and distribute skills after import. Low volume implies LLM-assisted manual review, but skills can also be included in the shared overnight workflow with experiences.
 If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill export/import, no skill decisions).
 
 ## Inputs
-- Member exports via `GET /api/v1/entries/export-csv` (zip with `categories.csv`, `experiences.csv`, `skills.csv`).
+- Member exports via `GET /api/v1/entries/export-csv` (zip with `experiences.csv`, `skills.csv`).
 - Export from `chl.db`.
 
 ## Database topology
@@ -17,8 +17,8 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 ## Process
 1. Collect and merge
    - Place member exports under `data/curation/members/<user>/`.
-   - Run `scripts/curation/merge/merge2db.py` to merge into curation DB.
-   - Curation DB now contains all member skills (isolated from production).
+   - Run `scripts/curation/common/merge_all.py` to merge experiences + skills into curation DB.
+   - Curation DB now contains all member skills and experiences (isolated from production).
 2. Generate outlines
    - For each skill without outline: LLM generates structured outline (same format as import).
    - Store outline in `metadata.chl.outline`.
@@ -142,6 +142,16 @@ Metadata:
 1. **Curated skills CSV**: `data/curation/approved/skills.csv` for Sheets import.
 2. **Decision log**: `data/curation/skill_curation_decisions.csv` with all merge/split/keep actions.
 3. **Curation report**: `data/curation/skill_curation_report.md` with statistics and notable actions.
+
+## Overnight run (combined)
+Carlos runs the combined overnight workflow (experiences + skills) with one command:
+```
+python scripts/curation/common/overnight_all.py
+```
+
+Notes:
+- This wrapper calls the existing experience overnight flow and the new skills overnight flow in sequence.
+- If either domain fails, the wrapper reports per-domain status and continues (configurable).
 4. If `CHL_SKILLS_ENABLED=false`: no skill outputs are produced.
 
 ## sync_status transitions
