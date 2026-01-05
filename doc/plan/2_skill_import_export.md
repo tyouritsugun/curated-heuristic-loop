@@ -8,7 +8,8 @@ This phase also implements **bidirectional converters** so CHL can import from a
 
 ## Inputs
 - Claude Code: `~/.claude/skills/` or `.claude/skills/` with `SKILL.md` per directory.
-- Codex: `~/.codex/skills/` with JSON skill files.
+- Codex: `~/.codex/skills/` with `SKILL.md` per directory.
+- **Requirement**: `SKILL.md` must include YAML frontmatter with `name` and `description`.
 - Note: formats can vary; parser should be tolerant and preserve unknown fields.
 
 ## Import pipeline

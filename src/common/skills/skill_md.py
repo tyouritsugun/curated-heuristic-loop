@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import logging
 from typing import Any, Dict, Optional
 
 import yaml
 
 from .normalize import flatten_metadata, format_allowed_tools, normalize_allowed_tools, parse_metadata_json
 
+
+logger = logging.getLogger(__name__)
 
 FRONTMATTER_DELIM = "---"
 NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -64,6 +67,12 @@ def parse_skill_md(
     _validate_name(name)
     if not (1 <= len(description) <= 1024):
         raise ValueError("Skill description must be 1-1024 characters")
+
+    if len(content.splitlines()) > 500:
+        logger.warning(
+            "SKILL.md content exceeds 500 lines (path=%s). Recommended limit is <500 lines.",
+            path,
+        )
 
     if require_dir_match and path.parent.name != name:
         raise ValueError(f"Directory name '{path.parent.name}' must match skill name '{name}'")

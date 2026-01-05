@@ -7,6 +7,7 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 ## Inputs
 - Member exports via `GET /api/v1/entries/export-csv` (zip with `experiences.csv`, `skills.csv`).
 - Export from `chl.db`.
+ - External SKILL.md inputs must include YAML frontmatter with `name` and `description` (see plan 4).
 
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.

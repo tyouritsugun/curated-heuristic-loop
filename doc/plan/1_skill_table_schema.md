@@ -239,6 +239,7 @@ To keep UI import/export aligned with the standard:
 Export creates `{name}/SKILL.md` with:
 - YAML frontmatter generated from DB fields
 - Markdown body from `content`
+**Requirement**: SKILL.md must include YAML frontmatter with required fields (`name`, `description`).
 
 Directory structure:
 ```
@@ -298,6 +299,7 @@ metadata:
 Import reads `{name}/SKILL.md` and extracts:
 - Frontmatter → `name`, `description`, optional fields
 - Markdown body → `content`
+**Requirement**: SKILL.md must include YAML frontmatter between `---` markers.
 
 Validation rules:
 - Directory name must match `name`
