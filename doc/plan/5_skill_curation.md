@@ -4,6 +4,14 @@
 Merge, split, and distribute skills after import. Low volume implies LLM-assisted manual review, but skills can also be included in the shared overnight workflow with experiences.
 If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill export/import, no skill decisions).
 
+## Phases
+1. **Member export**: Each member exports skills into `data/curation/members/<user>/` with author/source stamped.
+2. **Curation merge**: Carlos merges member exports into the curation DB.
+3. **Auto-curation**: Outline → atomicity split → candidate grouping → LLM relationship analysis → auto-apply decisions.
+4. **Export & review**: Export curated skills to `skills.csv`; Carlos reviews in Sheets/Excel.
+5. **Team publish**: Team imports curated skills; local skills overwrite with curated versions.
+6. **Conflict resolution**: Any conflicts are resolved post-retro and reflected in a follow-up export/import.
+
 ## Inputs
 - Member exports via `GET /api/v1/entries/export-csv` (zip with `experiences.csv`, `skills.csv`).
 - Export from `chl.db`.
@@ -33,6 +41,10 @@ Each team member exports their local skills into `data/curation/members/<user>/`
   - Run LLM category mapping against the full internal taxonomy.
   - Store `metadata["chl.category_confidence"]` with the mapping confidence.
   - If confidence < 0.70: flag for manual category review (see cross-category fallback).
+- `category_code` is optional in the DB; prefer `metadata["chl.category_code"]` for portability.
+- `read_entries` should use progressive disclosure:
+  - **List**: return only `name`, `description` (and `id` if needed).
+  - **Detail**: fetch full `content` on-demand for selected skills.
 
 ## Process
 1. Collect and merge
