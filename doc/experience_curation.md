@@ -16,6 +16,7 @@ python scripts/curation/experience/overnight/run_curation_overnight.py
 ```bash
 python scripts/curation/common/overnight_all.py
 ```
+Skills curation is intended to run through the common wrappers. Dedicated skills scripts are optional but not the primary entrypoint for Carlos.
 Defaults are read from:
 - `scripts/scripts_config.yaml`
 - `scripts/curation/agents/prompts/curation_prompt.yaml`

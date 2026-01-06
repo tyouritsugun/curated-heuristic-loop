@@ -72,7 +72,7 @@ CREATE TABLE category_skills (
   content TEXT NOT NULL,                  -- Markdown body (no YAML frontmatter)
 
   -- CHL Organization (internal only, not exported)
-  category_code TEXT NOT NULL,            -- "PGS", "DSD", "GLN", etc.
+  category_code TEXT,                     -- Optional internal field; may be null. Prefer metadata["chl.category_code"] for portability.
 
   -- Optional Standard Fields (Agent Skills Standard)
   license TEXT,                           -- License identifier: "MIT", "Apache-2.0", etc.
@@ -130,7 +130,7 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 - **name**: Kebab-case identifier (1-64 chars), matches directory name, e.g., `page-spec-checklist`
 - **description**: Keyword-rich trigger (1-1024 chars), includes what/when/keywords users say
 - **content**: Pure markdown instructions (no frontmatter), <500 lines recommended
-- **category_code**: Internal category (e.g., "PGS"), not exported
+- **category_code**: Optional internal category (e.g., "PGS"), not exported; may be stored in `metadata["chl.category_code"]` instead
 
 #### Optional Fields
 - **license**: License identifier (e.g., "MIT")
@@ -141,7 +141,7 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 
 #### Design Decisions
 1. **Dual identity**: `id` (internal) + `name` (export)
-2. **Category internal**: Keep in DB, don't export to frontmatter
+2. **Category internal**: Keep in DB if useful, but do not export to frontmatter; prefer `metadata["chl.category_code"]` for portability
 3. **Metadata as JSON**: Flexible, avoids schema changes
 4. **Content purity**: Store markdown only, generate frontmatter on export
 5. **Platform isolation**: Optional fields for platform-specific features
@@ -195,28 +195,32 @@ Check before deployment:
 - Valid names (kebab-case, 1-64 chars)
 - Descriptions present (no TODOs, 1-1024 chars)
 - No duplicate names
-- Valid category codes
+- Valid category codes **when provided**
 - Content present for CHL authoring (allow empty if strict standard compatibility is needed)
 
 ## 5) MCP API Changes
 
 ### create_skill
-New required parameters: `name`, `description`, `content`, `category_code`
+New required parameters: `name`, `description`, `content`
+New optional parameters: `category_code`, `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
 New optional parameters: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
 
 ### update_skill
 All new fields can be updated
 
 ### read_entries (skills output contract)
-Skill outputs should match Agent Skills Standard fields:
+Skill outputs should match Agent Skills Standard fields, with progressive disclosure:
 - Required: `name`, `description`, `content`
 - Optional: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
 - CHL internal fields may be included but must not replace standard fields:
   `id`, `category_code`, `source`, `author`, `sync_status`, timestamps.
+**List vs detail**:
+- **List**: return only `name`, `description` (and `id` if needed).
+- **Detail**: fetch full `content` on-demand for selected skills.
 
 ### Write payload validation
 - Enforce kebab-case `name` (1-64 chars) and description length (1-1024).
-- Reject unknown category codes.
+- Reject unknown category codes when provided.
 
 ### Export target validation (per platform)
 - **Agent Skills Standard / Claude Code**: `name` 1-64 chars, `description` 1-1024 chars
@@ -227,7 +231,8 @@ Skill outputs should match Agent Skills Standard fields:
 To keep UI import/export aligned with the standard:
 
 **Skills sheet columns (export):**
-- Required: `name`, `description`, `content`, `category_code`
+- Required: `name`, `description`, `content`
+- Optional CHL: `category_code`
 - Optional standard: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
 - CHL internal: `id`, `source`, `author`, `sync_status`, `embedding_status`, `created_at`, `updated_at`, `synced_at`, `exported_at`
 
@@ -257,7 +262,7 @@ Optional directories (future):
 
 ### Field Transformations (DB -> YAML)
 - `allowed_tools` (JSON array) -> `allowed-tools` (space-delimited for standard; comma-delimited for Claude Code export)
-- `category_code` -> `metadata["chl.category_code"]` (flattened key)
+- `category_code` -> `metadata["chl.category_code"]` (flattened key) if present
 - `metadata` JSON string -> YAML key-value pairs under `metadata` (flat keys preferred)
 
 ### Example Export Output

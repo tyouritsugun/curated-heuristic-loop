@@ -8,6 +8,17 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 - Member exports via `GET /api/v1/entries/export-csv` (zip with `experiences.csv`, `skills.csv`).
 - Export from `chl.db`.
  - External SKILL.md inputs must include YAML frontmatter with `name` and `description` (see plan 4).
+- Each export must include `author` and `source` so curation can attribute ownership.
+
+## Member export workflow (before curation)
+Each team member exports their local skills into `data/curation/members/<user>/`:
+1. **Web UI**: `/operations` → "Export for Curation" → downloads `{username}_export.zip`.
+2. **CLI**: `python scripts/export_for_curation.py --output data/curation/members/<user>/`.
+3. **API**: `GET /api/v1/entries/export-csv?entity_type=skill` → save `skills.csv`.
+
+**Export requirements**:
+- `skills.csv` must include `author` (member username) and `source` (e.g., `imported_<user>`).
+- If experiences are enabled, include `experiences.csv` in the same export package.
 
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.
@@ -15,10 +26,19 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 - Skills flow: `chl.db` → export → curation DB → curate → Sheets → import → `chl.db`.
 - Curation DB is temporary; curated results published back to team via Sheets.
 
+## Category portability and mapping
+- The Agent Skills Standard has no category field; do **not** emit `category_code` in standard SKILL.md exports.
+- For CHL roundtrip, preserve category in `metadata["chl.category_code"]`.
+- For imports from ChatGPT/Claude (or any external source without category):
+  - Run LLM category mapping against the full internal taxonomy.
+  - Store `metadata["chl.category_confidence"]` with the mapping confidence.
+  - If confidence < 0.70: flag for manual category review (see cross-category fallback).
+
 ## Process
 1. Collect and merge
    - Place member exports under `data/curation/members/<user>/`.
    - Run `scripts/curation/common/merge_all.py` to merge experiences + skills into curation DB.
+   - Merge must stamp `author=<user>` and `source=imported_<user>` if missing (derive `<user>` from directory name).
    - Curation DB now contains all member skills and experiences (isolated from production).
 2. Generate outlines
    - For each skill without outline: LLM generates structured outline (same format as import).
@@ -27,7 +47,7 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
    - For each skill outline: LLM verifies the skill has a single target/purpose.
    - If non-atomic: LLM proposes a split into atomic skills and generates new content for each.
    - Apply split immediately: create split skills, mark original `sync_status=2` (superseded).
-   - Regenerate outline for each split skill.
+   - Immediately regenerate outline for each split skill (before step 4) and store in `metadata["chl.outline"]`.
 4. Candidate grouping
    - Group skills by `category_code`.
    - Within each category: generate embeddings for outlines.
@@ -35,7 +55,11 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
    - K = min(30, category_size - 1) to handle variable category sizes.
    - If category_size < 2: skip (no candidates).
    - Rerank candidates with reranker model on outline pairs.
-   - Cross-category fallback: for skills with low category confidence or suspected mismatch, run a global top-N (e.g., 10) similarity pass to catch miscategorized duplicates.
+   - Cross-category fallback (optional, expensive):
+     - Trigger: category mapping confidence < 0.70 or suspected mismatch.
+     - Run global top-10 similarity search using outline embeddings.
+     - If top match is cross-category with score >=0.85: flag for manual category review.
+     - Limit: run fallback for at most 10% of skills to control cost.
 5. LLM relationship analysis (auto-apply)
    - For each skill pair in reranked candidates (if score >= threshold):
      - LLM classifies relationship: subsumption, overlap, complement, distinct, conflict.
@@ -119,6 +143,27 @@ Metadata:
   - `decision_id`, `skill_a_id`, `skill_b_id`, `relationship`, `action`, `confidence`.
   - `curator`, `timestamp`, `model`, `prompt_path`, `raw_response`.
   - `status` (proposed/accepted/edited/overridden), `conflict_flag`, `resolution_notes`.
+- **SQL schema (skills curation decisions)**:
+```sql
+CREATE TABLE skill_curation_decisions (
+  decision_id TEXT PRIMARY KEY,
+  skill_a_id TEXT NOT NULL,
+  skill_b_id TEXT NOT NULL,
+  relationship TEXT NOT NULL,       -- subsumption, overlap, complement, distinct, conflict
+  action TEXT NOT NULL,             -- merge, keep_separate, split, flag_conflict
+  confidence REAL NOT NULL,
+  curator TEXT NOT NULL,            -- 'llm' or username
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  model TEXT,
+  prompt_path TEXT,
+  raw_response TEXT,
+  status TEXT DEFAULT 'proposed',   -- proposed, accepted, edited, overridden
+  conflict_flag INTEGER DEFAULT 0,
+  resolution_notes TEXT,
+  FOREIGN KEY (skill_a_id) REFERENCES category_skills(id),
+  FOREIGN KEY (skill_b_id) REFERENCES category_skills(id)
+);
+```
 - **Split provenance**: Create `skill_split_provenance` table:
   - `source_skill_id`: Original skill before split.
   - `split_skill_id`: New focused skill after split.
@@ -135,6 +180,9 @@ Metadata:
 - LLM performs 2-way merge on current versions from Alice and Bob.
 - If significant conflicts detected: flag for manual review.
 - Carlos resolves by accepting one version, merging manually, or escalating to team.
+**Detection rule**:
+- Same `name`, `sync_status=1`, and different `updated_at` vs team version.
+- Match by `name` first, then fall back to high-similarity match when names diverge.
 
 **Scenario 2: Category mismatch**
 - Alice: `MNL-TMG-110` "API Documentation Standards"
@@ -171,6 +219,7 @@ Notes:
 - This wrapper calls the existing experience overnight flow and the new skills overnight flow in sequence.
 - If either domain fails, the wrapper reports per-domain status and continues (configurable).
 4. If `CHL_SKILLS_ENABLED=false`: no skill outputs are produced.
+**Status**: Experience curation is complete; skills merge/overnight wiring is pending implementation.
 
 ## sync_status transitions
 During curation:
@@ -180,12 +229,16 @@ During curation:
 
 After team import:
 - All curated skills set to `sync_status=1` (active).
+## Import reconciliation (member workflow)
+After importing curated `skills.csv` into a local `chl.db`:
+1. **Curated skills**: set `sync_status=1`, `source=curated`, overwrite existing by `name`.
+2. **Superseded skills**: if a local skill was merged/split, set `sync_status=2` and keep for audit.
+3. **Unmatched local skills**: keep as-is (user can retain or delete).
+4. **Conflicts**: if decision log shows conflict, keep both with `sync_status=0` until resolution.
 
 ## Open questions
 1. **Cross-category skills**: How to handle skills that span multiple categories?
-   - Option A: Choose primary category, add cross-references.
-   - Option B: Split into category-specific aspects.
-   - Recommendation: Flag for manual decision during curation.
+   - Decision: Choose a primary category, add cross-references as needed.
 
 2. **Attribution granularity**: Should merged skills track which sections came from which author?
    - Current: Track original authors in metadata.
@@ -193,8 +246,7 @@ After team import:
    - Recommendation: Keep simple; metadata attribution sufficient.
 
 3. **Local edits reconciliation**: If Alice modifies curated skill locally before next curation, how to merge?
-   - Without versioning: Cannot detect what changed.
-   - Recommendation: Treat as new local skill; include in next curation cycle.
+   - Decision: Overwrite local skill with curated version on team publish/import.
 
 ## Success criteria
 - Curation completes in under 2 hours per sprint (excluding retrospective).
