@@ -22,38 +22,45 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
    - Curation DB now contains all member skills and experiences (isolated from production).
 2. Generate outlines
    - For each skill without outline: LLM generates structured outline (same format as import).
-   - Store outline in `metadata.chl.outline`.
-3. Candidate grouping
+   - Store outline in `metadata["chl.outline"]` (flat key).
+3. LLM atomicity pass
+   - For each skill outline: LLM verifies the skill has a single target/purpose.
+   - If non-atomic: LLM proposes a split into atomic skills and generates new content for each.
+   - Apply split immediately: create split skills, mark original `sync_status=2` (superseded).
+   - Regenerate outline for each split skill.
+4. Candidate grouping
    - Group skills by `category_code`.
    - Within each category: generate embeddings for outlines.
    - For each skill: search top-K candidates using outline embedding.
    - K = min(30, category_size - 1) to handle variable category sizes.
+   - If category_size < 2: skip (no candidates).
    - Rerank candidates with reranker model on outline pairs.
-4. LLM relationship analysis
+   - Cross-category fallback: for skills with low category confidence or suspected mismatch, run a global top-N (e.g., 10) similarity pass to catch miscategorized duplicates.
+5. LLM relationship analysis (auto-apply)
    - For each skill pair in reranked candidates (if score >= threshold):
      - LLM classifies relationship: subsumption, overlap, complement, distinct, conflict.
      - LLM proposes action: merge, keep_separate, split, flag_conflict.
      - If merge proposed: LLM generates merged content.
    - Thresholds: >=0.85 auto-analyze, 0.70-0.84 flag for review, <0.70 skip.
-5. Human review
-   - Carlos reviews LLM decisions in interactive CLI or web UI.
-   - Accept: Apply LLM's merge/split/keep decision.
-   - Edit: Modify merged content before applying.
-   - Override: Change relationship classification and action.
-   - Flag: Mark conflict for team retrospective discussion.
-6. Apply decisions
-   - Merge: Create new skill with merged content, mark originals `sync_status=2` (superseded).
-   - Split: Create multiple focused skills, mark original `sync_status=2`.
-   - Keep separate: No action, both skills remain `sync_status=1`.
-   - Conflict: Both skills set `sync_status=0`, flag for team decision.
-7. Export curated skills
+   - Auto-apply decisions:
+     - Merge: Create new skill with merged content, mark originals `sync_status=2` (superseded).
+     - Split: Create multiple focused skills, mark original `sync_status=2`.
+     - Keep separate: No action, both skills remain `sync_status=1`.
+     - Conflict: Both skills set `sync_status=0` (pending), flag for team decision.
+   - Post-apply validation: enforce `name` uniqueness/format, `description` length (per export target), and regenerate outline for any new/edited skill.
+   - Provenance: write merge/split metadata into new skill records (see Data model extensions).
+6. Export curated skills
    - Query skills with `sync_status=1` from curation DB.
    - Generate `skills.csv` for Sheets import.
    - Generate decision log (CSV) and curation report (Markdown).
-8. Distribute to team
-   - Carlos uploads `skills.csv` to Google Sheets.
-   - Team reviews in sprint retrospective.
+7. Distribute to team
+   - Carlos uploads `skills.csv` to Google Sheets or Excel.
+   - Carlos reviews results post-export (no inline human review in the pipeline).
    - Team imports via `/operations` → updates each member's `chl.db`.
+8. Resolve conflicts (post-retro)
+   - Team decision recorded in decision log (`resolution_notes`) and reflected in updated skills.csv.
+   - If resolved via merge/split: create the approved skill(s), mark originals `sync_status=2`.
+   - If resolved via keep: set both to `sync_status=1` and clear `conflict_flag`.
 
 ## Outline format
 Same as import pipeline (LLM-generated):
@@ -111,12 +118,16 @@ Metadata:
 - **Curation decisions for skills**: Create new `skill_curation_decisions` table:
   - `decision_id`, `skill_a_id`, `skill_b_id`, `relationship`, `action`, `confidence`.
   - `curator`, `timestamp`, `model`, `prompt_path`, `raw_response`.
+  - `status` (proposed/accepted/edited/overridden), `conflict_flag`, `resolution_notes`.
 - **Split provenance**: Create `skill_split_provenance` table:
   - `source_skill_id`: Original skill before split.
   - `split_skill_id`: New focused skill after split.
   - `split_group_id`: Links all skills from same split operation.
   - `decision_id`, `curator`, `timestamp`, `model`, `prompt_path`, `raw_response`.
-- **Outline storage**: Use `metadata.chl.outline` in `skills`.
+- **Outline storage**: Use `metadata["chl.outline"]` in `skills`.
+- **Merge provenance (metadata)**: On merged skills, store `metadata["chl.merge.from_ids"]`, `metadata["chl.merge.from_authors"]`, `metadata["chl.merge.reason"]`.
+- **Split provenance (metadata)**: On split skills, store `metadata["chl.split.group_id"]`, `metadata["chl.split.source_id"]`.
+- **Migration note**: Add a SQLite migration alongside other schema migrations used for plan 1/2 changes.
 
 ## Conflict resolution
 **Scenario 1: Both authors modified global skill**
@@ -144,6 +155,12 @@ Metadata:
 2. **Decision log**: `data/curation/skill_curation_decisions.csv` with all merge/split/keep actions.
 3. **Curation report**: `data/curation/skill_curation_report.md` with statistics and notable actions.
 
+**skills.csv columns (minimum)**:
+- Required: `name`, `description`, `content`, `category_code`
+- Optional: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
+- Internal/audit: `id`, `author`, `sync_status`, `updated_at`
+**Category rule**: `category_code` is included for review/validation but does not change the team taxonomy; it must match the local predefined list.
+
 ## Overnight run (combined)
 Carlos runs the combined overnight workflow (experiences + skills) with one command:
 ```
@@ -159,7 +176,7 @@ Notes:
 During curation:
 - `1` (SYNCED) → `1`: Kept unchanged.
 - `1` (SYNCED) → `2` (SUPERSEDED): Replaced by merge or split.
-- `1` (SYNCED) → `0` (PENDING): Conflict detected, needs team decision.
+- `1` (SYNCED) → `0` (PENDING): Conflict detected or requires team decision.
 
 After team import:
 - All curated skills set to `sync_status=1` (active).
