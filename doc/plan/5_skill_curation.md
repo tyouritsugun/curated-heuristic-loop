@@ -13,8 +13,8 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 6. **Conflict resolution**: Any conflicts are resolved post-retro and reflected in a follow-up export/import.
 
 ## Inputs
-- Member exports via `GET /api/v1/entries/export-csv` (zip with `experiences.csv`, `skills.csv`).
-- Export from `chl.db`.
+- Member exports via the Web UI only (zip with `experiences.csv`, `skills.csv`).
+- Export from `chl.db` when `CHL_SKILLS_ENABLED=true`.
  - External SKILL.md inputs must include YAML frontmatter with `name` and `description` (see plan 4).
 - Each export must include `author` and `source` so curation can attribute ownership.
 
@@ -31,6 +31,10 @@ Each team member exports their local skills into `data/curation/members/<user>/`
 
 **When `CHL_SKILLS_ENABLED=false`**:
 - Export pulls skills from ChatGPT/Claude local folders instead of `chl.db`.
+- Source folders must be normalized into `skills.csv` during export (one row per skill, content populated).
+- Folder conventions:
+  - ChatGPT skills: `~/.codex/skills/` (one `{skill_name}/SKILL.md` per skill).
+  - Claude skills: `<workspace>/skills/` or repo-specific skill directories (one `{skill_name}/SKILL.md` per skill).
 - `category_code` is left NULL (or omitted) in `skills.csv`.
 - During merge, if `category_code` is NULL/missing, send the skill content plus the full category definitions to the LLM and ask it to assign the best-fit category. Populate `metadata["chl.category_code"]` and `metadata["chl.category_confidence"]` from the result.
 
@@ -284,7 +288,8 @@ CREATE TABLE skill_split_provenance (
 3. **Curation report**: `data/curation/skill_curation_report.md` with statistics and notable actions.
 
 **skills.csv columns (minimum)**:
-- Required: `name`, `description`, `content`, `category_code`
+- Required: `name`, `description`, `content`
+- Optional CHL: `category_code` (if present, must match local taxonomy)
 - Optional: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
 - Internal/audit: `id`, `author`, `sync_status`, `updated_at`
 **Category rule**: `category_code` is included for review/validation but does not change the team taxonomy; it must match the local predefined list.
@@ -317,9 +322,9 @@ After importing curated `skills.csv` into a local `chl.db`:
 4. **Conflicts**: if decision log shows conflict, keep both with `sync_status=0` until resolution.
 **Name mismatch handling**:
 - Exact match is preferred (case-insensitive).
-- If no match: use outline embedding similarity >= 0.95 plus a small edit-distance check for safe auto-match; otherwise flag for manual selection.
+- If no match: use outline embedding similarity >= 0.95 plus a small edit-distance check (<=2) for safe auto-match; otherwise flag for manual selection.
 
-## Open questions
+## Decisions
 1. **Cross-category skills**: How to handle skills that span multiple categories?
    - Decision: Choose a primary category, add cross-references as needed.
 
