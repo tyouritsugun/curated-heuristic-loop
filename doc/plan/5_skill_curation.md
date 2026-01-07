@@ -19,14 +19,20 @@ If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill exp
 - Each export must include `author` and `source` so curation can attribute ownership.
 
 ## Member export workflow (before curation)
-Each team member exports their local skills into `data/curation/members/<user>/`:
+Each team member exports their local skills into `data/curation/members/<user>/` using the **Web UI only**:
 1. **Web UI**: `/operations` → "Export for Curation" → downloads `{username}_export.zip`.
-2. **CLI**: `python scripts/export_for_curation.py --output data/curation/members/<user>/`.
-3. **API**: `GET /api/v1/entries/export-csv?entity_type=skill` → save `skills.csv`.
 
 **Export requirements**:
 - `skills.csv` must include `author` (member username) and `source` (e.g., `imported_<user>`).
 - If experiences are enabled, include `experiences.csv` in the same export package.
+
+**When `CHL_SKILLS_ENABLED=true`**:
+- Export includes skills from the local `chl.db`.
+
+**When `CHL_SKILLS_ENABLED=false`**:
+- Export pulls skills from ChatGPT/Claude local folders instead of `chl.db`.
+- `category_code` is left NULL (or omitted) in `skills.csv`.
+- During merge, if `category_code` is NULL/missing, send the skill content plus the full category definitions to the LLM and ask it to assign the best-fit category. Populate `metadata["chl.category_code"]` and `metadata["chl.category_confidence"]` from the result.
 
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.
@@ -60,6 +66,7 @@ Each team member exports their local skills into `data/curation/members/<user>/`
    - If non-atomic: LLM proposes a split into atomic skills and generates new content for each.
    - Apply split immediately: create split skills, mark original `sync_status=2` (superseded).
    - Immediately regenerate outline for each split skill (before step 4) and store in `metadata["chl.outline"]`.
+   - This step must complete before step 4 begins.
 4. Candidate grouping
    - Group skills by `category_code`.
    - Within each category: generate embeddings for outlines.
@@ -114,6 +121,48 @@ Examples: [brief example scenarios if applicable]
 - **Top-K per skill**: K = min(30, category_size - 1).
 - **Rationale**: Outlines are concise (100-200 tokens) vs full content (1000+ tokens); keeps comparisons fast and stable.
 - **Fallback**: If reranker unavailable, use embedding similarity only.
+
+## Model configuration
+- **LLM (outline/atomicity/merge/split)**: Use the same model as experience curation unless overridden in config.
+- **Embedding model**: Use the same embedding model as experience curation (configured in `scripts/scripts_config.yaml`).
+- **Reranker model**: Use the same reranker model as experience curation when available.
+
+## Error handling and recovery
+- **LLM failures**: Retry up to 3x with exponential backoff; if still failing, skip the item and log to `error.csv`.
+- **Rate limits**: Batch requests and respect provider limits; pause/retry on 429s.
+- **Partial success**: Persist progress checkpoints per step; resume from last completed step.
+- **Reranker unavailable**: Fall back to embedding-only similarity.
+- **Embedding service unavailable**: Abort the current step and mark run as failed; retry after service recovery.
+
+## Rollback snapshots
+- Before auto-apply (step 5), snapshot the curation DB:
+  - `data/curation/chl_curation.db` → `data/curation/chl_curation_pre_apply.db`
+- Keep last 3 snapshots for rollback.
+
+## Category validation
+- Category taxonomy is defined in plan 0 and must be in sync across team members.
+- On import/mapping:
+  - If `metadata["chl.category_code"]` exists and is invalid: flag for manual review.
+  - If missing: run LLM category mapping and store `metadata["chl.category_confidence"]`.
+
+## CHL_SKILLS_ENABLED enforcement
+- **Primary gate**: `scripts/curation/common/overnight_all.py` skips skills workflow when disabled.
+- **Secondary gate**: skills scripts exit gracefully if disabled.
+- **API/MCP**: return error or no-op for skill operations when disabled.
+
+## Cost and scale notes
+- For N skills, outlines + atomicity + relationship analysis can be expensive (O(N*K)).
+- Use batching and thresholds; cap cross-category fallback to the lowest-confidence 10%.
+- If >10% are low-confidence, process the bottom 10% by confidence and queue the rest for manual review.
+
+## Field conflict handling (non-curated fields)
+- Fields `license`, `compatibility`, `allowed_tools`, `model` are pass-through.
+- On merge, prefer non-null values; if both differ, keep one and log conflicts in `metadata["chl.merge.field_conflicts"]`.
+
+## Team notification and cadence
+- After exporting `skills.csv`, notify the team (e.g., Slack/email) with summary stats and links to `skill_curation_report.md`.
+- Recommended cadence: sprint-end curation every 2 weeks.
+- Freeze window: 24h before curation run; export deadline communicated to the team.
 
 ## LLM merge prompt
 When LLM proposes merge (high overlap detected):
@@ -181,6 +230,23 @@ CREATE TABLE skill_curation_decisions (
   - `split_skill_id`: New focused skill after split.
   - `split_group_id`: Links all skills from same split operation.
   - `decision_id`, `curator`, `timestamp`, `model`, `prompt_path`, `raw_response`.
+- **SQL schema (split provenance)**:
+```sql
+CREATE TABLE skill_split_provenance (
+  source_skill_id TEXT NOT NULL,
+  split_skill_id TEXT NOT NULL,
+  split_group_id TEXT NOT NULL,
+  decision_id TEXT,
+  curator TEXT NOT NULL,
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  model TEXT,
+  prompt_path TEXT,
+  raw_response TEXT,
+  PRIMARY KEY (source_skill_id, split_skill_id),
+  FOREIGN KEY (source_skill_id) REFERENCES category_skills(id),
+  FOREIGN KEY (split_skill_id) REFERENCES category_skills(id)
+);
+```
 - **Outline storage**: Use `metadata["chl.outline"]` in `skills`.
 - **Merge provenance (metadata)**: On merged skills, store `metadata["chl.merge.from_ids"]`, `metadata["chl.merge.from_authors"]`, `metadata["chl.merge.reason"]`.
 - **Split provenance (metadata)**: On split skills, store `metadata["chl.split.group_id"]`, `metadata["chl.split.source_id"]`.
@@ -194,7 +260,9 @@ CREATE TABLE skill_curation_decisions (
 - Carlos resolves by accepting one version, merging manually, or escalating to team.
 **Detection rule**:
 - Same `name`, `sync_status=1`, and different `updated_at` vs team version.
-- Match by `name` first, then fall back to high-similarity match when names diverge.
+- Match by `name` first, then fall back to outline embedding similarity:
+  - >= 0.90: treat as same skill.
+  - 0.85–0.89: flag for manual review.
 
 **Scenario 2: Category mismatch**
 - Alice: `MNL-TMG-110` "API Documentation Standards"
@@ -212,7 +280,7 @@ CREATE TABLE skill_curation_decisions (
 
 ## Outputs
 1. **Curated skills CSV**: `data/curation/approved/skills.csv` for Sheets import.
-2. **Decision log**: `data/curation/skill_curation_decisions.csv` with all merge/split/keep actions.
+2. **Decision log**: `data/curation/skill_decisions_log.csv` with all merge/split/keep actions.
 3. **Curation report**: `data/curation/skill_curation_report.md` with statistics and notable actions.
 
 **skills.csv columns (minimum)**:
@@ -247,6 +315,9 @@ After importing curated `skills.csv` into a local `chl.db`:
 2. **Superseded skills**: if a local skill was merged/split, set `sync_status=2` and keep for audit.
 3. **Unmatched local skills**: keep as-is (user can retain or delete).
 4. **Conflicts**: if decision log shows conflict, keep both with `sync_status=0` until resolution.
+**Name mismatch handling**:
+- Exact match is preferred (case-insensitive).
+- If no match: use outline embedding similarity >= 0.95 plus a small edit-distance check for safe auto-match; otherwise flag for manual selection.
 
 ## Open questions
 1. **Cross-category skills**: How to handle skills that span multiple categories?
