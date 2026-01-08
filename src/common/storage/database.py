@@ -267,6 +267,83 @@ class Database:
                     )
                 )
 
+            # Skill split provenance table
+            if not _has_table(conn, "skill_split_provenance"):
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE skill_split_provenance (
+                            id INTEGER PRIMARY KEY,
+                            source_skill_id TEXT NOT NULL,
+                            split_skill_id TEXT,
+                            split_group_id TEXT NOT NULL,
+                            decision TEXT NOT NULL,
+                            decision_id TEXT,
+                            curator TEXT,
+                            timestamp TEXT NOT NULL,
+                            model TEXT,
+                            prompt_path TEXT,
+                            raw_response TEXT
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX skill_split_provenance_source_idx "
+                        "ON skill_split_provenance(source_skill_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX skill_split_provenance_split_idx "
+                        "ON skill_split_provenance(split_skill_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX skill_split_provenance_group_idx "
+                        "ON skill_split_provenance(split_group_id)"
+                    )
+                )
+
+            # Skill curation decisions table
+            if not _has_table(conn, "skill_curation_decisions"):
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE skill_curation_decisions (
+                            id INTEGER PRIMARY KEY,
+                            skill_a_id TEXT NOT NULL,
+                            skill_b_id TEXT NOT NULL,
+                            relationship TEXT NOT NULL,
+                            action TEXT NOT NULL,
+                            confidence TEXT,
+                            curator TEXT,
+                            timestamp TEXT NOT NULL,
+                            model TEXT,
+                            prompt_path TEXT,
+                            raw_response TEXT,
+                            status TEXT,
+                            conflict_flag INTEGER,
+                            resolution_notes TEXT
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX skill_curation_decisions_a_idx "
+                        "ON skill_curation_decisions(skill_a_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX skill_curation_decisions_b_idx "
+                        "ON skill_curation_decisions(skill_b_id)"
+                    )
+                )
+
             # Worker metrics upgraded schema
             if not _has_column(conn, "worker_metrics", "worker_id"):
                 _add_column(

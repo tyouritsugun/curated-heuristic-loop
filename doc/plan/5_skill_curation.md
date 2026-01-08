@@ -237,16 +237,17 @@ CREATE TABLE skill_curation_decisions (
 - **SQL schema (split provenance)**:
 ```sql
 CREATE TABLE skill_split_provenance (
+  id INTEGER PRIMARY KEY,
   source_skill_id TEXT NOT NULL,
-  split_skill_id TEXT NOT NULL,
+  split_skill_id TEXT,
   split_group_id TEXT NOT NULL,
+  decision TEXT NOT NULL,           -- split, atomic, error
   decision_id TEXT,
   curator TEXT NOT NULL,
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   model TEXT,
   prompt_path TEXT,
   raw_response TEXT,
-  PRIMARY KEY (source_skill_id, split_skill_id),
   FOREIGN KEY (source_skill_id) REFERENCES category_skills(id),
   FOREIGN KEY (split_skill_id) REFERENCES category_skills(id)
 );
@@ -342,3 +343,53 @@ After importing curated `skills.csv` into a local `chl.db`:
 - Conflict detection: All true conflicts surfaced (no silent overwrites).
 - Zero information loss: All unique content preserved in merge operations.
 - Team satisfaction: "Curation improves shared knowledge without burden."
+
+## Implementation checklist
+**Step 1: Collect and merge**
+- [x] Add Web UI export option that produces `{username}_export.zip` with `skills.csv` and `experiences.csv`.
+- [x] Exporter: when `CHL_SKILLS_ENABLED=false`, normalize ChatGPT/Claude SKILL.md folders into `skills.csv`.
+- [x] Merge: stamp `author` and `source` from member directory name when missing.
+- [x] Merge: if `category_code` missing, send skill content + category list to LLM and populate `metadata["chl.category_code"]` + `metadata["chl.category_confidence"]`.
+  Verify:
+  - UI: Operations → Export CSV → confirm `{username}_export.zip` contains `{username}/skills.csv`.
+  - CLI: `python scripts/curation/common/merge_all.py --inputs data/curation/members/alice data/curation/members/bob`
+
+**Step 2: Generate outlines**
+- [x] Outline generation and storage in `metadata["chl.outline"]`.
+  Verify:
+  - `python scripts/curation/experience/merge/import_to_curation_db.py --db-path data/curation/chl_curation.db`
+  - Inspect any imported skill in DB; confirm `metadata` JSON includes `chl.outline`.
+
+**Step 3: Atomicity pass**
+- [x] Atomicity split pass with immediate outline regeneration.
+  Verify:
+  - `python scripts/curation/skills/prepass/atomicity_split_prepass.py --db-path data/curation/chl_curation.db --limit 5 --dry-run`
+  - Run without `--dry-run` to apply and confirm splits/sync_status updates.
+
+**Step 4: Candidate grouping**
+- [x] Candidate grouping with cross-category fallback rules.
+  Verify:
+  - `python scripts/curation/skills/merge/build_skill_candidates.py --db-path data/curation/chl_curation.db`
+  - Confirm `data/curation/skill_candidates.jsonl` exists and has records.
+
+**Step 5: LLM relationship analysis (auto-apply)**
+- [x] LLM relationship analysis with auto-apply thresholds.
+- [x] Post-apply validation (name/description constraints) and provenance metadata.
+  Verify:
+  - `python scripts/curation/skills/merge/analyze_relationships.py --db-path data/curation/chl_curation.db --limit 10`
+  - Confirm `data/curation/skill_decisions_log.csv` is populated and merged/split skills created.
+
+**Step 6–8: Export, distribute, resolve**
+- [x] Export `skills.csv`, `skill_decisions_log.csv`, and `skill_curation_report.md`.
+  Verify:
+  - `python scripts/curation/skills/export_curated.py --db-path data/curation/chl_curation.db`
+  - Confirm files exist under `data/curation/approved/`.
+
+**Data/migrations and runtime safeguards**
+- [x] Add `skill_curation_decisions` and `skill_split_provenance` tables (migration).
+- [x] Add checkpoints, retry/backoff, and snapshot rollback before auto-apply.
+- [x] Enforce `CHL_SKILLS_ENABLED` gates in `overnight_all.py` and skills scripts.
+  Verify:
+  - Run migration on a test DB; confirm tables exist.
+  - Run relationship analysis with `--dry-run` and simulate failure to confirm resume/rollback behavior.
+  - Run `python scripts/curation/common/overnight_all.py` with `CHL_SKILLS_ENABLED=false` and confirm skills steps are skipped.

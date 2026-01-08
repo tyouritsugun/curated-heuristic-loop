@@ -108,6 +108,54 @@ def parse_skill_md(
     return payload
 
 
+def parse_skill_md_loose(
+    path: Path,
+    *,
+    require_dir_match: bool = True,
+) -> Dict[str, Any]:
+    """Parse SKILL.md without requiring category_code."""
+    text = path.read_text(encoding="utf-8")
+    yaml_text, content = _split_frontmatter(text)
+    data = yaml.safe_load(yaml_text) or {}
+    if not isinstance(data, dict):
+        raise ValueError("YAML frontmatter must be a mapping")
+
+    name = _require_non_empty(data.get("name"), "name")
+    description = _require_non_empty(data.get("description"), "description")
+    content = _require_non_empty(content, "content")
+
+    _validate_name(name)
+    if not (1 <= len(description) <= 1024):
+        raise ValueError("Skill description must be 1-1024 characters")
+
+    if require_dir_match and path.parent.name != name:
+        raise ValueError(f"Directory name '{path.parent.name}' must match skill name '{name}'")
+
+    allowed_raw = data.get("allowed-tools") or data.get("allowed_tools")
+    allowed_tools = normalize_allowed_tools(allowed_raw)
+
+    metadata_raw = data.get("metadata")
+    metadata_value = metadata_raw if isinstance(metadata_raw, dict) else {"value": metadata_raw} if metadata_raw is not None else None
+    metadata = flatten_metadata(metadata_value)
+
+    category_code = None
+    if "chl.category_code" in metadata:
+        category_code = str(metadata.get("chl.category_code")).strip().upper()
+
+    payload: Dict[str, Any] = {
+        "name": name,
+        "description": description,
+        "content": content,
+        "license": data.get("license"),
+        "compatibility": data.get("compatibility"),
+        "allowed_tools": allowed_tools,
+        "model": data.get("model"),
+        "metadata": metadata if metadata else None,
+        "category_code": category_code,
+    }
+    return payload
+
+
 def build_skill_md(
     skill: Any,
     *,

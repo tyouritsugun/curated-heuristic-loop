@@ -18,9 +18,10 @@ Usage:
 
 import argparse
 import csv
-import sys
-import shutil
+import json
 import re
+import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,12 +29,14 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo_root))
 
+import yaml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.common.storage.database import Database
 from src.common.storage.schema import Category, Experience, CategorySkill
 from src.common.config.categories import get_categories
 from scripts._config_loader import load_scripts_config
+from scripts.curation.agents.autogen_openai_completion_agent import build_llm_config
 
 
 def parse_args():
@@ -92,6 +95,119 @@ def slugify(value: str) -> str:
     text = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
     text = re.sub(r"-{2,}", "-", text).strip("-")
     return text
+
+
+def load_category_prompt(prompt_path: Path) -> dict:
+    with open(prompt_path, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def build_category_list(categories: list[Category]) -> str:
+    lines = []
+    for cat in categories:
+        desc = (cat.description or "").strip()
+        if desc:
+            lines.append(f"- {cat.code}: {cat.name} — {desc}")
+        else:
+            lines.append(f"- {cat.code}: {cat.name}")
+    return "\n".join(lines)
+
+
+def extract_outline(metadata_json: str | None) -> str:
+    if not metadata_json:
+        return ""
+    try:
+        data = json.loads(metadata_json)
+    except json.JSONDecodeError:
+        return ""
+    outline = data.get("chl.outline")
+    return outline if isinstance(outline, str) else ""
+
+
+def merge_metadata(metadata_json: str | None, updates: dict) -> str:
+    data = {}
+    if metadata_json:
+        try:
+            data = json.loads(metadata_json) or {}
+        except json.JSONDecodeError:
+            data = {}
+    data.update(updates)
+    return json.dumps(data, ensure_ascii=False)
+
+
+def map_category_with_llm(title: str, content: str, outline: str, category_list: str, prompt_path: Path) -> tuple[str | None, float | None]:
+    prompt = load_category_prompt(prompt_path)
+    system_msg = prompt.get("system", "")
+    user_msg = prompt.get("user", "")
+    user_msg = user_msg.format(
+        title=title,
+        content=content,
+        outline=outline or "",
+        category_list=category_list,
+    )
+    messages = []
+    if system_msg:
+        messages.append({"role": "system", "content": system_msg})
+    messages.append({"role": "user", "content": user_msg})
+
+    llm_config, settings, cfg_path = build_llm_config()
+    try:
+        from autogen import AssistantAgent
+    except Exception as exc:  # pragma: no cover - dependency issue
+        raise RuntimeError(f"autogen is required to call LLM: {exc}")
+    agent = AssistantAgent(name="category_mapper", llm_config=llm_config)
+
+    reply = agent.generate_reply(messages=messages)
+    raw = reply if isinstance(reply, str) else json.dumps(reply)
+    try:
+        data = reply if isinstance(reply, dict) else json.loads(raw)
+    except json.JSONDecodeError:
+        # Best-effort JSON extraction
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not match:
+            raise ValueError("LLM returned non-JSON response")
+        data = json.loads(match.group(0))
+
+    code = (data.get("category_code") or "").strip()
+    confidence = data.get("confidence")
+    if not code:
+        raise ValueError("LLM response missing category_code")
+    try:
+        confidence_val = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        confidence_val = None
+    print(f"  [category_map] {title} -> {code} (confidence={confidence_val}) using {settings.model} from {cfg_path}")
+    return code, confidence_val
+
+
+def generate_outline_with_llm(title: str, content: str, tags: str, prompt_path: Path) -> str:
+    prompt = load_category_prompt(prompt_path)
+    system_msg = prompt.get("system", "")
+    user_msg = prompt.get("user", "")
+    user_msg = user_msg.format(
+        title=title,
+        content=content,
+        tags=tags or "",
+    )
+    messages = []
+    if system_msg:
+        messages.append({"role": "system", "content": system_msg})
+    messages.append({"role": "user", "content": user_msg})
+
+    llm_config, settings, cfg_path = build_llm_config()
+    try:
+        from autogen import AssistantAgent
+    except Exception as exc:  # pragma: no cover - dependency issue
+        raise RuntimeError(f"autogen is required to call LLM: {exc}")
+    agent = AssistantAgent(name="outline_generator", llm_config=llm_config)
+
+    reply = agent.generate_reply(messages=messages)
+    outline = reply if isinstance(reply, str) else json.dumps(reply)
+    outline = outline.strip()
+    if not outline:
+        raise ValueError("LLM returned empty outline")
+    print(f"  [outline] {title} using {settings.model} from {cfg_path}")
+    return outline
 
 
 def main():
@@ -199,6 +315,13 @@ def main():
             print(f"✓ Seeded {len(categories)} categories from canonical taxonomy")
         print()
 
+        # Load categories for validation + LLM mapping
+        category_rows = session.query(Category).all()
+        category_codes = {cat.code for cat in category_rows}
+        category_list_text = build_category_list(category_rows)
+        category_prompt_path = repo_root / "scripts/curation/agents/prompts/skill_category_mapping.yaml"
+        outline_prompt_path = repo_root / "scripts/curation/agents/prompts/skill_outline_generation.yaml"
+
         # Import experiences
         print("Importing experiences...")
         skipped_experiences = 0
@@ -246,7 +369,48 @@ def main():
             name_raw = (row.get("name") or row.get("title") or "").strip()
             description = (row.get("description") or row.get("summary") or "").strip()
             content = (row.get("content") or "").strip()
-            if not skill_id or not category_code or not name_raw or not description or not content:
+            if not skill_id or not name_raw or not description or not content:
+                skipped_skills += 1
+                continue
+
+            metadata_json = row.get("metadata") or None
+            outline = extract_outline(metadata_json)
+            if not outline:
+                try:
+                    outline = generate_outline_with_llm(
+                        title=name_raw,
+                        content=content,
+                        tags="",
+                        prompt_path=outline_prompt_path,
+                    )
+                    metadata_json = merge_metadata(metadata_json, {"chl.outline": outline})
+                except Exception as exc:
+                    print(f"  ❌ Outline generation failed for skill {skill_id}: {exc}")
+                    skipped_skills += 1
+                    continue
+            if not category_code:
+                try:
+                    category_code, confidence = map_category_with_llm(
+                        title=name_raw,
+                        content=content,
+                        outline=outline,
+                        category_list=category_list_text,
+                        prompt_path=category_prompt_path,
+                    )
+                    metadata_json = merge_metadata(
+                        metadata_json,
+                        {
+                            "chl.category_code": category_code,
+                            "chl.category_confidence": confidence,
+                        },
+                    )
+                except Exception as exc:
+                    print(f"  ❌ Category mapping failed for skill {skill_id}: {exc}")
+                    skipped_skills += 1
+                    continue
+
+            if category_code not in category_codes:
+                print(f"  ❌ Invalid category_code for skill {skill_id}: {category_code}")
                 skipped_skills += 1
                 continue
             name = slugify(name_raw)
@@ -266,7 +430,7 @@ def main():
                 content=content,
                 license=row.get("license") or None,
                 compatibility=row.get("compatibility") or None,
-                metadata_json=row.get("metadata") or None,
+                metadata_json=metadata_json,
                 allowed_tools=row.get("allowed_tools") or None,
                 model=row.get("model") or None,
                 source=row.get("source") or "local",

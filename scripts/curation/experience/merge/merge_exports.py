@@ -100,7 +100,7 @@ def parse_args():
 
 MIN_CATEGORY_COLUMNS = {"code", "name", "description"}
 MIN_EXPERIENCE_COLUMNS = {"id", "category_code", "section", "title", "playbook"}
-MIN_SKILL_COLUMNS = {"id", "category_code", "name", "description", "content"}
+MIN_SKILL_COLUMNS = {"id", "name", "description", "content"}
 
 OPTIONAL_EXPERIENCE_COLUMNS = {"context", "expected_action"}
 OPTIONAL_SKILL_COLUMNS = {"title", "summary", "license", "compatibility", "metadata", "allowed_tools", "model"}
@@ -295,6 +295,8 @@ def merge_experiences(
 
             # Override author field with folder name (source of truth)
             exp["author"] = username
+            if not exp.get("source"):
+                exp["source"] = f"imported_{username}"
 
             experiences_by_id[exp["id"]] = exp
 
@@ -335,6 +337,8 @@ def merge_skills(
 
             # Override author field with folder name (source of truth)
             skill["author"] = username
+            if not skill.get("source"):
+                skill["source"] = f"imported_{username}"
 
             skills_by_id[skill["id"]] = skill
 
