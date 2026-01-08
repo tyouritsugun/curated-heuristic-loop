@@ -38,6 +38,18 @@ Each team member exports their local skills into `data/curation/members/<user>/`
 - `category_code` is left NULL (or omitted) in `skills.csv`.
 - During merge, if `category_code` is NULL/missing, send the skill content plus the full category definitions to the LLM and ask it to assign the best-fit category. Populate `metadata["chl.category_code"]` and `metadata["chl.category_confidence"]` from the result.
 
+<details>
+<summary><strong>Note: External Skills (Claude/Codex) CSV‑Only Flow</strong></summary>
+
+When `CHL_SKILLS_ENABLED=false`, users do **not** store skills in CHL. Instead:
+
+1. Use **External Skills (Claude/Codex) → Export → skills.csv** to generate a curation CSV directly from SKILL.md folders.
+2. Send `skills.csv` to Carlos for curation.
+3. When curated `skills.csv` returns, use **External Skills → Import skills.csv → Claude/Codex** to overwrite SKILL.md.
+
+This avoids needing to toggle `CHL_SKILLS_ENABLED` and keeps external skills fully file‑based.
+</details>
+
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.
 - **Curation database**: `data/curation/chl_curation.db` - isolated environment for Carlos to merge/split/curate.

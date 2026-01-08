@@ -862,15 +862,31 @@ class OperationsService:
             raise ValueError(f"Excel export operation failed: {exc}") from exc
 
     def _import_claude_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._import_external_csv_to_skill_md(payload, session, target="claude")
         return self._import_skill_md_handler(payload, session, source="imported_claude")
 
     def _import_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._import_external_csv_to_skill_md(payload, session, target="codex")
         return self._import_skill_md_handler(payload, session, source="imported_codex")
 
     def _export_claude_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._export_external_skill_md_to_csv(payload, session, target="claude")
         return self._export_skill_md_handler(payload, session, target="claude")
 
     def _export_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._export_external_skill_md_to_csv(payload, session, target="codex")
         return self._export_skill_md_handler(payload, session, target="codex")
 
     def _import_skill_md_handler(
@@ -1064,6 +1080,150 @@ class OperationsService:
             },
             "errors": errors,
             "message": message,
+        }
+
+    def _export_external_skill_md_to_csv(
+        self,
+        payload: Dict[str, Any],
+        session: Session,
+        *,
+        target: str,
+    ) -> Dict[str, Any]:
+        """When skills are disabled, export SKILL.md folders to skills.csv for curation."""
+        import csv
+        import json
+        from src.common.storage.repository import get_author
+        from src.common.skills.skill_md import parse_skill_md_loose
+
+        del session  # unused, kept for handler signature consistency
+        base_dir = self._resolve_skill_base_dir(payload, target=target)
+        author = get_author() or "unknown"
+        output_dir = Path("data/curation/members") / author
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "skills.csv"
+
+        rows: list[dict] = []
+        for skill_path in self._iter_skill_md_paths(base_dir):
+            try:
+                data = parse_skill_md_loose(skill_path, require_dir_match=True)
+            except Exception as exc:
+                logger.warning("Skipping SKILL.md parse error (%s): %s", skill_path, exc)
+                continue
+            meta = data.get("metadata") or {}
+            rows.append(
+                {
+                    "id": data.get("name") or "",
+                    "category_code": data.get("category_code") or "",
+                    "name": data.get("name") or "",
+                    "description": data.get("description") or "",
+                    "content": data.get("content") or "",
+                    "license": data.get("license") or "",
+                    "compatibility": data.get("compatibility") or "",
+                    "metadata": json.dumps(meta, ensure_ascii=False) if meta else "",
+                    "allowed_tools": " ".join(data.get("allowed_tools") or []),
+                    "model": data.get("model") or "",
+                    "updated_at": "",
+                    "author": author,
+                }
+            )
+
+        fieldnames = [
+            "id",
+            "category_code",
+            "name",
+            "description",
+            "content",
+            "license",
+            "compatibility",
+            "metadata",
+            "allowed_tools",
+            "model",
+            "updated_at",
+            "author",
+        ]
+        with output_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        return {
+            "success": True,
+            "export_path": str(output_path),
+            "counts": {"skills": len(rows)},
+            "message": f"Exported {len(rows)} skills to {output_path}",
+        }
+
+    def _import_external_csv_to_skill_md(
+        self,
+        payload: Dict[str, Any],
+        session: Session,
+        *,
+        target: str,
+    ) -> Dict[str, Any]:
+        """When skills are disabled, import skills.csv into SKILL.md folders."""
+        import csv
+        import json
+        import yaml
+        from src.common.storage.repository import get_author
+
+        del session  # unused, kept for handler signature consistency
+        author = get_author() or "unknown"
+        input_path = Path("data/curation/members") / author / "skills.csv"
+        if not input_path.exists():
+            raise ValueError(f"skills.csv not found: {input_path}")
+
+        base_dir = self._resolve_skill_base_dir(payload, target=target)
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        def build_skill_md_from_row(row: dict) -> str:
+            metadata_raw = row.get("metadata") or ""
+            metadata = None
+            if metadata_raw:
+                try:
+                    parsed = json.loads(metadata_raw)
+                    if isinstance(parsed, dict):
+                        metadata = parsed
+                except json.JSONDecodeError:
+                    metadata = {"raw": metadata_raw}
+            name = (row.get("name") or "").strip()
+            description = (row.get("description") or "").strip()
+            content = (row.get("content") or "").strip()
+            frontmatter = {
+                "name": name,
+                "description": description,
+            }
+            if row.get("license"):
+                frontmatter["license"] = row.get("license")
+            if row.get("compatibility"):
+                frontmatter["compatibility"] = row.get("compatibility")
+            allowed_tools = (row.get("allowed_tools") or "").strip()
+            if allowed_tools:
+                frontmatter["allowed-tools"] = allowed_tools
+            if row.get("model"):
+                frontmatter["model"] = row.get("model")
+            if metadata:
+                frontmatter["metadata"] = metadata
+            yaml_text = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
+            return f"---\n{yaml_text}\n---\n\n{content}\n"
+
+        imported = 0
+        with input_path.open("r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                skill_dir = base_dir / name
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                skill_path = skill_dir / "SKILL.md"
+                skill_path.write_text(build_skill_md_from_row(row), encoding="utf-8")
+                imported += 1
+
+        return {
+            "success": True,
+            "import_path": str(input_path),
+            "counts": {"skills": imported},
+            "message": f"Imported {imported} skills into {base_dir}",
         }
 
     @staticmethod
