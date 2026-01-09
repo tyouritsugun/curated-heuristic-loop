@@ -2,7 +2,8 @@
 
 ## Goal
 Merge, split, and distribute skills after import. Low volume implies LLM-assisted manual review, but skills can also be included in the shared overnight workflow with experiences.
-If `CHL_SKILLS_ENABLED=false`, skip the entire skill curation loop (no skill export/import, no skill decisions).
+If `CHL_SKILLS_ENABLED=false`, skip the skill curation loop (no skill merge/decisions in CHL DB), but still allow
+CSV-based skill export/import via external SKILL.md folders.
 
 ## Phases
 1. **Member export**: Each member exports skills into `data/curation/members/<user>/` with author/source stamped.
@@ -49,6 +50,17 @@ When `CHL_SKILLS_ENABLED=false`, users do **not** store skills in CHL. Instead:
 
 This avoids needing to toggle `CHL_SKILLS_ENABLED` and keeps external skills fully file‑based.
 </details>
+
+### UI export behavior when `CHL_SKILLS_ENABLED=false`
+- Export still includes `experiences.csv` from CHL DB.
+- Skills export uses a modal to select an external source:
+  - **Claude only** or **ChatGPT only** (single source; no merge between sources).
+  - **None** to skip skills export.
+- CSV export downloads `{username}_export.zip` with `experiences.csv` plus `skills.csv` (if selected).
+- Spreadsheet/Excel export:
+  - Experiences sheet populated from CHL DB.
+  - Skills sheet populated from the selected external source (or omitted if None).
+  - If the skills sheet is omitted, UI should show a warning message in the export result.
 
 ## Database topology
 - **Main database**: `data/chl.db` - user's working database for daily operations.

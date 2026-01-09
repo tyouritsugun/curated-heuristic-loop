@@ -40,7 +40,7 @@ We will create skill-level curation tables. Prefixing experience tables prevents
   - `scripts/curation/experience/export_manual_queue.py` (SQL query)
   - `scripts/curation/experience/merge/init_curation_db.py` (table list)
 - Docs mentioning curation_decisions:
-  - `doc/experience_curation.md`
+  - `doc/curation.md`
   - `doc/plan/5_skill_curation.md` (decision log naming)
 
 ### Migration plan

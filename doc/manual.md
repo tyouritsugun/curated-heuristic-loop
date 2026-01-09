@@ -240,8 +240,10 @@ For automation and scripting, activate the API server venv first, then use these
 ### 5.2. Data Synchronization
 Before running, ensure your `scripts/scripts_config.yaml` is configured with the correct Google Sheet IDs.
 
--   **Export for review:** From a running API server, click **Export Spreadsheet**, 
--   **Import from Google Sheets:**  click **Import Spreadsheet** to overwrite the local database with the published sheet(reset all):
+-   **Export for review:** From a running API server, click **Export Spreadsheet**.
+    - If `CHL_SKILLS_ENABLED=false`, the UI prompts for external skills source (Claude/ChatGPT/None). Experiences always export from CHL DB.
+-   **Import from Google Sheets:** Click **Import Spreadsheet** to overwrite the local database with the published sheet (reset all).
+    - If `CHL_SKILLS_ENABLED=false`, experiences import into CHL DB and skills are written to external SKILL.md folders based on the modal choice.
 
 ## 6. Reference
 

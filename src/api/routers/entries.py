@@ -880,6 +880,7 @@ def export_entries(
 def export_entries_csv(
     session: Session = Depends(get_db_session),
     config=Depends(get_config),
+    external_skills_target: str | None = None,
 ):
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
@@ -902,73 +903,75 @@ def export_entries_csv(
         # Get username from system
         username = get_author() or "unknown"
 
+        external_target = (external_skills_target or "").strip().lower()
+        if external_target == "chatgpt":
+            external_target = "codex"
+
         # Fetch all data
         experiences = session.query(Experience).all()
         skills = []
         if getattr(config, "skills_enabled", True):
             skills = session.query(CategorySkill).all()
         else:
-            # Skills disabled: read from local SKILL.md folders
-            def iter_skill_md_paths(base_dir: Path):
-                if not base_dir.exists():
-                    return []
-                paths = []
-                for child in base_dir.iterdir():
-                    if child.is_dir():
-                        skill_md = child / "SKILL.md"
-                        if skill_md.is_file():
-                            paths.append(skill_md)
-                return paths
+            if external_target and external_target != "none":
+                # Skills disabled: read from selected SKILL.md folder
+                def iter_skill_md_paths(base_dir: Path):
+                    if not base_dir.exists():
+                        return []
+                    paths = []
+                    for child in base_dir.iterdir():
+                        if child.is_dir():
+                            skill_md = child / "SKILL.md"
+                            if skill_md.is_file():
+                                paths.append(skill_md)
+                    return paths
 
-            candidates = [
-                Path.cwd() / ".codex" / "skills",
-                Path.home() / ".codex" / "skills",
-                Path.cwd() / ".claude" / "skills",
-                Path.home() / ".claude" / "skills",
-                Path.cwd() / "skills",
-            ]
+                if external_target == "codex":
+                    candidates = [
+                        Path.cwd() / ".codex" / "skills",
+                        Path.home() / ".codex" / "skills",
+                    ]
+                else:
+                    candidates = [
+                        Path.cwd() / ".claude" / "skills",
+                        Path.home() / ".claude" / "skills",
+                    ]
 
-            skills_by_name = {}
-            for base_dir in candidates:
-                for skill_md in iter_skill_md_paths(base_dir):
-                    try:
-                        data = parse_skill_md_loose(skill_md, require_dir_match=True)
-                    except Exception as exc:
-                        logger.warning("Skipping SKILL.md parse error (%s): %s", skill_md, exc)
-                        continue
-                    name = data.get("name")
-                    if not name or name in skills_by_name:
-                        continue
-                    category_code = (data.get("category_code") or "").strip()
-                    metadata = data.get("metadata") or {}
-                    allowed_tools = data.get("allowed_tools") or []
-                    source_tag = "external_skills"
-                    if ".codex" in skill_md.parts:
-                        source_tag = "external_codex"
-                    elif ".claude" in skill_md.parts:
-                        source_tag = "external_claude"
-                    elif base_dir.name == "skills":
-                        source_tag = "external_skills"
-                    skills_by_name[name] = {
-                        "id": name,
-                        "category_code": category_code,
-                        "name": name,
-                        "description": data.get("description") or "",
-                        "content": data.get("content") or "",
-                        "license": data.get("license") or "",
-                        "compatibility": data.get("compatibility") or "",
-                        "metadata": json.dumps(metadata, ensure_ascii=False) if metadata else "",
-                        "allowed_tools": " ".join(allowed_tools) if allowed_tools else "",
-                        "model": data.get("model") or "",
-                        "source": source_tag,
-                        "author": username,
-                        "embedding_status": "",
-                        "created_at": "",
-                        "updated_at": "",
-                        "synced_at": "",
-                        "exported_at": "",
-                    }
-            skills = list(skills_by_name.values())
+                skills_by_name = {}
+                for base_dir in candidates:
+                    for skill_md in iter_skill_md_paths(base_dir):
+                        try:
+                            data = parse_skill_md_loose(skill_md, require_dir_match=True)
+                        except Exception as exc:
+                            logger.warning("Skipping SKILL.md parse error (%s): %s", skill_md, exc)
+                            continue
+                        name = data.get("name")
+                        if not name or name in skills_by_name:
+                            continue
+                        category_code = (data.get("category_code") or "").strip()
+                        metadata = data.get("metadata") or {}
+                        allowed_tools = data.get("allowed_tools") or []
+                        source_tag = f"external_{external_target}"
+                        skills_by_name[name] = {
+                            "id": name,
+                            "category_code": category_code,
+                            "name": name,
+                            "description": data.get("description") or "",
+                            "content": data.get("content") or "",
+                            "license": data.get("license") or "",
+                            "compatibility": data.get("compatibility") or "",
+                            "metadata": json.dumps(metadata, ensure_ascii=False) if metadata else "",
+                            "allowed_tools": " ".join(allowed_tools) if allowed_tools else "",
+                            "model": data.get("model") or "",
+                            "source": source_tag,
+                            "author": username,
+                            "embedding_status": "",
+                            "created_at": "",
+                            "updated_at": "",
+                            "synced_at": "",
+                            "exported_at": "",
+                        }
+                skills = list(skills_by_name.values())
 
         # Create in-memory zip file
         zip_buffer = io.BytesIO()

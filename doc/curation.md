@@ -55,6 +55,10 @@ Short sample flow for Alice, Bob, and a curator (Carlos) using the semi-auto cur
 ## 1) Member Export (Alice/Bob)
 - Start CHL, open Operations, click "Export CSV".
 - Each sends `{user}.export.zip` to the curator.
+- **When CHL_SKILLS_ENABLED=true**: Export CSV pulls both experiences + skills from CHL DB.
+- **When CHL_SKILLS_ENABLED=false**: Export CSV uses a modal to choose the external skills source.
+  - Experiences still export from CHL DB.
+  - Skills export from the selected external source (Claude/Codex), written to `skills.csv` inside the ZIP.
 
 ## 2) Curator Merge + Import (wrapped)
 After unzipping member exports into `data/curation/members/`, run:
@@ -97,12 +101,19 @@ data/curation/approved/experiences.tsv
 - Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
 - If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
   - Note: Importing via the UI/Excel always resets `embedding_status` to `pending` on the server and rebuilds embeddings; any `embedded` values in the TSV are ignored.
+  - Export behavior:
+    - **When CHL_SKILLS_ENABLED=true**: Skills and experiences export from CHL DB as usual.
+    - **When CHL_SKILLS_ENABLED=false**: Export UI prompts for external skills source (Claude/ChatGPT/None) and uses that to populate skills output.
 UI: Operations → Import from Google Sheet  
 CLI:
 ```bash
 python scripts/import_from_sheets.py --sheet-id <SHEET_ID>
 python scripts/ops/rebuild_index.py
 ```
+Import behavior:
+- **When CHL_SKILLS_ENABLED=true**: Experiences + skills import into CHL DB.
+- **When CHL_SKILLS_ENABLED=false**: Experiences import into CHL DB; skills are routed to external targets
+  (Claude/Codex) based on the import modal choice, and are written to SKILL.md files.
 
 ## Key Outputs
 ```

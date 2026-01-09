@@ -382,8 +382,10 @@ class OperationsService:
             categories_rows: list[dict] = []
             experiences_rows = payload.get("experiences") or []
             skills_rows = payload.get("skills") or payload.get("manuals") or []
+            external_target = _normalize_text(payload.get("external_skills_target"))
             if not skills_enabled:
-                skills_rows = []
+                # Keep skills_rows for external import; do not write to CHL DB.
+                pass
 
             # If no payload provided, fetch from Google Sheets directly
             if not categories_rows:
@@ -420,7 +422,9 @@ class OperationsService:
                     if not skills_rows:
                         skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
                 else:
-                    skills_rows = []
+                    skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
+                    if not skills_rows:
+                        skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
 
                 logger.info(
                     "Fetched from Google Sheets: %d experiences, %d skills",
@@ -435,16 +439,20 @@ class OperationsService:
                         "message": "No data found in Google Sheets",
                     }
 
-            # Import via service
+            # Import via service (experiences always)
             import_service = ImportService(self._data_path, self._faiss_index_path)
             counts = import_service.import_from_sheets(
                 session=session,
                 categories_rows=categories_rows,
                 experiences_rows=experiences_rows,
-                skills_rows=skills_rows,
+                skills_rows=skills_rows if skills_enabled else [],
             )
 
             logger.info("Import completed: %s", counts)
+
+            external_counts = {"skills": 0}
+            if not skills_enabled and external_target and external_target != "none":
+                external_counts = self._import_skill_rows_to_external(skills_rows, external_target)
 
             # Auto-trigger sync job if import succeeded and GPU mode is enabled
             if self._mode_adapter and self._mode_adapter.can_run_vector_jobs():
@@ -459,7 +467,15 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
-                "message": f"Imported {counts['experiences']} experiences, {counts['skills']} skills",
+                "message": (
+                    f"Imported {counts['experiences']} experiences, "
+                    f"{counts['skills']} skills"
+                    + (
+                        f"; external skills written: {external_counts.get('skills', 0)}"
+                        if not skills_enabled and external_target and external_target != "none"
+                        else ""
+                    )
+                ),
             }
 
         except Exception as exc:
@@ -574,11 +590,15 @@ class OperationsService:
         config = get_config()
         skills_enabled = bool(getattr(config, "skills_enabled", True))
 
+        external_target = _normalize_text(payload.get("external_skills_target"))
+
         # Query data from database (categories are code-defined; not exported)
         experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
         skills = []
         if skills_enabled:
             skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+        elif external_target and external_target != "none":
+            skills = self._read_external_skills_for_target(external_target)
 
         # Initialize sheets client
         sheets_client = SheetsClient(str(credentials_path))
@@ -611,8 +631,8 @@ class OperationsService:
             readonly_cols=[0, 6],  # id and updated_at are readonly
         )
 
-        # Export Skills (if enabled)
-        if skills_enabled:
+        # Export Skills (if enabled or external source selected)
+        if skills_enabled or (external_target and external_target != "none"):
             skills_headers = [
                 "id",
                 "category_code",
@@ -627,23 +647,42 @@ class OperationsService:
                 "updated_at",
                 "author",
             ]
-            skills_rows = [
-                [
-                    skill.id,
-                    skill.category_code,
-                    skill.name,
-                    skill.description,
-                    skill.content or "",
-                    skill.license or "",
-                    skill.compatibility or "",
-                    skill.metadata_json or "",
-                    skill.allowed_tools or "",
-                    skill.model or "",
-                    skill.updated_at.isoformat() if skill.updated_at else "",
-                    skill.author or "",
+            if skills_enabled:
+                skills_rows = [
+                    [
+                        skill.id,
+                        skill.category_code,
+                        skill.name,
+                        skill.description,
+                        skill.content or "",
+                        skill.license or "",
+                        skill.compatibility or "",
+                        skill.metadata_json or "",
+                        skill.allowed_tools or "",
+                        skill.model or "",
+                        skill.updated_at.isoformat() if skill.updated_at else "",
+                        skill.author or "",
+                    ]
+                    for skill in skills
                 ]
-                for skill in skills
-            ]
+            else:
+                skills_rows = [
+                    [
+                        skill.get("id", ""),
+                        skill.get("category_code", ""),
+                        skill.get("name", ""),
+                        skill.get("description", ""),
+                        skill.get("content", ""),
+                        skill.get("license", ""),
+                        skill.get("compatibility", ""),
+                        skill.get("metadata", ""),
+                        skill.get("allowed_tools", ""),
+                        skill.get("model", ""),
+                        skill.get("updated_at", ""),
+                        skill.get("author", ""),
+                    ]
+                    for skill in skills
+                ]
             sheets_client.write_worksheet(
                 spreadsheet_id,
                 skills_worksheet,
@@ -665,7 +704,10 @@ class OperationsService:
                 "experiences": len(experiences),
                 "skills": len(skills),
             },
-            "message": f"Exported to Google Sheets: {len(experiences)} experiences, {len(skills)} skills",
+            "message": (
+                f"Exported to Google Sheets: {len(experiences)} experiences, {len(skills)} skills"
+                + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
+            ),
         }
 
     def _import_excel_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
@@ -684,6 +726,7 @@ class OperationsService:
         try:
             config = get_config()
             skills_enabled = bool(getattr(config, "skills_enabled", True))
+            external_target = _normalize_text(payload.get("external_skills_target"))
 
             # Get file path from payload
             file_path = payload.get("file_path")
@@ -728,6 +771,14 @@ class OperationsService:
                         skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
                     except Exception:
                         skills_df = pd.DataFrame()
+            else:
+                try:
+                    skills_df = pd.read_excel(file_path, sheet_name='Skills', engine='openpyxl')
+                except Exception:
+                    try:
+                        skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
+                    except Exception:
+                        skills_df = pd.DataFrame()
 
             # Convert DataFrames to the format expected by import_service
             categories_rows = []
@@ -740,10 +791,14 @@ class OperationsService:
                 session=session,
                 categories_rows=categories_rows,
                 experiences_rows=experiences_rows,
-                skills_rows=skills_rows,
+                skills_rows=skills_rows if skills_enabled else [],
             )
 
             logger.info("Excel import completed: %s", counts)
+
+            external_counts = {"skills": 0}
+            if not skills_enabled and external_target and external_target != "none":
+                external_counts = self._import_skill_rows_to_external(skills_rows, external_target)
 
             # Auto-trigger sync job if import succeeded and GPU mode is enabled
             if self._mode_adapter and self._mode_adapter.can_run_vector_jobs():
@@ -758,7 +813,14 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
-                "message": f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills",
+                "message": (
+                    f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills"
+                    + (
+                        f"; external skills written: {external_counts.get('skills', 0)}"
+                        if not skills_enabled and external_target and external_target != "none"
+                        else ""
+                    )
+                ),
             }
 
         except Exception as exc:
@@ -780,6 +842,8 @@ class OperationsService:
         try:
             config = get_config()
             skills_enabled = bool(getattr(config, "skills_enabled", True))
+            external_target = _normalize_text(payload.get("external_skills_target"))
+
             # Get export path from payload or use default
             export_path = payload.get("export_path")
             if not export_path:
@@ -797,6 +861,8 @@ class OperationsService:
             skills = []
             if skills_enabled:
                 skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+            elif external_target and external_target != "none":
+                skills = self._read_external_skills_for_target(external_target)
 
             # Convert to DataFrames
             experiences_data = []
@@ -833,11 +899,29 @@ class OperationsService:
                         "author": skill.author or "",
                     })
                 skills_df = pd.DataFrame(skills_data)
+            elif external_target and external_target != "none":
+                skills_data = []
+                for skill in skills:
+                    skills_data.append({
+                        "id": skill.get("id", ""),
+                        "category_code": skill.get("category_code", ""),
+                        "name": skill.get("name", ""),
+                        "description": skill.get("description", ""),
+                        "content": skill.get("content", ""),
+                        "license": skill.get("license", ""),
+                        "compatibility": skill.get("compatibility", ""),
+                        "metadata": skill.get("metadata", ""),
+                        "allowed_tools": skill.get("allowed_tools", ""),
+                        "model": skill.get("model", ""),
+                        "updated_at": skill.get("updated_at", ""),
+                        "author": skill.get("author", ""),
+                    })
+                skills_df = pd.DataFrame(skills_data)
 
             # Write to Excel file with multiple sheets
             with pd.ExcelWriter(export_path, engine='openpyxl') as writer:
                 experiences_df.to_excel(writer, sheet_name='Experiences', index=False)
-                if skills_enabled:
+                if skills_enabled or (external_target and external_target != "none"):
                     skills_df.to_excel(writer, sheet_name='Skills', index=False)
 
             logger.info(
@@ -854,7 +938,10 @@ class OperationsService:
                     "experiences": len(experiences),
                     "skills": len(skills),
                 },
-                "message": f"Exported to Excel: {len(experiences)} experiences, {len(skills)} skills",
+                "message": (
+                    f"Exported to Excel: {len(experiences)} experiences, {len(skills)} skills"
+                    + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
+                ),
             }
 
         except Exception as exc:
@@ -1153,6 +1240,48 @@ class OperationsService:
             "message": f"Exported {len(rows)} skills to {output_path}",
         }
 
+    def _read_external_skills_for_target(self, target: str) -> list[dict]:
+        import json
+        from src.common.storage.repository import get_author
+        from src.common.skills.skill_md import parse_skill_md_loose
+
+        target = (target or "").strip().lower()
+        if target == "chatgpt":
+            target = "codex"
+
+        base_dir = self._resolve_skill_base_dir({}, target=target)
+        author = get_author() or "unknown"
+        rows: list[dict] = []
+        for skill_path in self._iter_skill_md_paths(base_dir):
+            try:
+                data = parse_skill_md_loose(skill_path, require_dir_match=True)
+            except Exception as exc:
+                logger.warning("Skipping SKILL.md parse error (%s): %s", skill_path, exc)
+                continue
+            meta = data.get("metadata") or {}
+            rows.append(
+                {
+                    "id": data.get("name") or "",
+                    "category_code": data.get("category_code") or "",
+                    "name": data.get("name") or "",
+                    "description": data.get("description") or "",
+                    "content": data.get("content") or "",
+                    "license": data.get("license") or "",
+                    "compatibility": data.get("compatibility") or "",
+                    "metadata": json.dumps(meta, ensure_ascii=False) if meta else "",
+                    "allowed_tools": " ".join(data.get("allowed_tools") or []),
+                    "model": data.get("model") or "",
+                    "source": f"external_{target}",
+                    "author": author,
+                    "embedding_status": "",
+                    "created_at": "",
+                    "updated_at": "",
+                    "synced_at": "",
+                    "exported_at": "",
+                }
+            )
+        return rows
+
     def _import_external_csv_to_skill_md(
         self,
         payload: Dict[str, Any],
@@ -1162,7 +1291,6 @@ class OperationsService:
     ) -> Dict[str, Any]:
         """When skills are disabled, import skills.csv into SKILL.md folders."""
         import csv
-        import json
         import yaml
         from src.common.storage.repository import get_author
 
@@ -1175,48 +1303,17 @@ class OperationsService:
         base_dir = self._resolve_skill_base_dir(payload, target=target)
         base_dir.mkdir(parents=True, exist_ok=True)
 
-        def build_skill_md_from_row(row: dict) -> str:
-            metadata_raw = row.get("metadata") or ""
-            metadata = None
-            if metadata_raw:
-                try:
-                    parsed = json.loads(metadata_raw)
-                    if isinstance(parsed, dict):
-                        metadata = parsed
-                except json.JSONDecodeError:
-                    metadata = {"raw": metadata_raw}
-            name = (row.get("name") or "").strip()
-            description = (row.get("description") or "").strip()
-            content = (row.get("content") or "").strip()
-            frontmatter = {
-                "name": name,
-                "description": description,
-            }
-            if row.get("license"):
-                frontmatter["license"] = row.get("license")
-            if row.get("compatibility"):
-                frontmatter["compatibility"] = row.get("compatibility")
-            allowed_tools = (row.get("allowed_tools") or "").strip()
-            if allowed_tools:
-                frontmatter["allowed-tools"] = allowed_tools
-            if row.get("model"):
-                frontmatter["model"] = row.get("model")
-            if metadata:
-                frontmatter["metadata"] = metadata
-            yaml_text = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
-            return f"---\n{yaml_text}\n---\n\n{content}\n"
-
         imported = 0
         with input_path.open("r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                name = (row.get("name") or "").strip()
+                name = (row.get("name") or row.get("title") or "").strip()
                 if not name:
                     continue
                 skill_dir = base_dir / name
                 skill_dir.mkdir(parents=True, exist_ok=True)
                 skill_path = skill_dir / "SKILL.md"
-                skill_path.write_text(build_skill_md_from_row(row), encoding="utf-8")
+                skill_path.write_text(self._build_skill_md_from_row(row, yaml), encoding="utf-8")
                 imported += 1
 
         return {
@@ -1225,6 +1322,90 @@ class OperationsService:
             "counts": {"skills": imported},
             "message": f"Imported {imported} skills into {base_dir}",
         }
+
+    def _import_skill_rows_to_external(self, skills_rows: list[dict], target: str) -> Dict[str, Any]:
+        """Write skill rows to external SKILL.md folders when skills are disabled."""
+        import yaml
+
+        target = (target or "").strip().lower()
+        targets: list[str]
+        if target == "both":
+            targets = ["claude", "codex"]
+        elif target in {"claude", "codex", "chatgpt"}:
+            targets = ["codex"] if target == "chatgpt" else [target]
+        else:
+            return {"skills": 0}
+
+        total_written = 0
+        for chosen in targets:
+            base_dir = self._resolve_skill_base_dir({}, target=chosen)
+            base_dir.mkdir(parents=True, exist_ok=True)
+            written = 0
+            for row in skills_rows:
+                name = (row.get("name") or row.get("title") or "").strip()
+                if not name:
+                    continue
+                skill_dir = base_dir / name
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                skill_path = skill_dir / "SKILL.md"
+                skill_path.write_text(self._build_skill_md_from_row(row, yaml), encoding="utf-8")
+                written += 1
+            total_written += written
+        return {"skills": total_written}
+
+    @staticmethod
+    def _build_skill_md_from_row(row: dict, yaml_module) -> str:
+        import json
+        import math
+
+        def _normalize_cell(value: object | None) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, float) and math.isnan(value):
+                return ""
+            return str(value).strip()
+
+        metadata_raw = row.get("metadata") or ""
+        if isinstance(metadata_raw, float) and math.isnan(metadata_raw):
+            metadata_raw = ""
+        metadata = None
+        if metadata_raw:
+            if isinstance(metadata_raw, dict):
+                metadata = metadata_raw
+            else:
+                try:
+                    parsed = json.loads(metadata_raw)
+                    if isinstance(parsed, dict):
+                        metadata = parsed
+                except json.JSONDecodeError:
+                    metadata = {"raw": metadata_raw}
+        name = _normalize_cell(row.get("name") or row.get("title"))
+        description = _normalize_cell(row.get("description") or row.get("summary"))
+        content = _normalize_cell(row.get("content"))
+        frontmatter = {
+            "name": name,
+            "description": description,
+        }
+        license_value = _normalize_cell(row.get("license"))
+        if license_value:
+            frontmatter["license"] = license_value
+        compatibility_value = _normalize_cell(row.get("compatibility"))
+        if compatibility_value:
+            frontmatter["compatibility"] = compatibility_value
+        allowed_tools = row.get("allowed_tools") or row.get("allowed-tools") or ""
+        if isinstance(allowed_tools, list):
+            allowed_tools = " ".join([_normalize_cell(item) for item in allowed_tools if _normalize_cell(item)])
+        else:
+            allowed_tools = _normalize_cell(allowed_tools)
+        if allowed_tools:
+            frontmatter["allowed-tools"] = allowed_tools
+        model_value = _normalize_cell(row.get("model"))
+        if model_value:
+            frontmatter["model"] = model_value
+        if metadata:
+            frontmatter["metadata"] = metadata
+        yaml_text = yaml_module.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
+        return f"---\n{yaml_text}\n---\n\n{content}\n"
 
     @staticmethod
     def _resolve_skill_base_dir(payload: Dict[str, Any], *, source: str | None = None, target: str | None = None) -> Path:
