@@ -17,6 +17,7 @@ python scripts/curation/experience/overnight/run_curation_overnight.py
 python scripts/curation/common/overnight_all.py
 ```
 Skills curation is intended to run through the common wrappers. Dedicated skills scripts are optional but not the primary entrypoint for Carlos.
+Use `--no-skills` if you need to skip skill curation for a run.
 Defaults are read from:
 - `scripts/scripts_config.yaml`
 - `scripts/curation/agents/prompts/curation_prompt.yaml`
@@ -99,6 +100,7 @@ data/curation/approved/experiences.tsv
 
 ## 4) Review and Publish (Spreadsheet)
 - Copy `data/curation/approved/experiences.tsv` to Excel or Google Sheets for a quick review.
+- Upload `data/curation/approved/skills.tsv` to the Skills sheet for review.
 - If satisfied, publish to the team (Alice and Bob) via the UI or CLI.
   - Note: Importing via the UI/Excel always resets `embedding_status` to `pending` on the server and rebuilds embeddings; any `embedded` values in the TSV are ignored.
   - Export behavior:
@@ -131,6 +133,11 @@ data/curation/
   similarity_graph.pkl     # similarity graph
   communities.json         # communities
 ```
+
+Approved outputs:
+- `data/curation/approved/experiences.tsv`
+- `data/curation/approved/skills.tsv`
+- `data/curation/approved/curation_summary.md`
 
 ## Notes
 - `sync_status`: `0=PENDING`, `1=SYNCED`, `2=REJECTED`.

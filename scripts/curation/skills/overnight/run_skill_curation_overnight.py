@@ -86,8 +86,16 @@ def main() -> int:
         str(db_path),
     ]
 
+    index_cmd = [
+        py,
+        "scripts/curation/experience/merge/build_curation_index.py",
+        "--db-path",
+        str(db_path),
+    ]
+
     try:
         run_step("Skill atomicity split prepass", atomicity_cmd)
+        run_step("Build embeddings + FAISS index", index_cmd)
         run_step("Build skill candidates", candidates_cmd)
         run_step("Analyze relationships + auto-apply", analyze_cmd)
         if not args.dry_run:

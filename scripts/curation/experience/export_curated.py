@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 """
-Export approved data from curation database to TSV/CSV files.
+Export approved data from curation database to TSV files.
 
-This script exports data from the curation database to approved TSV/CSV files,
-excluding rejected entries (sync_status=2) by default. Creates the same
-structure as member exports (experiences.csv, skills.csv) plus experiences.tsv by default.
+This script exports data from the curation database to approved TSV files,
+excluding rejected entries (sync_status=2) by default. Outputs experiences.tsv by default.
 
 Usage:
     # Default export (TSV)
     python scripts/curation/experience/export_curated.py \\
         --db-path data/curation/chl_curation.db \\
         --output data/curation/approved
-
-    # Include CSV files as well
-    python scripts/curation/experience/export_curated.py \\
-        --db-path data/curation/chl_curation.db \\
-        --output data/curation/approved \\
-        --csv
 
     # Include rejected entries
     python scripts/curation/experience/export_curated.py \\
@@ -43,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.common.storage.schema import Experience, CategorySkill
+from src.common.storage.schema import Experience
 from scripts._config_loader import load_scripts_config
 
 
@@ -81,11 +74,6 @@ def parse_args():
         "--dry-run",
         action="store_true",
         help="Don't write any files, just show what would be exported",
-    )
-    parser.add_argument(
-        "--csv",
-        action="store_true",
-        help="Also write experiences.csv/skills.csv",
     )
     return parser.parse_args()
 
@@ -136,13 +124,6 @@ def main():
         ).all()
         print(f"Experiences: {len(experiences)} (from filter: {sync_filter})")
 
-        # Query skills with sync_status filter
-        skills = session.query(CategorySkill).filter(
-            CategorySkill.sync_status.in_(sync_filter)
-        ).all()
-        print(f"Skills: {len(skills)} (from filter: {sync_filter})")
-        print()
-
         # Prepare data for CSV export
         experiences_data = []
         for exp in experiences:
@@ -163,39 +144,18 @@ def main():
                 "exported_at": format_datetime(exp.exported_at),
             })
 
-        skills_data = []
-        for skill in skills:
-            skills_data.append({
-                "id": skill.id,
-                "category_code": skill.category_code,
-                "name": skill.name,
-                "description": skill.description,
-                "content": skill.content,
-                "license": skill.license or "",
-                "compatibility": skill.compatibility or "",
-                "metadata": skill.metadata_json or "",
-                "allowed_tools": skill.allowed_tools or "",
-                "model": skill.model or "",
-                "source": skill.source,
-                "author": skill.author or "",
-                "sync_status": skill.sync_status,
-                "embedding_status": skill.embedding_status or "",
-                "created_at": format_datetime(skill.created_at),
-                "updated_at": format_datetime(skill.updated_at),
-                "synced_at": format_datetime(skill.synced_at),
-                "exported_at": format_datetime(skill.exported_at),
-            })
-
-        # Write CSVs (if not dry run)
+        # Write TSVs (if not dry run)
         if args.dry_run:
             print(f" (!) Dry run: would write to {output_dir}/")
-            if args.csv:
-                print(f"  - experiences.csv ({len(experiences_data)} rows)")
-                print(f"  - skills.csv ({len(skills_data)} rows)")
             print(f"  - experiences.tsv ({len(experiences_data)} rows)")
         else:
             # Create output directory
             output_dir.mkdir(parents=True, exist_ok=True)
+            # Remove legacy outputs for clarity
+            for legacy in ("experiences.csv", "skills.csv"):
+                legacy_path = output_dir / legacy
+                if legacy_path.exists():
+                    legacy_path.unlink()
 
             # Write experiences TSV for spreadsheet review (default)
             if experiences_data:
@@ -211,43 +171,6 @@ def main():
                     writer.writerows(experiences_data)
                 print(f"✓ Wrote experiences.tsv: {len(experiences_data)} rows")
 
-            if args.csv:
-                # Write experiences
-                if experiences_data:
-                    experiences_file = output_dir / "experiences.csv"
-                    with open(experiences_file, "w", encoding="utf-8", newline="") as f:
-                        fieldnames = [
-                            "id", "category_code", "section", "title", "playbook", "context",
-                            "source", "author", "sync_status", "embedding_status",
-                            "created_at", "updated_at", "synced_at", "exported_at"
-                        ]
-                        writer = csv.DictWriter(f, fieldnames=fieldnames)
-                        writer.writeheader()
-                        writer.writerows(experiences_data)
-                    print(f"✓ Wrote experiences.csv: {len(experiences_data)} rows")
-
-                # Write skills
-                if skills_data:
-                    skills_file = output_dir / "skills.csv"
-                    with open(skills_file, "w", encoding="utf-8", newline="") as f:
-                        fieldnames = [
-                            "id",
-                            "category_code",
-                            "name",
-                            "description",
-                            "content",
-                            "license",
-                            "compatibility",
-                            "metadata",
-                            "allowed_tools",
-                            "model",
-                            "source", "author", "sync_status", "embedding_status",
-                            "created_at", "updated_at", "synced_at", "exported_at"
-                        ]
-                        writer = csv.DictWriter(f, fieldnames=fieldnames)
-                        writer.writeheader()
-                        writer.writerows(skills_data)
-                    print(f"✓ Wrote skills.csv: {len(skills_data)} rows")
 
         print()
         print("✅ Export complete!")

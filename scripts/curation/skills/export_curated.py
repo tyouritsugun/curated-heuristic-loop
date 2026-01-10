@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-Export curated skills from curation database to CSV.
+Export curated skills from curation database to TSV.
 
 Outputs:
-  - data/curation/approved/skills.csv
-  - data/curation/approved/skill_decisions_log.csv (copy if exists)
+  - data/curation/approved/skills.tsv
 """
 
 import argparse
 import csv
-import shutil
 from datetime import timezone
 from pathlib import Path
 
@@ -40,7 +38,6 @@ def parse_args():
         help="Include pending skills (sync_status=0). Default: true for team review.",
     )
     parser.add_argument("--include-rejected", action="store_true", help="Include rejected skills (sync_status=2)")
-    parser.add_argument("--decision-log", default="data/curation/skill_decisions_log.csv", help="Decision log CSV to copy")
     parser.add_argument("--dry-run", action="store_true", help="Do not write files")
     return parser.parse_args()
 
@@ -106,12 +103,17 @@ def main():
             })
 
         if args.dry_run:
-            print(f" (!) Dry run: would write {len(skills_data)} rows to {output_dir / 'skills.csv'}")
+            print(f" (!) Dry run: would write {len(skills_data)} rows to {output_dir / 'skills.tsv'}")
             return 0
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        # Remove legacy outputs for clarity
+        for legacy in ("skills.csv", "skill_decisions_log.csv", "skill_curation_report.md"):
+            legacy_path = output_dir / legacy
+            if legacy_path.exists():
+                legacy_path.unlink()
 
-        skills_file = output_dir / "skills.csv"
+        skills_file = output_dir / "skills.tsv"
         with skills_file.open("w", encoding="utf-8", newline="") as f:
             fieldnames = [
                 "id",
@@ -127,16 +129,10 @@ def main():
                 "source", "author", "sync_status", "embedding_status",
                 "created_at", "updated_at", "synced_at", "exported_at",
             ]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
             writer.writeheader()
             writer.writerows(skills_data)
-        print(f"✓ Wrote skills.csv: {len(skills_data)} rows")
-
-        decision_log_path = Path(args.decision_log)
-        if decision_log_path.exists():
-            shutil.copy(decision_log_path, output_dir / "skill_decisions_log.csv")
-            print("✓ Copied skill_decisions_log.csv")
-
+        print(f"✓ Wrote skills.tsv: {len(skills_data)} rows")
         print("✓ Export complete (report omitted; use unified overnight summary)")
 
         return 0
