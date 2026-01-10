@@ -3,8 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+from pathlib import Path
+
+
+def find_repo_root(start: Path) -> Path:
+    for parent in [start, *start.parents]:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return start.parents[3]
+
+
+# Add project root to sys.path
+REPO_ROOT = find_repo_root(Path(__file__).resolve())
+sys.path.insert(0, str(REPO_ROOT))
 
 from src.common.config.config import get_config
 
@@ -29,11 +43,17 @@ def main() -> int:
     args, passthrough = parse_args()
     py = sys.executable
     config = get_config()
+    env = os.environ.copy()
+    repo_root = str(REPO_ROOT)
+    if env.get("PYTHONPATH"):
+        env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env['PYTHONPATH']}"
+    else:
+        env["PYTHONPATH"] = repo_root
 
     print("==> Running overnight curation for experiences", flush=True)
     overnight_cmd = [py, "scripts/curation/experience/overnight/run_curation_overnight.py", *passthrough]
     try:
-        subprocess.run(overnight_cmd, check=True)
+        subprocess.run(overnight_cmd, check=True, env=env)
     except subprocess.CalledProcessError as exc:
         print(f"\n❌ Experience overnight failed: {exc}")
         return exc.returncode
@@ -46,7 +66,7 @@ def main() -> int:
             print("\n==> Running overnight curation for skills", flush=True)
             skills_cmd = [py, "scripts/curation/skills/overnight/run_skill_curation_overnight.py", *passthrough]
             try:
-                subprocess.run(skills_cmd, check=True)
+                subprocess.run(skills_cmd, check=True, env=env)
             except subprocess.CalledProcessError as exc:
                 print(f"\n❌ Skills overnight failed: {exc}")
                 return exc.returncode
