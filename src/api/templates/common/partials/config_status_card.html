@@ -30,7 +30,7 @@
             <td style="padding-right: 0.5rem; width: 50%;">
               <form id="import-sheet-form" hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
                 <input type="hidden" name="payload" id="import-sheet-payload" />
-                <button type="submit" class="section-title-button" style="width: 90%;" {% if import_active %}disabled{% endif %}>
+                <button type="submit" class="section-title-button" style="width: 90%;" onclick="handleSheetImportClick(event)" {% if import_active %}disabled{% endif %}>
                   {% if import_active %}
                     Import Spreadsheet (Importing...)
                   {% else %}
@@ -84,7 +84,7 @@
             <td style="padding-right: 0.5rem; width: 50%;">
               <form id="export-sheet-form" hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
                 <input type="hidden" name="payload" id="export-sheet-payload" />
-                <button type="submit" class="section-title-button" style="width: 90%;" {% if export_active %}disabled{% endif %}>
+                <button type="submit" class="section-title-button" style="width: 90%;" onclick="handleSheetExportClick(event)" {% if export_active %}disabled{% endif %}>
                   {% if export_active %}
                     Export Spreadsheet (Exporting...)
                   {% else %}
@@ -254,6 +254,7 @@
       if (modal) {
         modal.style.display = 'block';
       }
+      pauseConfigStatusRefresh(true);
     }
 
     function closeExternalSkillsModal() {
@@ -262,6 +263,7 @@
         modal.style.display = 'none';
       }
       pendingImportMode = null;
+      pauseConfigStatusRefresh(false);
     }
 
     function confirmExternalSkillsModal() {
@@ -311,6 +313,7 @@
       if (modal) {
         modal.style.display = 'block';
       }
+      pauseConfigStatusRefresh(true);
     }
 
     function closeExternalSkillsExportModal() {
@@ -319,7 +322,37 @@
         modal.style.display = 'none';
       }
       pendingExportMode = null;
+      pauseConfigStatusRefresh(false);
     }
+
+    function pauseConfigStatusRefresh(shouldPause) {
+      const card = document.getElementById('config-status-card');
+      if (!card) {
+        return;
+      }
+      if (shouldPause) {
+        if (!card.dataset.originalHxTrigger) {
+          card.dataset.originalHxTrigger = card.getAttribute('hx-trigger') || '';
+        }
+        card.setAttribute('hx-trigger', 'ops-refresh from:body');
+      } else if (card.dataset.originalHxTrigger) {
+        card.setAttribute('hx-trigger', card.dataset.originalHxTrigger);
+      }
+    }
+
+    function isExternalModalOpen() {
+      const importModal = document.getElementById('external-skills-modal');
+      const exportModal = document.getElementById('external-skills-export-modal');
+      return (importModal && importModal.style.display === 'block')
+        || (exportModal && exportModal.style.display === 'block');
+    }
+
+    document.addEventListener('htmx:beforeSwap', function(event) {
+      const target = event.detail && event.detail.target;
+      if (target && target.id === 'config-status-card' && isExternalModalOpen()) {
+        event.detail.shouldSwap = false;
+      }
+    });
 
     function confirmExternalSkillsExportModal() {
       const choice = document.querySelector('input[name="external_skills_export_choice"]:checked');
@@ -390,13 +423,7 @@
         openExternalSkillsExportModal();
         return;
       }
-      const link = document.createElement('a');
-      link.href = '/api/v1/entries/export-csv';
-      link.download = '';
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      window.location.href = '/api/v1/entries/export-csv';
     }
 
     function triggerExcelExportAndDownload() {
