@@ -50,7 +50,7 @@ Short sample flow for Alice, Bob, and a curator (Carlos) using the semi-auto cur
 ## Prereqs
 - GPU backend required for curation (Apple Silicon or NVIDIA). CPU-only users can export only.
 - Activate the matching virtualenv: `.venv-apple` or `.venv-nvidia` (CPU export: `.venv-cpu`).
-- Category codes must match across members (same code/name/description) or merge will fail.
+- Category codes must be valid per `src/common/config/categories.py` (canonical taxonomy). Member CSV categories are ignored.
 
 ## 1) Member Export (Alice/Bob)
 - Start CHL, open Operations, click "Export CSV".

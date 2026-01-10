@@ -376,12 +376,11 @@ After importing curated `skills.csv` into a local `chl.db`:
 - [x] Merge: if `category_code` missing, send skill content + category list to LLM and populate `metadata["chl.category_code"]` + `metadata["chl.category_confidence"]`.
   Verify:
   - UI: Operations → Export CSV → confirm `{username}_export.zip` contains `{username}/skills.csv`.
-  - CLI: `python scripts/curation/common/merge_all.py --inputs data/curation/members/alice data/curation/members/bob`
 
 **Step 2: Generate outlines**
 - [x] Outline generation and storage in `metadata["chl.outline"]`.
   Verify:
-  - `python scripts/curation/experience/merge/import_to_curation_db.py --db-path data/curation/chl_curation.db`
+  - `python scripts/curation/common/merge_all.py --inputs data/curation/members/alice data/curation/members/bob`
   - Inspect any imported skill in DB; confirm `metadata` JSON includes `chl.outline`.
 
 **Step 3: Atomicity pass**
@@ -393,6 +392,7 @@ After importing curated `skills.csv` into a local `chl.db`:
 **Step 4: Candidate grouping**
 - [x] Candidate grouping with cross-category fallback rules.
   Verify:
+  - `python scripts/curation/experience/merge/build_curation_index.py --db-path data/curation/chl_curation.db`
   - `python scripts/curation/skills/merge/build_skill_candidates.py --db-path data/curation/chl_curation.db`
   - Confirm `data/curation/skill_candidates.jsonl` exists and has records.
 
@@ -404,10 +404,10 @@ After importing curated `skills.csv` into a local `chl.db`:
   - Confirm `data/curation/skill_decisions_log.csv` is populated and merged/split skills created.
 
 **Step 6–8: Export, distribute, resolve**
-- [x] Export `skills.csv`, `skill_decisions_log.csv`, and `skill_curation_report.md`.
+- [x] Export `skills.csv` (default includes pending), `skill_decisions_log.csv`.
   Verify:
   - `python scripts/curation/skills/export_curated.py --db-path data/curation/chl_curation.db`
-  - Confirm files exist under `data/curation/approved/`.
+  - Confirm `skills.csv` and `skill_decisions_log.csv` exist under `data/curation/approved/` (report is omitted; use unified overnight summary).
 
 **Data/migrations and runtime safeguards**
 - [x] Add `skill_curation_decisions` and `skill_split_provenance` tables (migration).

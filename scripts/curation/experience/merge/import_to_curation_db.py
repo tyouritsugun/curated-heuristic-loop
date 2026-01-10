@@ -2,8 +2,8 @@
 """
 Import merged CSVs into curation database.
 
-This script reads the merged CSV files (categories.csv, experiences.csv,
-skills.csv) and imports them into the curation database. All entries are
+This script reads the merged CSV files (experiences.csv, skills.csv) and
+imports them into the curation database. All entries are
 marked with embedding_status='pending' for later processing.
 
 Usage:
@@ -28,6 +28,7 @@ from pathlib import Path
 # Add project root to sys.path
 repo_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo_root))
+prompt_root = Path(__file__).resolve().parents[4]
 
 import yaml
 from sqlalchemy import create_engine
@@ -135,7 +136,17 @@ def merge_metadata(metadata_json: str | None, updates: dict) -> str:
     return json.dumps(data, ensure_ascii=False)
 
 
-def map_category_with_llm(title: str, content: str, outline: str, category_list: str, prompt_path: Path) -> tuple[str | None, float | None]:
+def map_category_with_llm(
+    title: str,
+    content: str,
+    outline: str,
+    category_list: str,
+    prompt_path: Path,
+    *,
+    llm_config=None,
+    settings=None,
+    cfg_path=None,
+) -> tuple[str | None, float | None]:
     prompt = load_category_prompt(prompt_path)
     system_msg = prompt.get("system", "")
     user_msg = prompt.get("user", "")
@@ -150,7 +161,8 @@ def map_category_with_llm(title: str, content: str, outline: str, category_list:
         messages.append({"role": "system", "content": system_msg})
     messages.append({"role": "user", "content": user_msg})
 
-    llm_config, settings, cfg_path = build_llm_config()
+    if llm_config is None or settings is None or cfg_path is None:
+        llm_config, settings, cfg_path = build_llm_config()
     try:
         from autogen import AssistantAgent
     except Exception as exc:  # pragma: no cover - dependency issue
@@ -176,11 +188,19 @@ def map_category_with_llm(title: str, content: str, outline: str, category_list:
         confidence_val = float(confidence) if confidence is not None else None
     except (TypeError, ValueError):
         confidence_val = None
-    print(f"  [category_map] {title} -> {code} (confidence={confidence_val}) using {settings.model} from {cfg_path}")
     return code, confidence_val
 
 
-def generate_outline_with_llm(title: str, content: str, tags: str, prompt_path: Path) -> str:
+def generate_outline_with_llm(
+    title: str,
+    content: str,
+    tags: str,
+    prompt_path: Path,
+    *,
+    llm_config=None,
+    settings=None,
+    cfg_path=None,
+) -> str:
     prompt = load_category_prompt(prompt_path)
     system_msg = prompt.get("system", "")
     user_msg = prompt.get("user", "")
@@ -194,7 +214,8 @@ def generate_outline_with_llm(title: str, content: str, tags: str, prompt_path: 
         messages.append({"role": "system", "content": system_msg})
     messages.append({"role": "user", "content": user_msg})
 
-    llm_config, settings, cfg_path = build_llm_config()
+    if llm_config is None or settings is None or cfg_path is None:
+        llm_config, settings, cfg_path = build_llm_config()
     try:
         from autogen import AssistantAgent
     except Exception as exc:  # pragma: no cover - dependency issue
@@ -206,7 +227,6 @@ def generate_outline_with_llm(title: str, content: str, tags: str, prompt_path: 
     outline = outline.strip()
     if not outline:
         raise ValueError("LLM returned empty outline")
-    print(f"  [outline] {title} using {settings.model} from {cfg_path}")
     return outline
 
 
@@ -252,7 +272,6 @@ def main():
     print(f"Reading merged CSVs from: {input_dir}")
     print()
 
-    categories_data = read_csv(input_dir / "categories.csv")
     experiences_data = read_csv(input_dir / "experiences.csv")
 
     # Try to find skills file (try new name first, then legacy names)
@@ -266,7 +285,7 @@ def main():
 
     skills_data = read_csv(skills_path)
 
-    print(f"  Categories: {len(categories_data)} rows")
+    print("  Categories: canonical (code-defined)")
     print(f"  Experiences: {len(experiences_data)} rows")
     print(f"  Skills: {len(skills_data)} rows")
     print()
@@ -279,48 +298,28 @@ def main():
     session = Session()
 
     try:
-        # Import categories (prefer merged CSV if present; else seed from canonical taxonomy)
+        # Import categories (canonical taxonomy only)
         print("Importing categories...")
-        skipped_categories = 0
-        if categories_data:
-            for row in categories_data:
-                code = (row.get("code") or "").strip()
-                name = (row.get("name") or "").strip()
-                if not code or not name:
-                    skipped_categories += 1
-                    continue
-                category = Category(
-                    code=code,
-                    name=name,
-                    description=row.get("description") or None,
-                    created_at=parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+        categories = get_categories()
+        for cat in categories:
+            session.add(
+                Category(
+                    code=cat["code"],
+                    name=cat["name"],
+                    description=cat["description"],
+                    created_at=datetime.now(timezone.utc),
                 )
-                session.add(category)
-            session.commit()
-            print(f"✓ Imported {len(categories_data) - skipped_categories} categories")
-            if skipped_categories:
-                print(f"  Skipped {skipped_categories} empty/invalid category rows")
-        else:
-            categories = get_categories()
-            for cat in categories:
-                session.add(
-                    Category(
-                        code=cat["code"],
-                        name=cat["name"],
-                        description=cat["description"],
-                        created_at=datetime.now(timezone.utc),
-                    )
-                )
-            session.commit()
-            print(f"✓ Seeded {len(categories)} categories from canonical taxonomy")
+            )
+        session.commit()
+        print(f"✓ Seeded {len(categories)} categories from canonical taxonomy")
         print()
 
         # Load categories for validation + LLM mapping
         category_rows = session.query(Category).all()
         category_codes = {cat.code for cat in category_rows}
         category_list_text = build_category_list(category_rows)
-        category_prompt_path = repo_root / "scripts/curation/agents/prompts/skill_category_mapping.yaml"
-        outline_prompt_path = repo_root / "scripts/curation/agents/prompts/skill_outline_generation.yaml"
+        category_prompt_path = prompt_root / "scripts/curation/agents/prompts/skill_category_mapping.yaml"
+        outline_prompt_path = prompt_root / "scripts/curation/agents/prompts/skill_outline_generation.yaml"
 
         # Import experiences
         print("Importing experiences...")
@@ -363,6 +362,16 @@ def main():
         print("Importing skills...")
         skipped_skills = 0
         used_names = set()
+        outline_generated = 0
+        category_mapped = 0
+        normalized_skipped = 0
+        llm_config = None
+        settings = None
+        cfg_path = None
+        try:
+            llm_config, settings, cfg_path = build_llm_config()
+        except Exception:
+            pass
         for row in skills_data:
             skill_id = (row.get("id") or "").strip()
             category_code = (row.get("category_code") or "").strip()
@@ -382,8 +391,12 @@ def main():
                         content=content,
                         tags="",
                         prompt_path=outline_prompt_path,
+                        llm_config=llm_config,
+                        settings=settings,
+                        cfg_path=cfg_path,
                     )
                     metadata_json = merge_metadata(metadata_json, {"chl.outline": outline})
+                    outline_generated += 1
                 except Exception as exc:
                     print(f"  ❌ Outline generation failed for skill {skill_id}: {exc}")
                     skipped_skills += 1
@@ -396,6 +409,9 @@ def main():
                         outline=outline,
                         category_list=category_list_text,
                         prompt_path=category_prompt_path,
+                        llm_config=llm_config,
+                        settings=settings,
+                        cfg_path=cfg_path,
                     )
                     metadata_json = merge_metadata(
                         metadata_json,
@@ -404,10 +420,14 @@ def main():
                             "chl.category_confidence": confidence,
                         },
                     )
+                    category_mapped += 1
                 except Exception as exc:
                     print(f"  ❌ Category mapping failed for skill {skill_id}: {exc}")
                     skipped_skills += 1
                     continue
+            if outline and category_code:
+                if (outline_generated + category_mapped) == 0:
+                    normalized_skipped += 1
 
             if category_code not in category_codes:
                 print(f"  ❌ Invalid category_code for skill {skill_id}: {category_code}")
@@ -446,6 +466,14 @@ def main():
 
         session.commit()
         print(f"✓ Imported {len(skills_data) - skipped_skills} skills")
+        if outline_generated:
+            model_name = settings.model if settings else "LLM"
+            print(f"  LLM outline generation: {model_name} for {outline_generated} skills")
+        if category_mapped:
+            model_name = settings.model if settings else "LLM"
+            print(f"  LLM category mapping: {model_name} for {category_mapped} skills")
+        if normalized_skipped:
+            print(f"  LLM skipped: {normalized_skipped} skills already normalized")
         print(f"  All marked as embedding_status='pending'")
         if skipped_skills:
             print(f"  Skipped {skipped_skills} empty/invalid skill rows")

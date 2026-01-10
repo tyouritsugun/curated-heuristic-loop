@@ -349,6 +349,17 @@ def main() -> int:
                 continue
 
             splits: List[SplitItem] = payload["splits"]
+            if args.dry_run:
+                print(f"  [dry-run] split skill {skill.id} -> {len(splits)} parts")
+                for idx, item in enumerate(splits, start=1):
+                    preview = (item.description or "").strip()
+                    if len(preview) > 120:
+                        preview = preview[:117] + "..."
+                    print(f"    {idx}. {item.name}: {preview}")
+                split_count += 1
+                if args.sleep:
+                    time.sleep(args.sleep)
+                continue
             if not args.dry_run:
                 existing_names = {row.name for row in session.query(CategorySkill.name).all()}
                 for item in splits:

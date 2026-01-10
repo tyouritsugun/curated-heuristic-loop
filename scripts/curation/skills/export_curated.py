@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Export curated skills from curation database to CSV + report.
+Export curated skills from curation database to CSV.
 
 Outputs:
   - data/curation/approved/skills.csv
   - data/curation/approved/skill_decisions_log.csv (copy if exists)
-  - data/curation/approved/skill_curation_report.md
 """
 
 import argparse
@@ -34,7 +33,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Export curated skills from curation DB")
     parser.add_argument("--db-path", default=default_db_path, help="Path to curation SQLite DB")
     parser.add_argument("--output", default=default_output_dir, help="Output directory")
-    parser.add_argument("--include-pending", action="store_true", help="Include pending skills (sync_status=0)")
+    parser.add_argument(
+        "--include-pending",
+        action="store_true",
+        default=True,
+        help="Include pending skills (sync_status=0). Default: true for team review.",
+    )
     parser.add_argument("--include-rejected", action="store_true", help="Include rejected skills (sync_status=2)")
     parser.add_argument("--decision-log", default="data/curation/skill_decisions_log.csv", help="Decision log CSV to copy")
     parser.add_argument("--dry-run", action="store_true", help="Do not write files")
@@ -47,17 +51,6 @@ def format_datetime(dt):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
-
-
-def read_decision_log(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    rows = []
-    with path.open("r", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            rows.append(row)
-    return rows
 
 
 def main():
@@ -144,29 +137,7 @@ def main():
             shutil.copy(decision_log_path, output_dir / "skill_decisions_log.csv")
             print("✓ Copied skill_decisions_log.csv")
 
-        # Report
-        decisions = read_decision_log(decision_log_path)
-        actions = {}
-        for row in decisions:
-            action = row.get("action") or "unknown"
-            actions[action] = actions.get(action, 0) + 1
-        report_lines = [
-            "# Skill Curation Report",
-            "",
-            f"- Total skills exported: {len(skills_data)}",
-            f"- Sync statuses: {sync_filter}",
-            "",
-            "## Decision Log Summary",
-        ]
-        if actions:
-            for key in sorted(actions.keys()):
-                report_lines.append(f"- {key}: {actions[key]}")
-        else:
-            report_lines.append("- No decision log found or empty.")
-
-        report_path = output_dir / "skill_curation_report.md"
-        report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
-        print("✓ Wrote skill_curation_report.md")
+        print("✓ Export complete (report omitted; use unified overnight summary)")
 
         return 0
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import time
 from pathlib import Path
@@ -10,6 +11,10 @@ import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover - optional dependency
+    tqdm = None
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -190,13 +195,33 @@ def write_log_header(path: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = (
-        "timestamp,src_id,dst_id,weight,embed_score,rerank_score,relationship,action,confidence,reasoning,model,raw_response\n"
-    )
-    path.write_text(header, encoding="utf-8")
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            [
+                "timestamp",
+                "src_id",
+                "dst_id",
+                "weight",
+                "embed_score",
+                "rerank_score",
+                "relationship",
+                "action",
+                "confidence",
+                "reasoning",
+                "model",
+                "raw_response",
+            ]
+        )
 
 
 def append_log(path: Path, row: dict) -> None:
+    def normalize(value: Any) -> str:
+        if value is None:
+            return ""
+        text = str(value)
+        return text.replace("\n", " ").strip()
+
     values = [
         row.get("timestamp", ""),
         row.get("src_id", ""),
@@ -207,13 +232,13 @@ def append_log(path: Path, row: dict) -> None:
         row.get("relationship", ""),
         row.get("action", ""),
         row.get("confidence", ""),
-        row.get("reasoning", "").replace("\n", " ").replace(",", ";"),
+        normalize(row.get("reasoning", "")),
         row.get("model", ""),
-        row.get("raw_response", "").replace("\n", " ").replace(",", ";"),
+        normalize(row.get("raw_response", "")),
     ]
-    line = ",".join(str(v) for v in values) + "\n"
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(line)
+    with path.open("a", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(values)
 
 
 def main() -> int:
@@ -277,7 +302,17 @@ def main() -> int:
 
         processed = set()
         count = 0
-        for rec in candidates:
+        flagged = 0
+        kept = 0
+        merged = 0
+        split = 0
+        conflict = 0
+
+        iterable = candidates
+        if tqdm is not None:
+            iterable = tqdm(candidates, desc="Skill relationship analysis", unit="pair")
+
+        for rec in iterable:
             if args.limit and count >= args.limit:
                 break
             weight = float(rec.get("weight", 0))
@@ -301,6 +336,7 @@ def main() -> int:
                         "raw_response": "",
                     },
                 )
+                flagged += 1
                 continue
 
             src_id = rec["src"]
@@ -368,6 +404,7 @@ def main() -> int:
                 continue
 
             if action == "merge":
+                merged += 1
                 merge = data.get("merge") or {}
                 merged_name = validate_name(merge.get("name") or f"{a.name}-{b.name}")
                 merged_desc = clamp_description(merge.get("description") or "")
@@ -439,6 +476,7 @@ def main() -> int:
                 )
 
             elif action == "split":
+                split += 1
                 splits = data.get("splits") or []
                 if not splits:
                     count += 1
@@ -508,6 +546,7 @@ def main() -> int:
                 )
 
             elif action == "flag_conflict":
+                conflict += 1
                 a.sync_status = 0
                 b.sync_status = 0
                 a.updated_at = utc_now()
@@ -522,7 +561,7 @@ def main() -> int:
 
             else:
                 # keep_separate or unknown: no action
-                pass
+                kept += 1
 
             count += 1
             if args.sleep:
@@ -531,6 +570,16 @@ def main() -> int:
     finally:
         session.close()
 
+    print(
+        "Summary: processed={processed} flagged={flagged} merge={merged} split={split} conflict={conflict} keep={kept}".format(
+            processed=count,
+            flagged=flagged,
+            merged=merged,
+            split=split,
+            conflict=conflict,
+            kept=kept,
+        )
+    )
     return 0
 
 

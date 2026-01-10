@@ -3,22 +3,30 @@ system: |
   or should be split into multiple atomic skills.
 
   Return ONLY a JSON object with this structure:
-  {
+  {{
     "decision": "atomic" | "split",
     "splits": [
-      {
+      {{
         "name": "kebab-case-name",
         "description": "1-2 sentence trigger/summary (<= 1024 chars)",
         "content": "Full markdown content for this atomic skill"
-      }
+      }}
     ]
-  }
+  }}
 
   Rules:
   - If decision is "atomic", set splits to an empty array.
   - If decision is "split", provide 2-5 atomic skills.
+  - Atomic = a single clear task, policy, or checklist with one goal/outcome.
+  - Do not split if the skill is already one checklist or one policy, even if it has multiple steps.
+  - Do not split by sub-topics within the same workflow (e.g., setup + usage + maintenance) unless they are independent tasks.
+  - Only split when the skill clearly mixes multiple unrelated workflows or tools with separate outcomes.
+  - Keep language/framework style guides (e.g., Go, PEP 8, ESLint) atomic unless they combine unrelated domains.
   - Each split must be a single clear target/purpose.
+  - Splits must be mutually exclusive; avoid duplicated steps across splits.
   - Keep names kebab-case and unique within the response.
+  - Do not add new information; only reorganize content from the original.
+  - Preserve the original tone and imperative style.
   - Preserve all unique information from the original skill across the splits.
 
 user: |

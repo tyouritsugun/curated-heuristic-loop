@@ -439,15 +439,7 @@ def main():
         skills = [normalize_skill_row(row) for row in skills]
 
         if category_fields:
-            schema_errors.extend(
-                validate_columns(
-                    category_fields,
-                    MIN_CATEGORY_COLUMNS,
-                    "Categories",
-                    username,
-                    input_dir / "categories.csv",
-                )
-            )
+            print(f"  {username}: categories.csv ignored (canonical taxonomy)")
         schema_errors.extend(
             validate_columns(
                 experience_fields,
@@ -481,23 +473,10 @@ def main():
             print(f"  - {err}")
         sys.exit(1)
 
-    # Merge categories (optional)
+    # Categories are canonical (code-defined). Ignore member category CSVs.
     merged_categories = []
-    cat_warnings: List[str] = []
     if any(categories_data.values()):
-        merged_categories, cat_warnings = merge_categories(categories_data)
-        if cat_warnings:
-            print("⚠️  Category warnings:")
-            for warning in cat_warnings:
-                print(f"  - {warning}")
-            print()
-            print("❌ Error: Category conflicts detected. Team must align on category definitions.")
-            print("   All members should use the same category codes with identical names and descriptions.")
-            sys.exit(1)
-
-        print(f"✓ Categories: {len(merged_categories)} unique")
-        for cat in merged_categories:
-            print(f"  - {cat['code']}: {cat['name']}")
+        print("✓ Categories: skipped (using canonical taxonomy)")
         print()
 
     # Merge experiences
@@ -525,12 +504,7 @@ def main():
     # Write merged CSVs
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if merged_categories:
-        write_csv(
-            output_dir / "categories.csv",
-            merged_categories,
-            ["code", "name", "description", "created_at"],
-        )
+    # categories.csv deprecated; do not emit it.
 
     if merged_experiences:
         write_csv(
@@ -582,8 +556,7 @@ def main():
         )
 
     print(f"✓ Output written to: {output_dir}/")
-    if merged_categories:
-        print(f"  - categories.csv ({len(merged_categories)} rows)")
+    # categories.csv deprecated
     print(f"  - experiences.csv ({len(merged_experiences)} rows)")
     print(f"  - skills.csv ({len(merged_skills)} rows)")
     print()

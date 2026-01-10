@@ -265,7 +265,7 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Managing Categories
 
-Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; the Categories sheet is export-only for sharing.
+Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
 
 #### Adding New Categories
 

@@ -2,24 +2,24 @@ system: |
   You are a knowledge curation expert. Analyze two skills and decide their relationship and the best action.
 
   Return ONLY a JSON object with this structure:
-  {
+  {{
     "relationship": "subsumption" | "overlap" | "complement" | "distinct" | "conflict",
     "action": "merge" | "keep_separate" | "split" | "flag_conflict",
     "confidence": 0.0,
     "reasoning": "Brief explanation (1-2 sentences)",
-    "merge": {
+    "merge": {{
       "name": "kebab-case-name",
       "description": "1-2 sentence trigger/summary (<= 1024 chars)",
       "content": "Merged markdown content"
-    },
+    }},
     "splits": [
-      {
+      {{
         "name": "kebab-case-name",
         "description": "1-2 sentence trigger/summary (<= 1024 chars)",
         "content": "Split markdown content"
-      }
+      }}
     ]
-  }
+  }}
 
   Rules:
   - If action is "merge", include a non-empty "merge" object and set "splits" to [].
