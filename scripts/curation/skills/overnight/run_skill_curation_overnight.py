@@ -22,6 +22,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(description="Run skills overnight curation (atomicity → candidates → analyze → export).")
     parser.add_argument("--db-path", default=default_db, help="Path to curation SQLite DB")
     parser.add_argument("--with-rerank", action="store_true", help="Enable rerank in candidate grouping")
+    parser.add_argument("--skip-atomicity-pre-pass", action="store_true", help="Skip skill atomicity pre-pass")
     parser.add_argument("--limit", type=int, default=0, help="Limit rows for LLM steps (0=all)")
     parser.add_argument("--dry-run", action="store_true", help="Dry run for LLM steps (no DB writes)")
     args, unknown = parser.parse_known_args()
@@ -94,7 +95,8 @@ def main() -> int:
     ]
 
     try:
-        run_step("Skill atomicity split prepass", atomicity_cmd)
+        if not args.skip_atomicity_pre_pass:
+            run_step("Skill atomicity split prepass", atomicity_cmd)
         run_step("Build embeddings + FAISS index", index_cmd)
         run_step("Build skill candidates", candidates_cmd)
         run_step("Analyze relationships + auto-apply", analyze_cmd)
