@@ -432,7 +432,7 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 - **Without CHL**: LLM rushes to fix code and writes incomplete tickets missing required artifacts
 - **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
 
-**Full instructions:** See [doc/run_sample.md](doc/run_sample.md) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
+**Full instructions:** See [doc/manual.md](doc/manual.md#53-demo-run-datapipe-sample) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
 
 ## Mode Switching
 
