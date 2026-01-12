@@ -458,21 +458,14 @@ After initial installation, use the web dashboards for most operations:
 
 ## Managing Categories
 
-CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. To add custom categories for your team's workflows:
+CHL uses a **code-defined** category taxonomy seeded during setup. To add categories, fork the codebase, update `src/common/config/categories.py`, and distribute the updated code to the team (Alice/Bob) so everyone shares the same taxonomy.
 
 **Quick steps:**
-1. Export current database via Settings → "Export Spreadsheet"
-2. Save export as timestamped backup in Google Drive (recommended)
-3. Copy Categories worksheet to your import spreadsheet
-4. Add new row with `code`, `name`, and `description`
-5. Import via Operations → "Run Import"
+1. Fork the repo and update `src/common/config/categories.py`.
+2. Commit the change and share the updated code with the team.
+3. Each member pulls the update and re-runs setup/import if needed.
 
-**Example categories:**
-- `DEP` / `deployment_procedures` - Deployment checklists and rollback procedures
-- `SEC` / `security_review` - Security review patterns and vulnerability checks
-- `ONC` / `oncall_runbook` - Incident response and on-call procedures
-
-**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
+**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for details.
 
 
 ## Web Dashboards
