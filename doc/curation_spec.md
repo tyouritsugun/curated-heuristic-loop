@@ -1,18 +1,5 @@
 # Curation Spec
 
-## QA
-
-### Why do we need team curation?
-
-**A:** It keeps the shared knowledge base consistent and non-duplicative across members, so everyone imports the same validated skills/experiences and avoids drift or conflicting guidance. As skills and experiences accumulate, team efficiency increases because sharing with AI is a simple copy/paste import rather than a slow human handoff.
-
-### Is it possible to skip the atomicity pre-pass if I am sure the experiences and skills are already atomic?
-
-**A:** Yes. Run the overnight command with `--skip-atomicity-pre-pass` to skip atomicity for both experiences and skills:
-```bash
-python scripts/curation/common/overnight_all.py --skip-atomicity-pre-pass
-```
-
 ## Flow Diagram
 
 ```mermaid
@@ -95,3 +82,17 @@ LLM choice:
 - `data/curation/morning_report.md`
 - `data/curation/evaluation_log.csv`
 - `data/curation/communities.json`
+
+## QA
+
+### Why do we need team curation?
+
+**A:** It keeps the shared knowledge base consistent and non-duplicative across members, so everyone imports the same validated skills/experiences and avoids drift or conflicting guidance. As skills and experiences accumulate, team efficiency increases because sharing with AI is a simple copy/paste import rather than a slow human handoff.
+
+### Is it possible to skip the atomicity pre-pass if I am sure the experiences and skills are already atomic?
+
+**A:** Yes. Run the overnight command with `--skip-atomicity-pre-pass` to skip atomicity for both experiences and skills:
+```bash
+python scripts/curation/common/overnight_all.py --skip-atomicity-pre-pass
+```
+

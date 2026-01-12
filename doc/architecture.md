@@ -4,7 +4,7 @@
 
 This document describes the technical architecture of the Curated Heuristic Loop (CHL) system. The system is designed around a **two-tier HTTP-based architecture** with clear separation between the API server (data & compute) and the MCP server (protocol adapter).
 
-For the architectural design decisions that led to this structure, see [doc/plan/architecture_refine.md](plan/architecture_refine.md).
+For curation architecture and flow, see [curation_spec.md](./curation_spec.md).
 
 ### 1.1. High-Level Diagram
 

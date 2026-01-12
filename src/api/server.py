@@ -39,7 +39,6 @@ if initial_config.search_mode == "cpu":
     from src.api.routers.cpu_ui import router as ui_router
 else:
     from src.api.routers.gpu_ui import router as ui_router
-from src.common.web_utils.docs import router as docs_router
 from src.api.services.settings_service import SettingsService
 from src.api.services.operations_service import OperationsService
 from src.api.services.worker_control import WorkerControlService
@@ -221,7 +220,6 @@ app.include_router(operations_router)
 app.include_router(workers_router)
 app.include_router(telemetry_router)
 app.include_router(ui_router)
-app.include_router(docs_router)
 
 
 @app.get("/")
