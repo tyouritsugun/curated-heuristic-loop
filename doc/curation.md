@@ -23,6 +23,7 @@ Short sample flow for team members Alice, Bob, and a curator (Carlos) using the 
 - Activate the matching virtualenv: `.venv-apple` or `.venv-nvidia` (CPU export: `.venv-cpu`).
 - Category codes must be valid per `src/common/config/categories.py` (canonical taxonomy). Member CSV categories are ignored.
 - Carlos needs an LLM endpoint: either a cost‑effective commercial model (e.g., Gemini Flash) or a local model (e.g., ChatGPT OSS). Alice/Bob do not necessarily need these.
+- Stop the API server before running curation scripts to avoid database locks/errors.
 
 ## 1) Member Export (Alice/Bob)
 - Start CHL(`./start-chl.sh`), open `http://127.0.0.1:8000/settings#configuration`,  click "Export CSV".
