@@ -12,8 +12,10 @@ flowchart TD
   D --> E1[Experience communities + overnight loop]
   D --> E2[Skill candidate grouping]
   E2 --> F2[Skill relationship analysis + auto-apply]
-  E1 --> G[Export approved TSVs]
-  F2 --> G
+  E1 --> L{Stop thresholds met?<br/>scripts/scripts_config.yaml}
+  F2 --> L
+  L -->|No| D
+  L -->|Yes| G[Export approved TSVs]
   G --> H[Publish to team]
   H --> I[Team import to local DB or external SKILL.md]
 ```
