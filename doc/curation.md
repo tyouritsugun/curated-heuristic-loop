@@ -1,11 +1,9 @@
 # Curation Overnight Overview
 
-## Why curation
-- See [Why](curation_spec.md#why-do-we-need-team-curation).
-
-## What it does
+## Why curation and what it does
 - Standardizes team knowledge (experiences + skills) through merge/split and review.
 - Produces approved TSVs for publishing back to the team.
+- See [Why](curation_spec.md#why-do-we-need-team-curation).
 - See [Curation Spec flow diagram](curation_spec.md#flow-diagram)
 
 ## Architecture (see spec)
