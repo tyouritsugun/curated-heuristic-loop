@@ -14,7 +14,7 @@ flowchart TD
   E2 --> F2[Skill relationship analysis + auto-apply]
   E1 --> G[Export approved TSVs]
   F2 --> G
-  G --> H[Publish to team (Sheets or Excel)]
+  G --> H[Publish to team]
   H --> I[Team import to local DB or external SKILL.md]
 ```
 
