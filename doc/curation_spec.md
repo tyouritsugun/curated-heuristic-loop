@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-  A[Member export<br/>experiences.csv + skills.csv] --> B[Merge into curation DB]
+  A[Member export<br/>experiences.csv and skills.csv] --> B[Merge into curation DB]
   B --> C1[Experience atomicity pre-pass]
   B --> C2[Skill atomicity pre-pass]
   C1 --> D[Build embeddings + FAISS index]
@@ -14,7 +14,7 @@ flowchart TD
   E2 --> F2[Skill relationship analysis + auto-apply]
   E1 --> G[Export approved TSVs]
   F2 --> G
-  G --> H[Publish to team (Sheets/Excel)]
+  G --> H[Publish to team (Sheets or Excel)]
   H --> I[Team import to local DB or external SKILL.md]
 ```
 
@@ -95,4 +95,3 @@ LLM choice:
 ```bash
 python scripts/curation/common/overnight_all.py --skip-atomicity-pre-pass
 ```
-
