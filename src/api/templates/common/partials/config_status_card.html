@@ -28,8 +28,9 @@
         <table style="width: 100%; border-collapse: collapse;">
           <tr>
             <td style="padding-right: 0.5rem; width: 50%;">
-              <form hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                <button type="submit" class="section-title-button" style="width: 90%;" {% if import_active %}disabled{% endif %}>
+              <form id="import-sheet-form" hx-post="/ui/operations/run/import" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                <input type="hidden" name="payload" id="import-sheet-payload" />
+                <button type="submit" class="section-title-button" style="width: 90%;" onclick="handleSheetImportClick(event)" {% if import_active %}disabled{% endif %}>
                   {% if import_active %}
                     Import Spreadsheet (Importing...)
                   {% else %}
@@ -41,6 +42,7 @@
             <td style="padding-left: 0.5rem; width: 50%;">
               <form id="import-excel-form" action="/ui/operations/import-excel-upload" method="post" enctype="multipart/form-data" style="margin: 0; display: none;">
                 <input type="file" name="excel_file" id="excel_file" accept=".xlsx,.xls" onchange="handleExcelFileSelect(this)" />
+                <input type="hidden" name="external_skills_target" id="external_skills_target" />
               </form>
               <button type="button" class="section-title-button" style="width: 100%;" onclick="triggerExcelFileSelect()">Import Excel</button>
             </td>
@@ -80,8 +82,9 @@
         <table style="width: 100%; border-collapse: collapse;">
           <tr>
             <td style="padding-right: 0.5rem; width: 50%;">
-              <form hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                <button type="submit" class="section-title-button" style="width: 90%;" {% if export_active %}disabled{% endif %}>
+              <form id="export-sheet-form" hx-post="/ui/operations/run/export" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
+                <input type="hidden" name="payload" id="export-sheet-payload" />
+                <button type="submit" class="section-title-button" style="width: 90%;" onclick="handleSheetExportClick(event)" {% if export_active %}disabled{% endif %}>
                   {% if export_active %}
                     Export Spreadsheet (Exporting...)
                   {% else %}
@@ -120,53 +123,60 @@
           <small class="muted">Set EXPORT_SPREADSHEET_ID in .env file</small>
         </div>
       {% endif %}
+      {% if not skills_enabled %}
+        <div class="status-row">
+          <small class="muted">Skills export comes from external SKILL.md folders. Choose source in the export prompt; “None” skips skills.</small>
+        </div>
+      {% endif %}
 
       <div class="section-header" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color, #e0e0e0);">
-        <button type="button" class="section-title-button" style="width: 100%; cursor: pointer;" onclick="(function(){const a=document.createElement('a');a.href='/api/v1/entries/export-csv';a.download='';a.style.display='none';document.body.appendChild(a);a.click();document.body.removeChild(a);})()">
+        <button type="button" class="section-title-button" style="width: 100%; cursor: pointer;" onclick="triggerCsvExportDownload()">
           Export CSV
         </button>
       </div>
       <div class="status-row">
         <span class="status-chip ok">Team Curation</span>
-        <small class="muted">Downloads {username}.zip for merge workflow</small>
+        <small class="muted">Downloads {username}_export.zip for merge workflow</small>
       </div>
     </div>
   </div>
 
-  {% if skills_enabled %}
-    <div class="config-status-grid" style="margin-top: 1.5rem;">
-      <div class="config-section">
-        <div class="section-header">
-          <h3 style="margin: 0;">External Skills (Claude/Codex)</h3>
-          <p class="muted" style="margin: 0.25rem 0 0;">Default paths: <code>~/.claude/skills</code>, <code>~/.codex/skills</code></p>
+  {% if not skills_enabled %}
+    <div id="external-skills-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000;">
+      <div style="max-width: 520px; margin: 10vh auto; background: white; border-radius: 12px; padding: 1.25rem; box-shadow: 0 8px 32px rgba(0,0,0,0.2);">
+        <h3 style="margin: 0 0 0.5rem 0;">Import curated skills to external tools?</h3>
+        <p class="muted" style="margin: 0 0 1rem 0;">This will overwrite existing SKILL.md files in the selected targets.</p>
+        <div style="display: grid; gap: 0.5rem; margin-bottom: 1rem;">
+          <label><input type="radio" name="external_skills_choice" value="claude"> Claude only</label>
+          <label><input type="radio" name="external_skills_choice" value="codex"> ChatGPT only</label>
+          <label><input type="radio" name="external_skills_choice" value="both"> Both</label>
+          <label><input type="radio" name="external_skills_choice" value="none" checked> None (skip skills)</label>
         </div>
-        <div class="section-header" style="margin-top: 0.75rem;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding-right: 0.5rem; width: 50%;">
-                <form hx-post="/ui/operations/run/import-claude" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                  <button type="submit" class="section-title-button" style="width: 100%;">Import Claude SKILL.md</button>
-                </form>
-              </td>
-              <td style="padding-left: 0.5rem; width: 50%;">
-                <form hx-post="/ui/operations/run/export-claude" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                  <button type="submit" class="section-title-button" style="width: 100%;">Export Claude SKILL.md</button>
-                </form>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-right: 0.5rem; padding-top: 0.5rem; width: 50%;">
-                <form hx-post="/ui/operations/run/import-codex" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                  <button type="submit" class="section-title-button" style="width: 100%;">Import Codex Skills</button>
-                </form>
-              </td>
-              <td style="padding-left: 0.5rem; padding-top: 0.5rem; width: 50%;">
-                <form hx-post="/ui/operations/run/export-codex" hx-target="#config-status-card" hx-swap="outerHTML" style="margin: 0;">
-                  <button type="submit" class="section-title-button" style="width: 100%;">Export Codex Skills</button>
-                </form>
-              </td>
-            </tr>
-          </table>
+        <label style="display:block; margin-bottom: 1rem;">
+          <input type="checkbox" id="external-skills-confirm" />
+          I understand this will overwrite SKILL.md files
+        </label>
+        <div style="display:flex; justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="section-title-button" onclick="closeExternalSkillsModal()">Cancel</button>
+          <button type="button" class="section-title-button" onclick="confirmExternalSkillsModal()">OK</button>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not skills_enabled %}
+    <div id="external-skills-export-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000;">
+      <div style="max-width: 520px; margin: 10vh auto; background: white; border-radius: 12px; padding: 1.25rem; box-shadow: 0 8px 32px rgba(0,0,0,0.2);">
+        <h3 style="margin: 0 0 0.5rem 0;">Export skills from external tools?</h3>
+        <p class="muted" style="margin: 0 0 1rem 0;">Choose the source for skills. Experiences always export from CHL DB.</p>
+        <div style="display: grid; gap: 0.5rem; margin-bottom: 1rem;">
+          <label><input type="radio" name="external_skills_export_choice" value="claude"> Claude only</label>
+          <label><input type="radio" name="external_skills_export_choice" value="chatgpt"> ChatGPT only</label>
+          <label><input type="radio" name="external_skills_export_choice" value="none" checked> None (skip skills)</label>
+        </div>
+        <div style="display:flex; justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="section-title-button" onclick="closeExternalSkillsExportModal()">Cancel</button>
+          <button type="button" class="section-title-button" onclick="confirmExternalSkillsExportModal()">OK</button>
         </div>
       </div>
     </div>
@@ -179,7 +189,16 @@
   {% endif %}
 
   <script>
+    const skillsEnabled = {{ 'true' if skills_enabled else 'false' }};
+    let pendingImportMode = null;
+    let pendingExportMode = null;
+
     function triggerExcelFileSelect() {
+      if (!skillsEnabled) {
+        pendingImportMode = 'excel';
+        openExternalSkillsModal();
+        return;
+      }
       document.getElementById('excel_file').click();
     }
 
@@ -230,7 +249,189 @@
       }
     }
 
+    function openExternalSkillsModal() {
+      const modal = document.getElementById('external-skills-modal');
+      if (modal) {
+        modal.style.display = 'block';
+      }
+      pauseConfigStatusRefresh(true);
+    }
+
+    function closeExternalSkillsModal() {
+      const modal = document.getElementById('external-skills-modal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+      pendingImportMode = null;
+      pauseConfigStatusRefresh(false);
+    }
+
+    function confirmExternalSkillsModal() {
+      const confirmBox = document.getElementById('external-skills-confirm');
+      if (!confirmBox || !confirmBox.checked) {
+        alert('Please confirm overwrite before proceeding.');
+        return;
+      }
+      const choice = document.querySelector('input[name="external_skills_choice"]:checked');
+      const value = choice ? choice.value : 'none';
+
+      if (pendingImportMode === 'excel') {
+        const targetInput = document.getElementById('external_skills_target');
+        if (targetInput) {
+          targetInput.value = value;
+        }
+        closeExternalSkillsModal();
+        document.getElementById('excel_file').click();
+        return;
+      }
+
+      if (pendingImportMode === 'sheet') {
+        const payloadInput = document.getElementById('import-sheet-payload');
+        if (payloadInput) {
+          payloadInput.value = JSON.stringify({ external_skills_target: value });
+        }
+        closeExternalSkillsModal();
+        const form = document.getElementById('import-sheet-form');
+        if (form) {
+          form.requestSubmit();
+        }
+        return;
+      }
+      closeExternalSkillsModal();
+    }
+
+    function handleSheetImportClick(event) {
+      if (!skillsEnabled) {
+        event.preventDefault();
+        pendingImportMode = 'sheet';
+        openExternalSkillsModal();
+      }
+    }
+
+    function openExternalSkillsExportModal() {
+      const modal = document.getElementById('external-skills-export-modal');
+      if (modal) {
+        modal.style.display = 'block';
+      }
+      pauseConfigStatusRefresh(true);
+    }
+
+    function closeExternalSkillsExportModal() {
+      const modal = document.getElementById('external-skills-export-modal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+      pendingExportMode = null;
+      pauseConfigStatusRefresh(false);
+    }
+
+    function pauseConfigStatusRefresh(shouldPause) {
+      const card = document.getElementById('config-status-card');
+      if (!card) {
+        return;
+      }
+      if (shouldPause) {
+        if (!card.dataset.originalHxTrigger) {
+          card.dataset.originalHxTrigger = card.getAttribute('hx-trigger') || '';
+        }
+        card.setAttribute('hx-trigger', 'ops-refresh from:body');
+      } else if (card.dataset.originalHxTrigger) {
+        card.setAttribute('hx-trigger', card.dataset.originalHxTrigger);
+      }
+    }
+
+    function isExternalModalOpen() {
+      const importModal = document.getElementById('external-skills-modal');
+      const exportModal = document.getElementById('external-skills-export-modal');
+      return (importModal && importModal.style.display === 'block')
+        || (exportModal && exportModal.style.display === 'block');
+    }
+
+    document.addEventListener('htmx:beforeSwap', function(event) {
+      const target = event.detail && event.detail.target;
+      if (target && target.id === 'config-status-card' && isExternalModalOpen()) {
+        event.detail.shouldSwap = false;
+      }
+    });
+
+    function confirmExternalSkillsExportModal() {
+      const choice = document.querySelector('input[name="external_skills_export_choice"]:checked');
+      const value = choice ? choice.value : 'none';
+
+      if (pendingExportMode === 'csv') {
+        const link = document.createElement('a');
+        link.href = `/api/v1/entries/export-csv?external_skills_target=${encodeURIComponent(value)}`;
+        link.download = '';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        closeExternalSkillsExportModal();
+        return;
+      }
+
+      if (pendingExportMode === 'excel') {
+        closeExternalSkillsExportModal();
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = `/api/v1/entries/export-excel-download?external_skills_target=${encodeURIComponent(value)}`;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+        return;
+      }
+
+      if (pendingExportMode === 'sheet') {
+        const payloadInput = document.getElementById('export-sheet-payload');
+        if (payloadInput) {
+          payloadInput.value = JSON.stringify({ external_skills_target: value });
+        }
+        closeExternalSkillsExportModal();
+        const form = document.getElementById('export-sheet-form');
+        if (form) {
+          form.requestSubmit();
+        }
+        return;
+      }
+
+      closeExternalSkillsExportModal();
+    }
+
+    function handleSheetExportClick(event) {
+      if (!skillsEnabled) {
+        event.preventDefault();
+        pendingExportMode = 'sheet';
+        openExternalSkillsExportModal();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const sheetButton = document.querySelector('#import-sheet-form button[type="submit"]');
+      if (sheetButton) {
+        sheetButton.addEventListener('click', handleSheetImportClick);
+      }
+      const exportSheetButton = document.querySelector('#export-sheet-form button[type="submit"]');
+      if (exportSheetButton) {
+        exportSheetButton.addEventListener('click', handleSheetExportClick);
+      }
+    });
+
+    function triggerCsvExportDownload() {
+      if (!skillsEnabled) {
+        pendingExportMode = 'csv';
+        openExternalSkillsExportModal();
+        return;
+      }
+      window.location.href = '/api/v1/entries/export-csv';
+    }
+
     function triggerExcelExportAndDownload() {
+      if (!skillsEnabled) {
+        pendingExportMode = 'excel';
+        openExternalSkillsExportModal();
+        return;
+      }
       // Create a temporary iframe to handle the file download without leaving the page
       const iframe = document.createElement('iframe');
       iframe.style.display = 'none';

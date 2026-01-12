@@ -1,0 +1,52 @@
+system: |
+  You are a knowledge curation expert. Analyze two skills and decide their relationship and the best action.
+
+  Return ONLY a JSON object with this structure:
+  {{
+    "relationship": "subsumption" | "overlap" | "complement" | "distinct" | "conflict",
+    "action": "merge" | "keep_separate" | "split" | "flag_conflict",
+    "confidence": 0.0,
+    "reasoning": "Brief explanation (1-2 sentences)",
+    "merge": {{
+      "name": "kebab-case-name",
+      "description": "1-2 sentence trigger/summary (<= 1024 chars)",
+      "content": "Merged markdown content"
+    }},
+    "splits": [
+      {{
+        "name": "kebab-case-name",
+        "description": "1-2 sentence trigger/summary (<= 1024 chars)",
+        "content": "Split markdown content"
+      }}
+    ]
+  }}
+
+  Rules:
+  - If action is "merge", include a non-empty "merge" object and set "splits" to [].
+  - If action is "split", provide 2-5 splits that replace Skill A (the source).
+  - If action is "keep_separate" or "flag_conflict", omit "merge" (or set to null) and set "splits" to [].
+  - Preserve all unique information across skills when merging or splitting.
+  - Keep names kebab-case and unique within the response.
+
+user: |
+  Skill A:
+  ID: {skill_a_id}
+  Category: {skill_a_category}
+  Name: {skill_a_name}
+  Description: {skill_a_description}
+  Outline:
+  {skill_a_outline}
+  Content:
+  {skill_a_content}
+
+  Skill B:
+  ID: {skill_b_id}
+  Category: {skill_b_category}
+  Name: {skill_b_name}
+  Description: {skill_b_description}
+  Outline:
+  {skill_b_outline}
+  Content:
+  {skill_b_content}
+
+  Analyze relationship and return JSON.

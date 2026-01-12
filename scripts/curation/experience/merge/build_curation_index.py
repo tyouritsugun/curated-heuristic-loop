@@ -10,10 +10,10 @@ IMPORTANT: The API server must be stopped before running this script to avoid
 
 Usage:
     # With default path from scripts_config.yaml:
-    python scripts/curation/merge/build_curation_index.py
+    python scripts/curation/experience/merge/build_curation_index.py
 
     # With explicit path:
-    python scripts/curation/merge/build_curation_index.py \\
+    python scripts/curation/experience/merge/build_curation_index.py \\
         --db-path data/curation/chl_curation.db
 """
 
@@ -216,7 +216,7 @@ def main():
         if pending_skills:
             print(f"Processing skills: 0/{len(pending_skills)}", end="", flush=True)
             for i, skill in enumerate(pending_skills, 1):
-                content = f"{skill.title}\n\n{skill.content}"
+                content = f"{skill.name}\n\n{skill.description}\n\n{skill.content}"
 
                 try:
                     # Mark as processing

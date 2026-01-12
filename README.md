@@ -3,7 +3,7 @@
 Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics, searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
 
 For the full workflow philosophy see [doc/concept.md](doc/concept.md). For setup, skills/experiences, and workflows, see the [operator guide](doc/manual.md).
-For the overnight curation overview, see [doc/experience_curation.md](doc/experience_curation.md).
+For the overnight curation overview, see [doc/curation.md](doc/curation.md).
 
 ## Architecture Overview
 
@@ -61,7 +61,7 @@ If you have Python 3.13 and want GPU acceleration, install a compatible version 
 **Overnight curation defaults (config-driven):**
 - `curation_llm.llm_response_timeout` (seconds per LLM call)
 - `curation.thresholds.auto_dedup` (auto-merge threshold)
-See `doc/experience_curation.md` for the simplified runbook.
+See `doc/curation.md` for the simplified runbook.
 
 ### Step 1: Install API Server
 
@@ -432,7 +432,7 @@ CHL includes a demo that shows how it teaches LLMs project-specific conventions.
 - **Without CHL**: LLM rushes to fix code and writes incomplete tickets missing required artifacts
 - **With CHL**: LLM clarifies intent first and enforces project-specific ticket format (Run ID, pipeline stage, logs)
 
-**Full instructions:** See [doc/run_sample.md](doc/run_sample.md) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
+**Full instructions:** See [doc/manual.md](doc/manual.md#53-demo-run-datapipe-sample) for complete demo guide with A/B testing steps, expected behaviors, and troubleshooting.
 
 ## Mode Switching
 
@@ -458,21 +458,14 @@ After initial installation, use the web dashboards for most operations:
 
 ## Managing Categories
 
-CHL comes with 12 default categories (TMG, PGS, ADG, etc.) seeded during setup. To add custom categories for your team's workflows:
+CHL uses a **code-defined** category taxonomy seeded during setup. To add categories, fork the codebase, update `src/common/config/categories.py`, and distribute the updated code to the team (Alice/Bob) so everyone shares the same taxonomy.
 
 **Quick steps:**
-1. Export current database via Settings → "Export Spreadsheet"
-2. Save export as timestamped backup in Google Drive (recommended)
-3. Copy Categories worksheet to your import spreadsheet
-4. Add new row with `code`, `name`, and `description`
-5. Import via Operations → "Run Import"
+1. Fork the repo and update `src/common/config/categories.py`.
+2. Commit the change and share the updated code with the team.
+3. Each member pulls the update and re-runs setup/import if needed.
 
-**Example categories:**
-- `DEP` / `deployment_procedures` - Deployment checklists and rollback procedures
-- `SEC` / `security_review` - Security review patterns and vulnerability checks
-- `ONC` / `oncall_runbook` - Incident response and on-call procedures
-
-**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for detailed steps, best practices, and troubleshooting.
+**Full instructions:** See [Managing Categories in the Operator Guide](doc/manual.md#62-managing-categories) for details.
 
 
 ## Web Dashboards
@@ -497,9 +490,11 @@ Both dashboards share the same process as the API server, so every change is log
 ## Advanced References
 
 - Workflow philosophy: [doc/concept.md](doc/concept.md)
-- [Operator guide](doc/manual.md) (setup, skills/experiences, API details; file name is legacy)
+- Operator guide: [doc/manual.md](doc/manual.md) 
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
-- Architecture refinement roadmap: [doc/plan/architecture_refine.md](doc/plan/architecture_refine.md)
+- Curation runbook: [doc/curation.md](doc/curation.md)
+- Curation spec: [doc/curation_spec.md](doc/curation_spec.md)
+- Curation architecture and flow: [doc/curation_spec.md](doc/curation_spec.md)
 
 ## License
 

@@ -880,31 +880,98 @@ def export_entries(
 def export_entries_csv(
     session: Session = Depends(get_db_session),
     config=Depends(get_config),
+    external_skills_target: str | None = None,
 ):
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
-    Returns a zip file named {username}.export.zip containing:
+    Returns a zip file named {username}_export.zip containing:
     - {username}/experiences.csv
     - {username}/skills.csv
     """
     import csv
     import io
+    import json
     import tempfile
     import zipfile
     from pathlib import Path
     from fastapi.responses import StreamingResponse
     from src.common.storage.repository import get_author
     from src.common.storage.schema import Experience, CategorySkill
+    from src.common.skills.skill_md import parse_skill_md_loose
 
     try:
         # Get username from system
         username = get_author() or "unknown"
+
+        external_target = (external_skills_target or "").strip().lower()
+        if external_target == "chatgpt":
+            external_target = "codex"
 
         # Fetch all data
         experiences = session.query(Experience).all()
         skills = []
         if getattr(config, "skills_enabled", True):
             skills = session.query(CategorySkill).all()
+        else:
+            if external_target and external_target != "none":
+                # Skills disabled: read from selected SKILL.md folder
+                def iter_skill_md_paths(base_dir: Path):
+                    if not base_dir.exists():
+                        return []
+                    paths = []
+                    for child in base_dir.iterdir():
+                        if child.is_dir():
+                            skill_md = child / "SKILL.md"
+                            if skill_md.is_file():
+                                paths.append(skill_md)
+                    return paths
+
+                if external_target == "codex":
+                    candidates = [
+                        Path.cwd() / ".codex" / "skills",
+                        Path.home() / ".codex" / "skills",
+                    ]
+                else:
+                    candidates = [
+                        Path.cwd() / ".claude" / "skills",
+                        Path.home() / ".claude" / "skills",
+                    ]
+
+                skills_by_name = {}
+                for base_dir in candidates:
+                    for skill_md in iter_skill_md_paths(base_dir):
+                        try:
+                            data = parse_skill_md_loose(skill_md, require_dir_match=True)
+                        except Exception as exc:
+                            logger.warning("Skipping SKILL.md parse error (%s): %s", skill_md, exc)
+                            continue
+                        name = data.get("name")
+                        if not name or name in skills_by_name:
+                            continue
+                        category_code = (data.get("category_code") or "").strip()
+                        metadata = data.get("metadata") or {}
+                        allowed_tools = data.get("allowed_tools") or []
+                        source_tag = f"external_{external_target}"
+                        skills_by_name[name] = {
+                            "id": name,
+                            "category_code": category_code,
+                            "name": name,
+                            "description": data.get("description") or "",
+                            "content": data.get("content") or "",
+                            "license": data.get("license") or "",
+                            "compatibility": data.get("compatibility") or "",
+                            "metadata": json.dumps(metadata, ensure_ascii=False) if metadata else "",
+                            "allowed_tools": " ".join(allowed_tools) if allowed_tools else "",
+                            "model": data.get("model") or "",
+                            "source": source_tag,
+                            "author": username,
+                            "embedding_status": "",
+                            "created_at": "",
+                            "updated_at": "",
+                            "synced_at": "",
+                            "exported_at": "",
+                        }
+                skills = list(skills_by_name.values())
 
         # Create in-memory zip file
         zip_buffer = io.BytesIO()
@@ -955,31 +1022,35 @@ def export_entries_csv(
                     "created_at", "updated_at", "synced_at", "exported_at"
                 ])
                 writer.writeheader()
-                for skill in skills:
-                    writer.writerow({
-                        "id": skill.id,
-                        "category_code": skill.category_code,
-                        "name": skill.name,
-                        "description": skill.description,
-                        "content": skill.content,
-                        "license": skill.license or "",
-                        "compatibility": skill.compatibility or "",
-                        "metadata": skill.metadata_json or "",
-                        "allowed_tools": skill.allowed_tools or "",
-                        "model": skill.model or "",
-                        "source": skill.source or "",
-                        "author": skill.author or "",
-                        "embedding_status": skill.embedding_status or "",
-                        "created_at": skill.created_at.isoformat() if skill.created_at else "",
-                        "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
-                        "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
-                        "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
-                    })
+                if getattr(config, "skills_enabled", True):
+                    for skill in skills:
+                        writer.writerow({
+                            "id": skill.id,
+                            "category_code": skill.category_code,
+                            "name": skill.name,
+                            "description": skill.description,
+                            "content": skill.content,
+                            "license": skill.license or "",
+                            "compatibility": skill.compatibility or "",
+                            "metadata": skill.metadata_json or "",
+                            "allowed_tools": skill.allowed_tools or "",
+                            "model": skill.model or "",
+                            "source": skill.source or "",
+                            "author": skill.author or "",
+                            "embedding_status": skill.embedding_status or "",
+                            "created_at": skill.created_at.isoformat() if skill.created_at else "",
+                            "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+                            "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
+                            "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
+                        })
+                else:
+                    for skill in skills:
+                        writer.writerow(skill)
                 zip_file.writestr(f"{username}/skills.csv", csv_buffer.getvalue())
 
         # Prepare zip for download
         zip_buffer.seek(0)
-        filename = f"{username}.zip"
+        filename = f"{username}_export.zip"
 
         logger.info(
             "CSV export created for user=%s: %d experiences, %d skills",

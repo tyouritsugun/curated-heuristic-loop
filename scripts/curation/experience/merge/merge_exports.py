@@ -12,12 +12,12 @@ This script:
 
 Usage:
     # With explicit paths:
-    python scripts/curation/merge/merge_exports.py \\
+    python scripts/curation/experience/merge/merge_exports.py \\
         --inputs data/curation/members/alice data/curation/members/bob \\
         --output data/curation/merged
 
     # With defaults from scripts_config.yaml:
-    python scripts/curation/merge/merge_exports.py
+    python scripts/curation/experience/merge/merge_exports.py
 """
 
 import argparse
@@ -72,12 +72,12 @@ def parse_args():
             for sub in members_path.iterdir():
                 if sub.is_dir():
                     # Check if this subdirectory has the expected CSV files (lowercase or capitalized)
-                    lowercase_base = all((sub / csv_file).exists() for csv_file in ["categories.csv", "experiences.csv"])
-                    capitalized_base = all((sub / csv_file).exists() for csv_file in ["Categories.csv", "Experiences.csv"])
+                    lowercase_base = (sub / "experiences.csv").exists()
+                    capitalized_base = (sub / "Experiences.csv").exists()
                     lowercase_skills = (sub / "skills.csv").exists() or (sub / "manuals.csv").exists()
                     capitalized_skills = (sub / "Skills.csv").exists() or (sub / "Manuals.csv").exists()
 
-                    # Check if all base files exist and a skills/manuals file is present
+                    # Check if base file exists and a skills/manuals file is present
                     lowercase_exist = lowercase_base and lowercase_skills
                     capitalized_exist = capitalized_base and capitalized_skills
 
@@ -89,7 +89,7 @@ def parse_args():
             else:
                 parser.error(
                     f"No valid member directories found in {default_members_dir} "
-                    "(directories must contain categories.csv, experiences.csv, and skills.csv). "
+                    "(directories must contain experiences.csv and skills.csv). "
                     "Please specify --inputs explicitly."
                 )
         else:
@@ -100,10 +100,10 @@ def parse_args():
 
 MIN_CATEGORY_COLUMNS = {"code", "name", "description"}
 MIN_EXPERIENCE_COLUMNS = {"id", "category_code", "section", "title", "playbook"}
-MIN_SKILL_COLUMNS = {"id", "category_code", "title", "content"}
+MIN_SKILL_COLUMNS = {"id", "name", "description", "content"}
 
 OPTIONAL_EXPERIENCE_COLUMNS = {"context", "expected_action"}
-OPTIONAL_SKILL_COLUMNS = {"summary"}
+OPTIONAL_SKILL_COLUMNS = {"title", "summary", "license", "compatibility", "metadata", "allowed_tools", "model"}
 
 
 def default_timestamp() -> str:
@@ -126,7 +126,11 @@ EXPERIENCE_DEFAULTS = {
     "expected_action": "",
 }
 SKILL_DEFAULTS = {
-    "summary": "",
+    "license": "",
+    "compatibility": "",
+    "metadata": "",
+    "allowed_tools": "",
+    "model": "",
     "source": "local",
     "sync_status": "0",
     "author": "",
@@ -164,6 +168,11 @@ def validate_columns(
         return [f"{entity_label}: {file_path} has no header row for user {username}"]
 
     actual = set(fieldnames)
+    if entity_label == "Skills":
+        if "name" not in actual and "title" in actual:
+            actual.add("name")
+        if "description" not in actual and "summary" in actual:
+            actual.add("description")
     missing = required - actual
     errors = []
     if missing:
@@ -182,6 +191,21 @@ def normalize_rows(
             if updated.get(key) in (None, ""):
                 updated[key] = value() if callable(value) else value
         normalized.append(updated)
+    return normalized
+
+
+def normalize_skill_row(row: Dict) -> Dict:
+    normalized = dict(row)
+    name = (normalized.get("name") or "").strip()
+    description = (normalized.get("description") or "").strip()
+    if not name:
+        name = (normalized.get("title") or "").strip()
+    if not description:
+        description = (normalized.get("summary") or "").strip()
+    if name:
+        normalized["name"] = name
+    if description:
+        normalized["description"] = description
     return normalized
 
 
@@ -271,6 +295,8 @@ def merge_experiences(
 
             # Override author field with folder name (source of truth)
             exp["author"] = username
+            if not exp.get("source"):
+                exp["source"] = f"imported_{username}"
 
             experiences_by_id[exp["id"]] = exp
 
@@ -311,6 +337,8 @@ def merge_skills(
 
             # Override author field with folder name (source of truth)
             skill["author"] = username
+            if not skill.get("source"):
+                skill["source"] = f"imported_{username}"
 
             skills_by_id[skill["id"]] = skill
 
@@ -408,16 +436,10 @@ def main():
             skills_path = input_dir / "Manuals.csv"
 
         skills, skill_fields = read_csv(skills_path)
+        skills = [normalize_skill_row(row) for row in skills]
 
-        schema_errors.extend(
-            validate_columns(
-                category_fields,
-                MIN_CATEGORY_COLUMNS,
-                "Categories",
-                username,
-                input_dir / "categories.csv",
-            )
-        )
+        if category_fields:
+            print(f"  {username}: categories.csv ignored (canonical taxonomy)")
         schema_errors.extend(
             validate_columns(
                 experience_fields,
@@ -451,22 +473,11 @@ def main():
             print(f"  - {err}")
         sys.exit(1)
 
-    # Merge categories
-    merged_categories, cat_warnings = merge_categories(categories_data)
-
-    if cat_warnings:
-        print("⚠️  Category warnings:")
-        for warning in cat_warnings:
-            print(f"  - {warning}")
+    # Categories are canonical (code-defined). Ignore member category CSVs.
+    merged_categories = []
+    if any(categories_data.values()):
+        print("✓ Categories: skipped (using canonical taxonomy)")
         print()
-        print("❌ Error: Category conflicts detected. Team must align on category definitions.")
-        print("   All members should use the same category codes with identical names and descriptions.")
-        sys.exit(1)
-
-    print(f"✓ Categories: {len(merged_categories)} unique")
-    for cat in merged_categories:
-        print(f"  - {cat['code']}: {cat['name']}")
-    print()
 
     # Merge experiences
     merged_experiences, exp_collisions, exp_warnings = merge_experiences(experiences_data)
@@ -493,12 +504,7 @@ def main():
     # Write merged CSVs
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if merged_categories:
-        write_csv(
-            output_dir / "categories.csv",
-            merged_categories,
-            ["code", "name", "description", "created_at"],
-        )
+    # categories.csv deprecated; do not emit it.
 
     if merged_experiences:
         write_csv(
@@ -530,9 +536,14 @@ def main():
             [
                 "id",
                 "category_code",
-                "title",
+                "name",
+                "description",
                 "content",
-                "summary",
+                "license",
+                "compatibility",
+                "metadata",
+                "allowed_tools",
+                "model",
                 "source",
                 "sync_status",
                 "author",
@@ -545,7 +556,7 @@ def main():
         )
 
     print(f"✓ Output written to: {output_dir}/")
-    print(f"  - categories.csv ({len(merged_categories)} rows)")
+    # categories.csv deprecated
     print(f"  - experiences.csv ({len(merged_experiences)} rows)")
     print(f"  - skills.csv ({len(merged_skills)} rows)")
     print()

@@ -337,6 +337,7 @@ def operations_controls_card(
 async def import_excel_upload(
     request: Request,
     excel_file: UploadFile = File(...),
+    external_skills_target: str | None = Form(None),
     session: Session = Depends(get_db_session),
     settings_service: SettingsService = Depends(get_settings_service),
     telemetry_service=Depends(get_telemetry_service),
@@ -370,6 +371,8 @@ async def import_excel_upload(
 
         # Trigger the import-excel operation with the temporary file path
         payload = {"file_path": tmp_file_path}
+        if external_skills_target:
+            payload["external_skills_target"] = external_skills_target
         actor = _actor_from_request(request)
 
         operations_service.trigger("import-excel", payload, actor)
@@ -442,6 +445,7 @@ async def export_and_download_excel(
     request: Request,
     session: Session = Depends(get_db_session),
     operations_service=Depends(get_operations_service),
+    external_skills_target: str | None = None,
 ):
     from src.common.config.config import PROJECT_ROOT
     import os
@@ -456,7 +460,10 @@ async def export_and_download_excel(
         from src.api.services.operations_service import OperationsService
 
         # Call the export handler directly with a fresh context to generate the Excel file
-        result = operations_service._export_excel_handler({}, session)
+        payload: dict[str, str] = {}
+        if external_skills_target:
+            payload["external_skills_target"] = external_skills_target
+        result = operations_service._export_excel_handler(payload, session)
 
         # Find the most recently created Excel file in the data directory
         data_dir = PROJECT_ROOT / "data"

@@ -240,8 +240,122 @@ For automation and scripting, activate the API server venv first, then use these
 ### 5.2. Data Synchronization
 Before running, ensure your `scripts/scripts_config.yaml` is configured with the correct Google Sheet IDs.
 
--   **Export for review:** From a running API server, click **Export Spreadsheet**, 
--   **Import from Google Sheets:**  click **Import Spreadsheet** to overwrite the local database with the published sheet(reset all):
+-   **Export for review:** From a running API server, click **Export Spreadsheet**.
+    - If `CHL_SKILLS_ENABLED=false`, the UI prompts for external skills source (Claude/ChatGPT/None). Experiences always export from CHL DB.
+-   **Import from Google Sheets:** Click **Import Spreadsheet** to overwrite the local database with the published sheet (reset all).
+    - If `CHL_SKILLS_ENABLED=false`, experiences import into CHL DB and skills are written to external SKILL.md folders based on the modal choice.
+
+## 5.3. Demo Run (DataPipe Sample)
+
+This demo shows how CHL teaches LLMs project-specific conventions using a fictional "DataPipe" project. It highlights the difference between generic bug reporting vs. team-specific ticket requirements.
+
+### What You'll See
+
+**Without CHL:**
+- LLM rushes to fix code when user reports a bug.
+- LLM writes incomplete tickets missing required artifacts (Run ID, pipeline stage, logs).
+
+**With CHL:**
+- LLM clarifies user intent first (fix vs. document vs. investigate).
+- LLM enforces project-specific ticket requirements.
+- LLM asks for required artifacts before drafting tickets.
+
+**The demo takes ~10 minutes end-to-end.**
+
+### Prerequisites
+
+Before running the demo, complete the main installation steps in the README:
+1. Install API server (CPU or GPU mode)
+2. Configure environment (.env file)
+3. Initialize database
+4. Start API server
+5. Install MCP server
+6. Configure agent instructions (use AGENTS.md.sample)
+
+The demo script `scripts/setup/demo_datapipe_bug.py` is included in the repository and ready to run.
+
+### Sample Data
+
+The demo requires TMG (Ticket Management) category data with DataPipe bug reporting guidance. This data is automatically seeded when you run `python scripts/setup/setup-cpu.py` or `python scripts/setup/setup-gpu.py`.
+
+Verify the data is present:
+1. Set `IMPORT_SPREADSHEET_ID` in your `.env` (same as `.env.sample`).
+2. Import your database via Settings → "Import Spreadsheet" (this resets local data).
+3. Check the Experiences worksheet for TMG entries about bug reporting.
+4. Check the Skills worksheet for the "Bug Report Template" entry.
+
+### Running the Demo
+
+#### Step 1: Generate Bug Artifacts
+
+```bash
+# Activate your API server venv first
+source .venv-cpu/bin/activate  # Or .venv-apple / .venv-nvidia
+
+# Run the buggy script
+python3 scripts/setup/demo_datapipe_bug.py
+```
+
+The script will:
+- Fail with a realistic error (missing data file).
+- Print the error message to console.
+- Save artifacts to:
+  - `data/output/run_meta.json` (Run ID, pipeline stage, timestamp)
+  - `data/output/app.log` (error details and stack trace)
+
+Copy the error message from the console; you'll paste this into your AI assistant.
+
+#### Step 2: Test A - Without CHL (Baseline)
+
+Setup:
+- Start a fresh chat session in your code assistant.
+- Do NOT mention CHL or use any MCP tools.
+- Or temporarily disable CHL MCP server and restart your assistant.
+
+Test sequence:
+1. **Pitfall #1: Rushing to code**
+   ```
+   You: "I found a bug in DataPipe, here's the error: [paste error]"
+   ```
+   Expected: LLM immediately starts reading code files and attempting fixes without asking what you want.
+2. **Pitfall #2: Incomplete ticket**
+   ```
+   You: "Actually, don't fix it. Write a bug ticket for this error instead."
+   ```
+   Expected: LLM writes a generic ticket missing Run ID, pipeline stage, and log excerpt.
+
+#### Step 3: Test B - With CHL (Improved)
+
+Setup:
+- Ensure CHL MCP server is running (`./start-chl.sh`).
+- Ensure TMG sample data is imported (verify via export).
+- Start a fresh chat session in your code assistant (with CHL enabled).
+
+Test sequence:
+1. **Fix #1: Clarifies intent first**
+   ```
+   You: "I found a bug in DataPipe, here's the error: [paste same error]"
+   ```
+   Expected: LLM calls `read_entries(...)` and asks whether to fix, document, or investigate.
+2. **Fix #2: Enforces project requirements**
+   ```
+   You: "Write a bug ticket."
+   ```
+   Expected: LLM requests required artifacts, reads the JSON/log files, and writes a complete ticket.
+
+### Understanding the Value
+
+- **Intent Clarification**: CHL teaches the LLM to pause and clarify before acting.
+- **Process Enforcement**: CHL stores your team's bug reporting conventions.
+- **Artifact Awareness**: CHL guides the LLM to use project-specific artifacts (Run ID, logs, metadata).
+
+### Next Steps
+
+1. Add your own categories: update taxonomy for your team's workflows.
+2. Work with the LLM normally; it will pull guidance as you go.
+3. Close the loop at conversation end: summarize and capture new experiences/skills.
+4. Share when it's ripe: export to Google Sheets to share with the team.
+5. Keep refining: repeat the loop to keep the KB sharp and relevant.
 
 ## 6. Reference
 
@@ -263,7 +377,7 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Managing Categories
 
-Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; the Categories sheet is export-only for sharing.
+Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
 
 #### Adding New Categories
 

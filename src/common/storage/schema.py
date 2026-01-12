@@ -145,6 +145,41 @@ class ExperienceSplitProvenance(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class SkillSplitProvenance(Base):
+    __tablename__ = "skill_split_provenance"
+
+    id = Column(Integer, primary_key=True)
+    source_skill_id = Column(String(64), nullable=False, index=True)
+    split_skill_id = Column(String(64), nullable=True, index=True)
+    split_group_id = Column(String(64), nullable=False, index=True)
+    decision = Column(String(16), nullable=False)  # split, atomic, error
+    decision_id = Column(String(64), nullable=True)
+    curator = Column(String(255), nullable=True)
+    timestamp = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    model = Column(String(255), nullable=True)
+    prompt_path = Column(String(255), nullable=True)
+    raw_response = Column(Text, nullable=True)
+
+
+class SkillCurationDecision(Base):
+    __tablename__ = "skill_curation_decisions"
+
+    id = Column(Integer, primary_key=True)
+    skill_a_id = Column(String(64), nullable=False, index=True)
+    skill_b_id = Column(String(64), nullable=False, index=True)
+    relationship = Column(String(32), nullable=False)
+    action = Column(String(32), nullable=False)
+    confidence = Column(String(32), nullable=True)
+    curator = Column(String(255), nullable=True)
+    timestamp = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    model = Column(String(255), nullable=True)
+    prompt_path = Column(String(255), nullable=True)
+    raw_response = Column(Text, nullable=True)
+    status = Column(String(32), nullable=True)
+    conflict_flag = Column(Integer, nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+
+
 class JobHistory(Base):
     __tablename__ = "job_history"
 
