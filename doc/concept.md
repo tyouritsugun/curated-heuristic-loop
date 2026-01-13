@@ -1,3 +1,4 @@
+[Return to README.md](../README.md)
 # Curated Heuristic Loop (CHL) Concept
 
 ## Overview

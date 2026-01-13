@@ -1,3 +1,4 @@
+[Return to README.md](../README.md)
 # Curation Overnight Overview
 
 ## Why curation and what it does

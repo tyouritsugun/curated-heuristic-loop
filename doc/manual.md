@@ -1,3 +1,4 @@
+[Return to README.md](../README.md)
 # CHL Operator Guide
 
 This guide covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
