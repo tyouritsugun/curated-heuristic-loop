@@ -243,7 +243,7 @@ Before running, ensure your `scripts/scripts_config.yaml` is configured with the
 -   **Export for review:** From a running API server, click **Export Spreadsheet**.
     - If `CHL_SKILLS_ENABLED=false`, the UI prompts for external skills source (Claude/ChatGPT/None). Experiences always export from CHL DB.
 -   **Import from Google Sheets:** Click **Import Spreadsheet** to overwrite the local database with the published sheet (reset all).
-    - If `CHL_SKILLS_ENABLED=false`, experiences import into CHL DB and skills are written to external SKILL.md folders based on the modal choice.
+    - If `CHL_SKILLS_ENABLED=false`, experiences import into CHL DB and skills are written to external SKILLS.md folders based on the modal choice.
 
 ## 5.3. Demo Run (DataPipe Sample)
 
@@ -270,7 +270,7 @@ Before running the demo, complete the main installation steps in the README:
 3. Initialize database
 4. Start API server
 5. Install MCP server
-6. Configure agent instructions (use AGENTS.md.sample)
+
 
 The demo script `scripts/setup/demo_datapipe_bug.py` is included in the repository and ready to run.
 
@@ -332,12 +332,15 @@ Setup:
 - Start a fresh chat session in your code assistant (with CHL enabled).
 
 Test sequence:
-1. **Fix #1: Clarifies intent first**
+1. Configure agent instructions:
+   - **For Claude Code**: Copy or append `CLAUDE.md.sample` to `<project root>/.claude/CLAUDE.md`. This file will be automatically loaded at session startup.
+   - **For other code assistants** (Codex, Cursor, Windsurf, etc.): Follow the instructions in `AGENTS.md.sample` to add the content to your assistant's custom instructions or configuration
+2. **Fix #1: Clarifies intent first**
    ```
    You: "I found a bug in DataPipe, here's the error: [paste same error]"
    ```
    Expected: LLM calls `read_entries(...)` and asks whether to fix, document, or investigate.
-2. **Fix #2: Enforces project requirements**
+3. **Fix #2: Enforces project requirements**
    ```
    You: "Write a bug ticket."
    ```
@@ -377,6 +380,7 @@ The system is pre-configured with the following categories. You can add more as 
 
 ### 6.2. Managing Categories
 
+Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
 Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
 
 #### Adding New Categories

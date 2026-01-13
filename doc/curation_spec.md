@@ -12,29 +12,46 @@ flowchart TD
   D --> E1[Experience communities + overnight loop]
   D --> E2[Skill candidate grouping]
   E2 --> F2[Skill relationship analysis + auto-apply]
-  E1 --> G[Export approved TSVs]
-  F2 --> G
+  E1 --> L{Stop thresholds met?<br/>scripts/scripts_config.yaml}
+  F2 --> L
+  L -->|No| D
+  L -->|Yes| G[Export approved TSVs]
   G --> H[Publish to team]
-  H --> I[Team import to local DB or external SKILL.md]
+  H --> I[Team import to local DB or external SKILLS.md]
 ```
 
 ## Architecture
 
 ### Entrypoints
-- Experiences + skills:
-  ```bash
-  python scripts/curation/common/overnight_all.py
-  ```
-- Use `--no-skills` to skip skill curation for a run.
+
+**Typical curation workflow (run in this order):**
+
+1. **`merge_all.py`** - Data preparation and initial merge
+   ```bash
+   python scripts/curation/common/merge_all.py
+   ```
+   - Imports/merges experiences from main database to curation database
+   - Prepares data for LLM-based curation
+   - Run this FIRST before overnight curation
+
+2. **`overnight_all.py`** - Automated overnight curation
+   ```bash
+   python scripts/curation/common/overnight_all.py
+   ```
+   - Runs multi-round LLM-based curation for both experiences and skills
+   - Uses LLM to decide merge/keep decisions
+   - Automatically applies decisions and rebuilds communities
+   - Use `--no-skills` to skip skill curation
+   - Run this AFTER merge_all to curate the prepared data
 
 ### Defaults and config
 - Defaults are read from:
   - `scripts/scripts_config.yaml`
   - `scripts/curation/agents/prompts/curation_prompt.yaml`
-- Overnight wrapper defaults to a **DB copy**:
-  - `data/curation-copy/chl_curation.db`
-  - `data/curation-copy/.curation_state_loop.json`
-  - Use this for safe experimentation or retries; for production curation runs, use the main curation DB.
+- **Database usage**:
+  - `data/chl.db` - Main database for MCP operations (read/write entries, search, daily usage)
+  - `data/curation/chl_curation.db` - Curation database for overnight curation workflow
+  - `data/curation/.curation_state_loop.json` - Curation state tracking
 
 ### Core loop (high level)
 1) Auto-dedup high-confidence pairs (>= `auto_dedup` threshold).
@@ -82,6 +99,59 @@ LLM choice:
 - `data/curation/morning_report.md`
 - `data/curation/evaluation_log.csv`
 - `data/curation/communities.json`
+
+## Telemetry and Audit Systems
+
+CHL includes built-in telemetry and audit logging to help operators monitor curation workflows and troubleshoot issues.
+
+### Audit Log
+
+**Purpose:** Track all database operations (create, update, delete) for accountability and debugging.
+
+**Storage:** `audit_log` table in both `data/chl.db` (main) and `data/curation/chl_curation.db` (curation)
+
+**What's logged:**
+- **Event type**: free-form event string (e.g., operations.* or settings.*)
+- **Actor**: optional actor/user string
+- **Context**: optional JSON/text payload describing the event
+- **Timestamp**: `created_at`
+
+**Accessing audit logs:**
+- Via Settings dashboard: `http://localhost:8000/settings` → Audit Log section
+- Directly in SQLite: `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 100;`
+- Note: there is no public REST endpoint for audit logs; entries are written by API services and operations handlers.
+
+**Use cases:**
+- Track when experiences were merged during curation
+- Debug unexpected deletions or updates
+- Review curation decisions history
+- Accountability for team workflows
+
+### Telemetry
+
+**Purpose:** Monitor queue depth, worker status, and system health for GPU modes.
+
+**Storage:** `telemetry_samples` and `worker_metrics` tables
+
+**What's tracked:**
+- **Queue depth**: Number of pending embedding jobs (experiences/skills waiting for vector generation)
+- **Worker status**: Active/idle status, jobs processed, failures
+- **Processing rates**: Jobs per second, average processing time
+- **Resource usage**: GPU memory utilization (when available)
+
+**Accessing telemetry:**
+- Via API: `GET /api/v1/telemetry/snapshot`
+- Via SSE stream: `/ui/stream/telemetry`
+- Via Operations dashboard: `http://localhost:8000/operations` → Queue Status section
+- Direct database query: `SELECT * FROM telemetry_samples ORDER BY recorded_at DESC LIMIT 100;`
+
+**Use cases:**
+- Monitor embedding queue during large imports
+- Identify bottlenecks (e.g., slow GPU processing)
+- Verify background workers are processing jobs
+- Troubleshoot stalled operations
+
+**Note:** Telemetry is primarily useful in GPU mode where embedding generation can take time. CPU mode has no embedding workers, so telemetry will show empty queues.
 
 ## QA
 

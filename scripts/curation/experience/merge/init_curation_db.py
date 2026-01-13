@@ -82,7 +82,7 @@ def main():
     print(f"✓ Tables created:")
     print(f"  - categories")
     print(f"  - experiences")
-    print(f"  - category_manuals")
+    print(f"  - skills")
     print(f"  - embeddings")
     print(f"  - faiss_metadata")
     print(f"  - curation_decisions")
