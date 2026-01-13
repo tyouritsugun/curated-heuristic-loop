@@ -483,7 +483,12 @@ Since SQLite text search uses literal keyword matching:
 
 ### 7.5. Switching Modes
 
-Refer to [Mode Switching](../README.md#mode-switching)
+To switch between CPU and GPU modes:
+1. Stop the API server
+2. Run `python scripts/setup/check_api_env.py` and select target mode
+3. Create a new venv and install the corresponding requirements file
+4. GPU mode only: run `python scripts/setup/setup-gpu.py --download-models`
+5. Start the API server (uses `data/runtime_config.json`)
 
 ### 7.6. Limitations
 

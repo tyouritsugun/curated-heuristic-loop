@@ -118,15 +118,6 @@ CLI scripts (activate API server venv first):
 - `python scripts/ops/rebuild_index.py`
 - `python scripts/ops/search_health.py`
 
-## Mode Switching
-
-To switch between CPU and GPU modes:
-1. Stop the API server
-2. Run `python scripts/setup/check_api_env.py` and select target mode
-3. Create a new venv and install the corresponding requirements file
-4. GPU mode only: run `python scripts/setup/setup-gpu.py --download-models`
-5. Start the API server (uses `data/runtime_config.json`)
-
 ## License
 
 MIT
