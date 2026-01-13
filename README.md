@@ -1,6 +1,6 @@
 # CHL MCP Server
 
-Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. Instead of forgetting between sessions, CHL keeps a shared memory of useful heuristics (experiences + skills), searchable with FAISS and reranking, and lets teams curate everything through a browser UI.
+Curated Heuristic Loop (CHL) is a Model Context Protocol backend that helps code assistants remember what worked. It stores shared, curated heuristics (experiences + skills) and makes them searchable with FAISS and reranking. Teams review and refine the knowledge base through a simple browser UI.
 
 - Concept and workflow philosophy: [doc/concept.md](doc/concept.md)
 - Operator guide: [doc/manual.md](doc/manual.md)

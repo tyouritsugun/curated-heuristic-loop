@@ -449,7 +449,7 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 **Core Dependencies:**
 - Storage: SQLite with SQLAlchemy ORM
 - Search (GPU mode): FAISS (`faiss-cpu`) for vector search
-- Embeddings/Reranking (GPU mode): Qwen3 GGUF models via `llama-cpp-python`
+- Embeddings/Reranking (GPU mode): Qwen3 models via HuggingFace Transformers + Torch (Metal/CUDA)
 - External Services: `gspread` and `google-auth` for Google Sheets
 - Web Framework: FastAPI with Uvicorn
 
@@ -466,7 +466,13 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 
 ### 9.1. Two-Tier Deployment Model
 
-**Tier 1: API Server (Platform-Specific Venv)**\nSee `README.md` and `doc/install_env.md` for platform-specific setup.\n\n**Tier 2: MCP Server (UV Managed)**\nSee `README.md` for MCP setup and client configuration.\n\n**Scripts** run from the API server venv (see `doc/manual.md` for details).
+**Tier 1: API Server (Platform-Specific Venv)**  
+See `README.md` and `doc/install_env.md` for platform-specific setup.
+
+**Tier 2: MCP Server (UV Managed)**  
+See `README.md` for MCP setup and client configuration.
+
+**Scripts** run from the API server venv (see `doc/manual.md` for details).
 
 ### 9.2. Concurrency Model
 

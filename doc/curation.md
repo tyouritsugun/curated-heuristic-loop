@@ -81,14 +81,13 @@ Operational defaults and knobs: see [Curation Spec architecture](curation_spec.m
 - Copy `data/curation/approved/experiences.tsv` and `data/curation/approved/skills.tsv` to Excel or Google Sheets for a quick review.
 - If satisfied, publish to the team (Alice and Bob) via the UI.
   - Export behavior:
-    - **When CHL_SKILLS_ENABLED=true**: Skills and experiences export from CHL DB as usual.
-    - **When CHL_SKILLS_ENABLED=false**: Export UI prompts for external skills source (Claude/ChatGPT/None) and uses that to populate skills output.
+    - **CHL_SKILLS_ENABLED=true**: Skills and experiences export from CHL DB.
+    - **CHL_SKILLS_ENABLED=false**: UI prompts for external skills source (Claude/ChatGPT/None) to populate skills output.
 UI: Operations → Import from Google Sheet  
 
 Import behavior:
-- **When CHL_SKILLS_ENABLED=true**: Experiences + skills import into CHL DB.
-- **When CHL_SKILLS_ENABLED=false**: Experiences import into CHL DB; skills are routed to external targets
-  (Claude/Codex) based on the import modal choice, and are written to SKILLS.md files.
+- **CHL_SKILLS_ENABLED=true**: Experiences + skills import into CHL DB.
+- **CHL_SKILLS_ENABLED=false**: Experiences import into CHL DB; skills route to external targets (Claude/Codex) and are written to SKILLS.md files.
 
 ## Key Outputs
 ```

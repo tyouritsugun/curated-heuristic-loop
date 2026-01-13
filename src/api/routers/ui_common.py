@@ -611,12 +611,12 @@ def _get_env_config_status(
 
     import_worksheets = [os.getenv("IMPORT_WORKSHEET_EXPERIENCES", "Experiences")]
     if skills_enabled:
-        import_worksheets.append(os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_MANUALS", "Skills")))
+        import_worksheets.append(os.getenv("IMPORT_WORKSHEET_SKILLS", os.getenv("IMPORT_WORKSHEET_SKILLS", "Skills")))
     import_worksheets = ", ".join(import_worksheets)
 
     export_worksheets = [os.getenv("EXPORT_WORKSHEET_EXPERIENCES", "Experiences")]
     if skills_enabled:
-        export_worksheets.append(os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_MANUALS", "Skills")))
+        export_worksheets.append(os.getenv("EXPORT_WORKSHEET_SKILLS", os.getenv("EXPORT_WORKSHEET_SKILLS", "Skills")))
     export_worksheets = ", ".join(export_worksheets)
 
     credentials_state = "error"
