@@ -383,7 +383,10 @@ class OperationsService:
             experiences_rows = payload.get("experiences") or []
             skills_rows = payload.get("skills") or payload.get("manuals") or []
             external_target = _normalize_text(payload.get("external_skills_target"))
+            external_target = _normalize_text(payload.get("external_skills_target"))
             if not skills_enabled:
+                # Keep skills_rows for external import; do not write to CHL DB.
+                pass
                 # Keep skills_rows for external import; do not write to CHL DB.
                 pass
 
@@ -425,6 +428,9 @@ class OperationsService:
                     skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
                     if not skills_rows:
                         skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
+                    skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Skills")
+                    if not skills_rows:
+                        skills_rows = sheets_client.read_worksheet(spreadsheet_id, "Manuals")
 
                 logger.info(
                     "Fetched from Google Sheets: %d experiences, %d skills",
@@ -440,15 +446,21 @@ class OperationsService:
                     }
 
             # Import via service (experiences always)
+            # Import via service (experiences always)
             import_service = ImportService(self._data_path, self._faiss_index_path)
             counts = import_service.import_from_sheets(
                 session=session,
                 categories_rows=categories_rows,
                 experiences_rows=experiences_rows,
                 skills_rows=skills_rows if skills_enabled else [],
+                skills_rows=skills_rows if skills_enabled else [],
             )
 
             logger.info("Import completed: %s", counts)
+
+            external_counts = {"skills": 0}
+            if not skills_enabled and external_target and external_target != "none":
+                external_counts = self._import_skill_rows_to_external(skills_rows, external_target)
 
             external_counts = {"skills": 0}
             if not skills_enabled and external_target and external_target != "none":
@@ -467,6 +479,15 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
+                "message": (
+                    f"Imported {counts['experiences']} experiences, "
+                    f"{counts['skills']} skills"
+                    + (
+                        f"; external skills written: {external_counts.get('skills', 0)}"
+                        if not skills_enabled and external_target and external_target != "none"
+                        else ""
+                    )
+                ),
                 "message": (
                     f"Imported {counts['experiences']} experiences, "
                     f"{counts['skills']} skills"
@@ -592,11 +613,15 @@ class OperationsService:
 
         external_target = _normalize_text(payload.get("external_skills_target"))
 
+        external_target = _normalize_text(payload.get("external_skills_target"))
+
         # Query data from database (categories are code-defined; not exported)
         experiences = session.query(Experience).order_by(Experience.updated_at.desc()).all()
         skills = []
         if skills_enabled:
             skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+        elif external_target and external_target != "none":
+            skills = self._read_external_skills_for_target(external_target)
         elif external_target and external_target != "none":
             skills = self._read_external_skills_for_target(external_target)
 
@@ -633,6 +658,8 @@ class OperationsService:
 
         # Export Skills (if enabled or external source selected)
         if skills_enabled or (external_target and external_target != "none"):
+        # Export Skills (if enabled or external source selected)
+        if skills_enabled or (external_target and external_target != "none"):
             skills_headers = [
                 "id",
                 "category_code",
@@ -647,6 +674,42 @@ class OperationsService:
                 "updated_at",
                 "author",
             ]
+            if skills_enabled:
+                skills_rows = [
+                    [
+                        skill.id,
+                        skill.category_code,
+                        skill.name,
+                        skill.description,
+                        skill.content or "",
+                        skill.license or "",
+                        skill.compatibility or "",
+                        skill.metadata_json or "",
+                        skill.allowed_tools or "",
+                        skill.model or "",
+                        skill.updated_at.isoformat() if skill.updated_at else "",
+                        skill.author or "",
+                    ]
+                    for skill in skills
+                ]
+            else:
+                skills_rows = [
+                    [
+                        skill.get("id", ""),
+                        skill.get("category_code", ""),
+                        skill.get("name", ""),
+                        skill.get("description", ""),
+                        skill.get("content", ""),
+                        skill.get("license", ""),
+                        skill.get("compatibility", ""),
+                        skill.get("metadata", ""),
+                        skill.get("allowed_tools", ""),
+                        skill.get("model", ""),
+                        skill.get("updated_at", ""),
+                        skill.get("author", ""),
+                    ]
+                    for skill in skills
+                ]
             if skills_enabled:
                 skills_rows = [
                     [
@@ -708,6 +771,10 @@ class OperationsService:
                 f"Exported to Google Sheets: {len(experiences)} experiences, {len(skills)} skills"
                 + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
             ),
+            "message": (
+                f"Exported to Google Sheets: {len(experiences)} experiences, {len(skills)} skills"
+                + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
+            ),
         }
 
     def _import_excel_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
@@ -726,6 +793,7 @@ class OperationsService:
         try:
             config = get_config()
             skills_enabled = bool(getattr(config, "skills_enabled", True))
+            external_target = _normalize_text(payload.get("external_skills_target"))
             external_target = _normalize_text(payload.get("external_skills_target"))
 
             # Get file path from payload
@@ -779,6 +847,14 @@ class OperationsService:
                         skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
                     except Exception:
                         skills_df = pd.DataFrame()
+            else:
+                try:
+                    skills_df = pd.read_excel(file_path, sheet_name='Skills', engine='openpyxl')
+                except Exception:
+                    try:
+                        skills_df = pd.read_excel(file_path, sheet_name='Manuals', engine='openpyxl')
+                    except Exception:
+                        skills_df = pd.DataFrame()
 
             # Convert DataFrames to the format expected by import_service
             categories_rows = []
@@ -792,9 +868,14 @@ class OperationsService:
                 categories_rows=categories_rows,
                 experiences_rows=experiences_rows,
                 skills_rows=skills_rows if skills_enabled else [],
+                skills_rows=skills_rows if skills_enabled else [],
             )
 
             logger.info("Excel import completed: %s", counts)
+
+            external_counts = {"skills": 0}
+            if not skills_enabled and external_target and external_target != "none":
+                external_counts = self._import_skill_rows_to_external(skills_rows, external_target)
 
             external_counts = {"skills": 0}
             if not skills_enabled and external_target and external_target != "none":
@@ -813,6 +894,14 @@ class OperationsService:
             return {
                 "success": True,
                 "counts": {"experiences": counts["experiences"], "skills": counts["skills"]},
+                "message": (
+                    f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills"
+                    + (
+                        f"; external skills written: {external_counts.get('skills', 0)}"
+                        if not skills_enabled and external_target and external_target != "none"
+                        else ""
+                    )
+                ),
                 "message": (
                     f"Imported from Excel: {counts['experiences']} experiences, {counts['skills']} skills"
                     + (
@@ -844,6 +933,8 @@ class OperationsService:
             skills_enabled = bool(getattr(config, "skills_enabled", True))
             external_target = _normalize_text(payload.get("external_skills_target"))
 
+            external_target = _normalize_text(payload.get("external_skills_target"))
+
             # Get export path from payload or use default
             export_path = payload.get("export_path")
             if not export_path:
@@ -861,6 +952,8 @@ class OperationsService:
             skills = []
             if skills_enabled:
                 skills = session.query(CategorySkill).order_by(CategorySkill.updated_at.desc()).all()
+            elif external_target and external_target != "none":
+                skills = self._read_external_skills_for_target(external_target)
             elif external_target and external_target != "none":
                 skills = self._read_external_skills_for_target(external_target)
 
@@ -917,10 +1010,29 @@ class OperationsService:
                         "author": skill.get("author", ""),
                     })
                 skills_df = pd.DataFrame(skills_data)
+            elif external_target and external_target != "none":
+                skills_data = []
+                for skill in skills:
+                    skills_data.append({
+                        "id": skill.get("id", ""),
+                        "category_code": skill.get("category_code", ""),
+                        "name": skill.get("name", ""),
+                        "description": skill.get("description", ""),
+                        "content": skill.get("content", ""),
+                        "license": skill.get("license", ""),
+                        "compatibility": skill.get("compatibility", ""),
+                        "metadata": skill.get("metadata", ""),
+                        "allowed_tools": skill.get("allowed_tools", ""),
+                        "model": skill.get("model", ""),
+                        "updated_at": skill.get("updated_at", ""),
+                        "author": skill.get("author", ""),
+                    })
+                skills_df = pd.DataFrame(skills_data)
 
             # Write to Excel file with multiple sheets
             with pd.ExcelWriter(export_path, engine='openpyxl') as writer:
                 experiences_df.to_excel(writer, sheet_name='Experiences', index=False)
+                if skills_enabled or (external_target and external_target != "none"):
                 if skills_enabled or (external_target and external_target != "none"):
                     skills_df.to_excel(writer, sheet_name='Skills', index=False)
 
@@ -942,6 +1054,10 @@ class OperationsService:
                     f"Exported to Excel: {len(experiences)} experiences, {len(skills)} skills"
                     + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
                 ),
+                "message": (
+                    f"Exported to Excel: {len(experiences)} experiences, {len(skills)} skills"
+                    + ("" if skills_enabled or (external_target and external_target != "none") else " (skills skipped)")
+                ),
             }
 
         except Exception as exc:
@@ -953,9 +1069,17 @@ class OperationsService:
         config = get_config()
         if not bool(getattr(config, "skills_enabled", True)):
             return self._import_external_csv_to_skill_md(payload, session, target="claude")
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._import_external_csv_to_skill_md(payload, session, target="claude")
         return self._import_skill_md_handler(payload, session, source="imported_claude")
 
     def _import_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._import_external_csv_to_skill_md(payload, session, target="codex")
         from src.common.config.config import get_config
         config = get_config()
         if not bool(getattr(config, "skills_enabled", True)):
@@ -967,9 +1091,17 @@ class OperationsService:
         config = get_config()
         if not bool(getattr(config, "skills_enabled", True)):
             return self._export_external_skill_md_to_csv(payload, session, target="claude")
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._export_external_skill_md_to_csv(payload, session, target="claude")
         return self._export_skill_md_handler(payload, session, target="claude")
 
     def _export_codex_handler(self, payload: Dict[str, Any], session: Session) -> Dict[str, Any]:
+        from src.common.config.config import get_config
+        config = get_config()
+        if not bool(getattr(config, "skills_enabled", True)):
+            return self._export_external_skill_md_to_csv(payload, session, target="codex")
         from src.common.config.config import get_config
         config = get_config()
         if not bool(getattr(config, "skills_enabled", True)):

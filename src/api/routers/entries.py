@@ -881,15 +881,18 @@ def export_entries_csv(
     session: Session = Depends(get_db_session),
     config=Depends(get_config),
     external_skills_target: str | None = None,
+    external_skills_target: str | None = None,
 ):
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
+    Returns a zip file named {username}_export.zip containing:
     Returns a zip file named {username}_export.zip containing:
     - {username}/experiences.csv
     - {username}/skills.csv
     """
     import csv
     import io
+    import json
     import json
     import tempfile
     import zipfile
@@ -898,10 +901,15 @@ def export_entries_csv(
     from src.common.storage.repository import get_author
     from src.common.storage.schema import Experience, CategorySkill
     from src.common.skills.skill_md import parse_skill_md_loose
+    from src.common.skills.skill_md import parse_skill_md_loose
 
     try:
         # Get username from system
         username = get_author() or "unknown"
+
+        external_target = (external_skills_target or "").strip().lower()
+        if external_target == "chatgpt":
+            external_target = "codex"
 
         external_target = (external_skills_target or "").strip().lower()
         if external_target == "chatgpt":
@@ -1049,10 +1057,35 @@ def export_entries_csv(
                 else:
                     for skill in skills:
                         writer.writerow(skill)
+                if getattr(config, "skills_enabled", True):
+                    for skill in skills:
+                        writer.writerow({
+                            "id": skill.id,
+                            "category_code": skill.category_code,
+                            "name": skill.name,
+                            "description": skill.description,
+                            "content": skill.content,
+                            "license": skill.license or "",
+                            "compatibility": skill.compatibility or "",
+                            "metadata": skill.metadata_json or "",
+                            "allowed_tools": skill.allowed_tools or "",
+                            "model": skill.model or "",
+                            "source": skill.source or "",
+                            "author": skill.author or "",
+                            "embedding_status": skill.embedding_status or "",
+                            "created_at": skill.created_at.isoformat() if skill.created_at else "",
+                            "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+                            "synced_at": skill.synced_at.isoformat() if skill.synced_at else "",
+                            "exported_at": skill.exported_at.isoformat() if skill.exported_at else "",
+                        })
+                else:
+                    for skill in skills:
+                        writer.writerow(skill)
                 zip_file.writestr(f"{username}/skills.csv", csv_buffer.getvalue())
 
         # Prepare zip for download
         zip_buffer.seek(0)
+        filename = f"{username}_export.zip"
         filename = f"{username}_export.zip"
 
         logger.info(

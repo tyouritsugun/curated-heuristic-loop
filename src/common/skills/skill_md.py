@@ -5,12 +5,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 import logging
+import logging
 from typing import Any, Dict, Optional
 
 import yaml
 
 from .normalize import flatten_metadata, format_allowed_tools, normalize_allowed_tools, parse_metadata_json
 
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
