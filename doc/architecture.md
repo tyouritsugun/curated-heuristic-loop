@@ -270,7 +270,7 @@ The authoritative per-user store. Contains tables for:
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
 
-- `skills` - Long-form context and domain knowledge (legacy table name: `category_manuals`)
+- `skills` - Long-form context and domain knowledge
   - Fields: `id`, `category_code`, `title`, `content`, `summary`
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`

@@ -21,35 +21,47 @@ The API and MCP servers communicate exclusively via HTTP (default: `http://local
 
 ### Step 0: Verify Your Environment
 
-Before installing the API server, run the environment diagnostics script to validate your hardware and toolchain:
+Run environment diagnostics to detect your hardware and create configuration:
 
 ```bash
 python3 scripts/setup/check_api_env.py
 ```
 
-This script checks:
-- GPU hardware detection (Metal/CUDA/CPU)
-- Driver and toolchain availability
-- VRAM capacity and model size recommendations (GPU modes only)
+**What it does:**
+- Detects GPU (Metal/CUDA) or falls back to CPU mode
+- Creates `data/runtime_config.json` (used automatically by API server)
+- **GPU mode**: Also creates `data/model_selection.json` with model recommendations
+- **If it fails**: Writes troubleshooting steps to `data/support_prompt.txt`
 
-If checks pass:
-- **GPU mode**: Writes recommended model choices to `data/model_selection.json` and runtime configuration to `data/runtime_config.json`
-- **CPU mode**: Writes runtime configuration to `data/runtime_config.json` (no models needed - uses SQLite keyword search only)
+**Do not proceed until this script exits with code 0.**
 
-If checks fail, it writes a troubleshooting prompt to `data/support_prompt.txt` – copy this text into ChatGPT/Claude and follow the steps to fix your environment before proceeding.
+**Setup Flow:**
+```
+check_api_env.py → Creates runtime_config.json
+                          ↓
+              ┌─────────────────────┐
+              │  Detected: CPU mode │ → setup-cpu.py (Step 3) → Start server (Step 4)
+              └─────────────────────┘
+              ┌─────────────────────┐
+              │ Detected: GPU mode  │ → setup-gpu.py (Step 3) → Downloads models → Start server (Step 4)
+              └─────────────────────┘
+```
 
-The API server automatically uses the backend from `runtime_config.json` - no manual configuration needed!
+The setup scripts (Step 3) read `runtime_config.json` to initialize the correct mode.
 
-**Do not proceed to Step 1 until this script exits with code 0.**
+### Python Version Requirements
 
-**Python version note:**
-- **CPU-only mode**: Python 3.10 or newer (including 3.13) - no version restrictions
-- **GPU modes** (Metal/CUDA): Python 3.10–3.12 only (Python 3.13 not supported by llama-cpp-python)
-  - Recommended: Python 3.11 for NVIDIA CUDA, Python 3.12 for Apple Silicon
+**Quick recommendation: Use Python 3.11** - works for all modes (CPU, Apple Metal, NVIDIA CUDA) without compatibility issues. No-brainer choice.
 
-If you have Python 3.13 and want GPU acceleration, install a compatible version (e.g., `brew install python@3.12` or `python3.12`) alongside it.
+| Mode | Python Version | Recommendation |
+|------|---------------|----------------|
+| **CPU-only** | 3.10 – 3.13 | 3.11 or 3.13 (no restrictions) |
+| **Apple Metal** | 3.10 – 3.12 | **3.11 (safest)** or 3.12 |
+| **NVIDIA CUDA** | 3.10 – 3.11 | **3.11 (recommended)** |
 
-**Need a guide?** If you are not confident with Python/FAISS/GPU setup, open this repo in your preferred code assistant (Claude Code, Codex, Cursor, Gemini CLI, etc.) and ask it to walk you through the install. Some steps may still need manual permission/security approvals, but an assistant can simplify the process. This project assumes an engineering audience, so leaning on a code assistant is expected.
+**If you have Python 3.13 and want GPU acceleration:** Install Python 3.11 alongside (e.g., `brew install python@3.11` or via deadsnakes PPA on Linux).
+
+**Need setup help?** Open this repo in your code assistant (Claude Code, Cursor, etc.) and ask it to walk you through the installation. Some steps may need manual approvals, but an assistant can simplify the process.
 
 ### LLM Access for Curation (Optional)
 - Only needed if you run the overnight curation. Choose one path:
@@ -65,112 +77,84 @@ See `doc/curation.md` for the simplified runbook.
 
 ### Step 1: Install API Server
 
-Choose your hardware platform and install the API server runtime:
+Choose your hardware platform and install the API server runtime.
+
+#### Quick Comparison
+
+| Feature | CPU-only | Apple Metal | NVIDIA CUDA |
+|---------|----------|-------------|-------------|
+| **Best for** | Testing, keyword search, limited resources | Mac M1/M2/M3/M4 with semantic search | Linux/Windows with NVIDIA GPU and semantic search |
+| **Search type** | SQLite text (LIKE queries) | FAISS + embeddings + reranker | FAISS + embeddings + reranker |
+| **Python version** | 3.10 – 3.13 | 3.10 – 3.12 (3.12 recommended) | 3.10 – 3.11 (3.11 recommended) |
+| **ML dependencies** | None | HuggingFace Transformers + PyTorch (Metal) | HuggingFace Transformers + PyTorch (CUDA) |
+| **Model downloads** | None | ~1.5GB (Qwen 0.6B models) | ~1.5GB (0.6B models) or ~10GB (4B models) |
+| **VRAM requirements** | N/A | 8GB+ unified memory | 6GB min (10GB+ for 4B models) |
+| **Setup complexity** | Low (no drivers needed) | Medium (requires Xcode CLT) | High (CUDA toolkit + cuDNN required) |
+| **Requirements file** | `requirements_cpu.txt` | `requirements_apple.txt` | `requirements_nvidia.txt` |
+
+**Note:** AMD (ROCm) and Intel (oneAPI) GPU support is planned for future releases.
+
+#### Detailed Installation Instructions
+
+Choose your platform below:
 
 <details>
 <summary><b>Option A: CPU-Only Mode (No ML Dependencies)</b></summary>
 
 **Best for:** Limited VRAM, keyword search is sufficient, or testing without GPU overhead.
 
-**Prerequisites:**
-
-Python 3.10 or newer (3.11+ recommended, Python 3.13 is supported for CPU mode). Install instructions by platform:
-
-<details>
-<summary>macOS (Intel or Apple Silicon)</summary>
-
-```bash
-# Check your current Python version
-python3 --version
-
-# If you need a newer version, install via Homebrew
-brew install python@3.13
-# Or for older stable versions: brew install python@3.12 or python@3.11
-```
-</details>
-
-<details>
-<summary>Linux (Ubuntu/Debian)</summary>
-
-```bash
-# Check available versions
-ls /usr/bin/python3.1*
-
-# Ubuntu 24.04+ (has Python 3.12, or install 3.13 via deadsnakes)
-sudo apt update
-sudo apt install python3.12 python3.12-venv
-# Or for Python 3.13:
-# sudo add-apt-repository ppa:deadsnakes/ppa
-# sudo apt update
-# sudo apt install python3.13 python3.13-venv
-
-# Ubuntu 22.04 (has Python 3.10, use it or upgrade)
-sudo apt update
-sudo apt install python3.10 python3.10-venv
-
-# Install any specific version via deadsnakes PPA
-sudo add-apt-repository ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install python3.11 python3.11-venv  # Or python3.12, python3.13
-```
-</details>
-
-<details>
-<summary>Windows</summary>
-
-1. Download Python 3.11, 3.12, or 3.13 from [python.org](https://www.python.org/downloads/)
-2. During installation, check "Add Python to PATH"
-3. Verify: `python --version` in Command Prompt or PowerShell
-</details>
+**Python requirement:** 3.10 or newer (3.13 fully supported for CPU mode - no restrictions)
 
 **Installation:**
 
 ```bash
-# macOS/Linux: Create dedicated venv for API server
-python3 -m venv .venv-cpu
-# Activate venv (only needed once per terminal session)
-source .venv-cpu/bin/activate
+# Check Python version (should be 3.10+)
+python3 --version
 
-# Windows: Create dedicated venv for API server
-python -m venv .venv-cpu
-# Activate venv (only needed once per terminal session)
-.venv-cpu\Scripts\activate
+# If you need to install Python:
+# - macOS: brew install python@3.13 (or python@3.12, python@3.11)
+# - Linux (Ubuntu/Debian): sudo apt install python3.12 python3.12-venv
+#   (or use deadsnakes PPA for 3.13: sudo add-apt-repository ppa:deadsnakes/ppa)
+# - Windows: Download from python.org (check "Add Python to PATH")
 
-# All platforms: Install dependencies
+# Create venv and install dependencies
+python3 -m venv .venv-cpu                 # macOS/Linux
+# python -m venv .venv-cpu                # Windows
+source .venv-cpu/bin/activate             # macOS/Linux
+# .venv-cpu\Scripts\activate              # Windows
+
+# Install API server dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements_cpu.txt
 ```
 
-**Note:** CPU mode supports Python 3.13 since it has no ML dependencies.
-
-**Note:** Search will use SQLite text search (LIKE queries) instead of semantic similarity. Good for exact phrase searches but won't find conceptually related entries.
+**Note:** Search uses SQLite text search (LIKE queries) instead of semantic similarity. Good for exact phrase searches but won't find conceptually related entries.
 
 </details>
 
 <details>
 <summary><b>Option B: Apple Silicon (Metal GPU Acceleration)</b></summary>
 
-**Best for:** macOS with M1/M2/M3, want semantic search with GPU acceleration (HF embeddings + HF reranker).
+**Best for:** macOS with M1/M2/M3/M4, semantic search with GPU acceleration using HuggingFace embeddings + reranker.
 
 **Prerequisites:**
-- macOS with Apple Silicon (M1, M2, M3, etc.)
+- macOS with Apple Silicon (M1, M2, M3, M4)
 - Xcode Command Line Tools: `xcode-select --install`
-- Python 3.12 installed (for example via Homebrew: `brew install python@3.12`)
+- Python 3.12 (install via Homebrew: `brew install python@3.12`)
+
+**Installation:**
 
 ```bash
 # Create dedicated venv for API server (Python 3.12)
 python3.12 -m venv .venv-apple
-# Activate venv (only needed once per terminal session)
 source .venv-apple/bin/activate
 
-# Install API server dependencies (HF embeddings + HF reranker)
+# Install API server dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements_apple.txt
+```
 
-# Continue with Step 3 to download models and initialize the database, then Step 4 to start the server.
-
-**Notes:**
-- Default model choice (via `scripts/setup/check_api_env.py` → `scripts/setup/setup-gpu.py`) is Qwen3-Embedding-0.6B (HF) and Qwen3-Reranker-0.6B (HF) for speed on Metal.
+**Note:** Default models are Qwen3-Embedding-0.6B and Qwen3-Reranker-0.6B (~1.5GB total) optimized for Metal GPU.
 
 </details>
 
@@ -267,7 +251,18 @@ cp .env.sample .env
 # - GOOGLE_CREDENTIAL_PATH (path to your service account JSON)
 # - IMPORT_SPREADSHEET_ID (if you want to try the sample of DataPipe, keep the ID in .env.sample, overwrite it when necessary)
 # - EXPORT_SPREADSHEET_ID (review spreadsheet ID for exports)
+# - CHL_SKILLS_ENABLED (optional, default: true)
+#   - true: Enable CHL's built-in skill curation system (recommended for teams/individuals with many skills)
+#   - false: Disable skill operations entirely (use external SKILLS.md files in Claude/Codex instead)
 ```
+
+**About CHL_SKILLS_ENABLED:**
+- **Default: `true` (recommended)** - Enables CHL's skill curation workflow where your team can collaboratively curate, merge, and maintain a unified skill set
+- **Set to `false`** if you prefer managing skills externally via `SKILLS.md` files in Claude Desktop or Codex
+- **Note:** External SKILLS.md files can also be curated by CHL's curation program, but with `CHL_SKILLS_ENABLED=true`, you additionally get:
+  - Easier team import/export through Google Sheets (no manual file copying)
+  - Search and retrieval of relevant skills during conversations via MCP
+  - No need to manually synchronize skills across Codex, Claude, and Cursor one by one
 
 ### Step 3: Initialize API Server
 
@@ -424,6 +419,14 @@ Only add `env` section if you need non-default values.
 - Try: "List available categories"
 - Try: "Search for entries about bug reporting"
 
+**Available MCP tools:**
+- `list_categories()` - List all available categories
+- `read_entries()` - Search and read entries by category, tags, or content
+- `create_entry()` - Create new entries
+- `update_entry()` - Update existing entries (requires entry ID)
+- `check_duplicates()` - Check for similar entries before creating new ones (GPU mode only, helps prevent duplicate entries)
+- `get_guidelines()` - Read workflow guidelines from generator.md/evaluator.md
+
 ### Step 7: Try the Demo (Optional)
 
 CHL includes a demo that shows how it teaches LLMs project-specific conventions. The demo uses a fictional "DataPipe" project to demonstrate the difference between generic bug reporting vs. team-specific ticket requirements.
@@ -494,7 +497,6 @@ Both dashboards share the same process as the API server, so every change is log
 - Architecture design and ADRs: [doc/architecture.md](doc/architecture.md)
 - Curation runbook: [doc/curation.md](doc/curation.md)
 - Curation spec: [doc/curation_spec.md](doc/curation_spec.md)
-- Curation architecture and flow: [doc/curation_spec.md](doc/curation_spec.md)
 
 ## License
 

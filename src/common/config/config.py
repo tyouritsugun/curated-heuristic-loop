@@ -29,7 +29,7 @@ Core environment variables:
 Search & retrieval:
 - Backend is automatically determined from data/runtime_config.json (created by scripts/setup/check_api_env.py)
   - cpu: Text search only via SQLite LIKE queries (no ML dependencies)
-  - metal/cuda/rocm: Vector search with FAISS + embeddings (graceful fallback to text search)
+  - metal/cuda: Vector search with FAISS + embeddings (graceful fallback to text search)
 - CHL_BACKEND: Optional override for runtime backend (not recommended - use scripts/setup/check_api_env.py instead)
 - CHL_SEARCH_TIMEOUT_MS: Query timeout in milliseconds (default: 5000)
 - CHL_SEARCH_FALLBACK_RETRIES: Retries before fallback (default: 1)
@@ -147,7 +147,8 @@ def save_model_selection(data: dict) -> None:
 
 
 # Supported backend types
-SUPPORTED_BACKENDS = ("cpu", "metal", "cuda", "rocm")
+# Note: ROCm support is TBD and currently disabled
+SUPPORTED_BACKENDS = ("cpu", "metal", "cuda")  # , "rocm")
 
 
 class Config:

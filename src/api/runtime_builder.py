@@ -16,12 +16,20 @@ def build_mode_runtime(config: Config, db: Database, worker_control: WorkerContr
 
     The backend is automatically determined from runtime_config.json (created by
     scripts/setup/check_api_env.py). CPU backend uses text search only, GPU backends
-    (metal/cuda/rocm) use vector search with graceful fallback to text search.
+    (metal/cuda) use vector search with graceful fallback to text search.
+
+    Note: ROCm support is TBD and currently disabled.
     """
     backend = getattr(config, "backend", "cpu")
     if backend == "cpu":
         return build_cpu_runtime(config, db, worker_control)
-    # GPU backends (metal, cuda, rocm) all use the GPU runtime
+    if backend == "rocm":
+        raise RuntimeError(
+            "ROCm/AMD GPU support is not yet available. "
+            "Please use CPU mode, Apple Metal (macOS), or NVIDIA CUDA instead. "
+            "AMD GPU support is planned for a future release."
+        )
+    # GPU backends (metal, cuda) all use the GPU runtime
     from src.api.gpu.runtime import build_gpu_runtime  # Lazy import so CPU mode avoids torch deps
 
     return build_gpu_runtime(config, db, worker_control)

@@ -26,8 +26,9 @@ from src.common.config.config import (
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_GPU_BACKENDS = ("metal", "cuda", "rocm", "cpu")
-DEFAULT_GPU_PRIORITY = ("metal", "cuda", "rocm", "cpu")
+# Note: ROCm support is TBD and currently disabled
+SUPPORTED_GPU_BACKENDS = ("metal", "cuda", "cpu")  # , "rocm")
+DEFAULT_GPU_PRIORITY = ("metal", "cuda", "cpu")  # , "rocm")
 
 CUDA_COMPAT_MATRIX = [
     ((11, 8), "cu118"),
@@ -39,11 +40,12 @@ CUDA_COMPAT_MATRIX = [
     # CUDA 12.5+ will use cu124 wheels (forward compatible within CUDA 12.x)
 ]
 
-ROCM_COMPAT_MATRIX = [
-    ((5, 6), "rocm5.6"),
-    ((5, 7), "rocm5.7"),
-    ((6, 0), "rocm6.0"),
-]
+# ROCm support is TBD - compatibility matrix commented out
+# ROCM_COMPAT_MATRIX = [
+#     ((5, 6), "rocm5.6"),
+#     ((5, 7), "rocm5.7"),
+#     ((6, 0), "rocm6.0"),
+# ]
 
 _DEFAULT_WHEEL_BASE = "https://abetlen.github.io/llama-cpp-python/whl"
 LLAMA_CPP_WHEEL_BASE = os.getenv("CHL_GPU_WHEEL_BASE", _DEFAULT_WHEEL_BASE).rstrip("/")
@@ -134,24 +136,31 @@ def determine_cuda_wheel(version: Optional[str]) -> Tuple[str, List[str]]:
 
 
 def determine_rocm_wheel(version: Optional[str]) -> Tuple[str, List[str]]:
-    diagnostics: List[str] = []
-    version_tuple = _parse_version_tuple(version)
-    if not version_tuple:
-        diagnostics.append("ROCm version unavailable; defaulting to rocm6.0 wheel")
-        return ROCM_COMPAT_MATRIX[-1][1], diagnostics
-
-    for boundary, suffix in reversed(ROCM_COMPAT_MATRIX):
-        if version_tuple >= boundary:
-            if version_tuple != boundary:
-                diagnostics.append(
-                    f"Detected ROCm {version} not in compatibility table; using {suffix}"
-                )
-            return suffix, diagnostics
-
-    diagnostics.append(
-        f"Detected ROCm {version} older than supported set; using {ROCM_COMPAT_MATRIX[0][1]}"
+    """ROCm support is TBD - raise exception if called."""
+    raise GPUInstallerError(
+        "ROCm/AMD GPU support is not yet available. "
+        "Please use CPU mode, Apple Metal (macOS), or NVIDIA CUDA instead. "
+        "AMD GPU support is planned for a future release."
     )
-    return ROCM_COMPAT_MATRIX[0][1], diagnostics
+    # Original implementation commented out - TBD
+    # diagnostics: List[str] = []
+    # version_tuple = _parse_version_tuple(version)
+    # if not version_tuple:
+    #     diagnostics.append("ROCm version unavailable; defaulting to rocm6.0 wheel")
+    #     return ROCM_COMPAT_MATRIX[-1][1], diagnostics
+    #
+    # for boundary, suffix in reversed(ROCM_COMPAT_MATRIX):
+    #     if version_tuple >= boundary:
+    #         if version_tuple != boundary:
+    #             diagnostics.append(
+    #                 f"Detected ROCm {version} not in compatibility table; using {suffix}"
+    #             )
+    #         return suffix, diagnostics
+    #
+    # diagnostics.append(
+    #     f"Detected ROCm {version} older than supported set; using {ROCM_COMPAT_MATRIX[0][1]}"
+    # )
+    # return ROCM_COMPAT_MATRIX[0][1], diagnostics
 
 
 def detect_metal_backend() -> Optional[Dict]:
@@ -286,59 +295,63 @@ def detect_cuda_backend() -> Optional[Dict]:
 
 
 def detect_rocm_backend() -> Optional[Dict]:
-    diagnostics: List[str] = []
-    rocm_version = None
-
-    rocm_smi = shutil.which("rocm-smi")
-    if rocm_smi:
-        try:
-            result = subprocess.run(
-                [rocm_smi, "--showdriverversion"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-            match = re.search(r"Driver version:\s*([0-9.]+)", result.stdout)
-            if match:
-                rocm_version = match.group(1)
-        except subprocess.TimeoutExpired:
-            diagnostics.append("rocm-smi timed out while probing ROCm")
-        except FileNotFoundError:
-            pass
-
-    if not rocm_version:
-        hipcc_path = shutil.which("hipcc")
-        if hipcc_path:
-            try:
-                result = subprocess.run(
-                    [hipcc_path, "--version"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=5,
-                )
-                match = re.search(r"HIP version:\s*([0-9.]+)", result.stdout)
-                if match:
-                    rocm_version = match.group(1)
-            except subprocess.TimeoutExpired:
-                diagnostics.append("hipcc --version timed out while probing ROCm toolkit")
-            except FileNotFoundError:
-                pass
-
-    suffix, compat_diagnostics = determine_rocm_wheel(rocm_version)
-    diagnostics.extend(compat_diagnostics)
-
-    if not rocm_version:
-        diagnostics.append("ROCm version not detected; assuming ROCm 6.0+ environment")
-
-    return {
-        "backend": "rocm",
-        "version": rocm_version or "unknown",
-        "wheel": suffix,
-        "diagnostics": diagnostics,
-        "detected_via": "rocm-smi" if rocm_smi else "heuristics",
-    }
+    """ROCm support is TBD - return None (backend not available)."""
+    # ROCm detection is disabled until full support is implemented
+    return None
+    # Original implementation commented out - TBD
+    # diagnostics: List[str] = []
+    # rocm_version = None
+    #
+    # rocm_smi = shutil.which("rocm-smi")
+    # if rocm_smi:
+    #     try:
+    #         result = subprocess.run(
+    #             [rocm_smi, "--showdriverversion"],
+    #             capture_output=True,
+    #             text=True,
+    #             check=False,
+    #             timeout=5,
+    #         )
+    #         match = re.search(r"Driver version:\s*([0-9.]+)", result.stdout)
+    #         if match:
+    #             rocm_version = match.group(1)
+    #     except subprocess.TimeoutExpired:
+    #         diagnostics.append("rocm-smi timed out while probing ROCm")
+    #     except FileNotFoundError:
+    #         pass
+    #
+    # if not rocm_version:
+    #     hipcc_path = shutil.which("hipcc")
+    #     if hipcc_path:
+    #         try:
+    #             result = subprocess.run(
+    #                 [hipcc_path, "--version"],
+    #                 capture_output=True,
+    #                 text=True,
+    #                 check=False,
+    #                 timeout=5,
+    #             )
+    #             match = re.search(r"HIP version:\s*([0-9.]+)", result.stdout)
+    #             if match:
+    #                 rocm_version = match.group(1)
+    #         except subprocess.TimeoutExpired:
+    #             diagnostics.append("hipcc --version timed out while probing ROCm toolkit")
+    #         except FileNotFoundError:
+    #             pass
+    #
+    # suffix, compat_diagnostics = determine_rocm_wheel(rocm_version)
+    # diagnostics.extend(compat_diagnostics)
+    #
+    # if not rocm_version:
+    #     diagnostics.append("ROCm version not detected; assuming ROCm 6.0+ environment")
+    #
+    # return {
+    #     "backend": "rocm",
+    #     "version": rocm_version or "unknown",
+    #     "wheel": suffix,
+    #     "diagnostics": diagnostics,
+    #     "detected_via": "rocm-smi" if rocm_smi else "heuristics",
+    # }
 
 
 def detect_cpu_backend() -> Dict:
@@ -490,38 +503,41 @@ def _get_metal_vram_gb() -> Optional[float]:
 
 
 def _get_rocm_vram_gb() -> Optional[float]:
-    """Best-effort VRAM detection for ROCm via rocm-smi."""
-    rocm_smi = shutil.which("rocm-smi")
-    if not rocm_smi:
-        return None
-
-    try:
-        result = subprocess.run(
-            [rocm_smi, "--showmeminfo", "vram"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-
-    if result.returncode != 0:
-        return None
-
-    values: List[float] = []
-    for line in result.stdout.splitlines():
-        if "Total" not in line and "total" not in line.lower():
-            continue
-        numbers = re.findall(r"(\d+)", line)
-        if not numbers:
-            continue
-        try:
-            mb = float(numbers[0])
-            values.append(mb / 1024.0)
-        except ValueError:
-            continue
-    return max(values) if values else None
+    """ROCm support is TBD - always return None."""
+    return None
+    # Original implementation commented out - TBD
+    # """Best-effort VRAM detection for ROCm via rocm-smi."""
+    # rocm_smi = shutil.which("rocm-smi")
+    # if not rocm_smi:
+    #     return None
+    #
+    # try:
+    #     result = subprocess.run(
+    #         [rocm_smi, "--showmeminfo", "vram"],
+    #         capture_output=True,
+    #         text=True,
+    #         check=False,
+    #         timeout=5,
+    #     )
+    # except (subprocess.TimeoutExpired, OSError):
+    #     return None
+    #
+    # if result.returncode != 0:
+    #     return None
+    #
+    # values: List[float] = []
+    # for line in result.stdout.splitlines():
+    #     if "Total" not in line and "total" not in line.lower():
+    #         continue
+    #     numbers = re.findall(r"(\d+)", line)
+    #     if not numbers:
+    #         continue
+    #     try:
+    #         mb = float(numbers[0])
+    #         values.append(mb / 1024.0)
+    #     except ValueError:
+    #         continue
+    # return max(values) if values else None
 
 
 def get_vram_info(gpu_state: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
@@ -549,8 +565,11 @@ def get_vram_info(gpu_state: Optional[Dict[str, Any]] = None) -> Optional[Dict[s
         vram = _get_metal_vram_gb()
         method = "sysctl_hw_memsize"
     elif backend == "rocm":
-        vram = _get_rocm_vram_gb()
-        method = "rocm-smi"
+        # ROCm support is TBD
+        raise GPUInstallerError(
+            "ROCm/AMD GPU support is not yet available. "
+            "Please use CPU mode, Apple Metal (macOS), or NVIDIA CUDA instead."
+        )
     else:
         return None
 
@@ -742,15 +761,10 @@ def prerequisite_check(gpu_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         message = "CUDA prerequisites validation completed."
 
     elif backend == "rocm":
-        if system != "Linux":
-            issues.append(f"ROCm backend requires Linux; detected {system}.")
-        if not shutil.which("rocm-smi") and not shutil.which("hipcc"):
-            issues.append("Neither rocm-smi nor hipcc found; ROCm stack may not be installed.")
-        if not shutil.which("cmake"):
-            issues.append("CMake is not installed or not on PATH (required for llama-cpp build).")
-        if issues:
-            status = "error"
-        message = "ROCm prerequisites validation completed."
+        # ROCm support is TBD - return error
+        status = "error"
+        issues.append("ROCm/AMD GPU support is not yet available. Please use CPU mode, Apple Metal (macOS), or NVIDIA CUDA instead.")
+        message = "ROCm backend is not supported yet."
 
     else:
         message = f"Unknown backend '{backend}' – treating as CPU-only."
@@ -805,7 +819,12 @@ def install_llama_cpp(
     elif backend == "cuda":
         wheel_url = f"{LLAMA_CPP_WHEEL_BASE}/llama-cpp-python/cuda/llama_cpp_python-{wheel_suffix}-cp39-abi3-manylinux_x86_64.whl"
     elif backend == "rocm":
-        wheel_url = f"{LLAMA_CPP_WHEEL_BASE}/llama-cpp-python/rocm/llama_cpp_python-{wheel_suffix}-cp39-abi3-manylinux_x86_64.whl"
+        # ROCm support is TBD
+        raise GPUInstallerError(
+            "ROCm/AMD GPU support is not yet available. "
+            "Please use CPU mode, Apple Metal (macOS), or NVIDIA CUDA instead. "
+            "AMD GPU support is planned for a future release."
+        )
     else:
         raise GPUInstallerError(f"Unsupported backend: {backend}")
 
@@ -927,16 +946,16 @@ def get_wheel_metadata(backend: str, suffix: str) -> Dict[str, Any]:
 
     This requires network access and raises GPUInstallerError on failure.
 
-    Note: CUDA/ROCm backends don't have GitHub Pages indices; they use PyPI/releases.
-    For these backends, this function returns minimal metadata without fetching.
+    Note: CUDA backend uses PyPI/releases.
+    For this backend, this function returns minimal metadata without fetching.
     """
     backend = backend.lower()
-    if backend not in {"cpu", "metal", "cuda", "rocm"}:
-        raise GPUInstallerError(f"Unsupported backend for wheel metadata: {backend}")
+    if backend not in {"cpu", "metal", "cuda"}:
+        raise GPUInstallerError(f"Unsupported backend for wheel metadata: {backend} (ROCm is TBD)")
 
-    # CUDA and ROCm don't have GitHub Pages simple indices
-    # They're distributed via PyPI or direct GitHub Releases
-    if backend in {"cuda", "rocm"}:
+    # CUDA doesn't have GitHub Pages simple indices
+    # It's distributed via PyPI or direct GitHub Releases
+    if backend == "cuda":
         return {
             "python_requires": ">=3.9",
             "platforms": ["manylinux_x86_64", "win_amd64"],
