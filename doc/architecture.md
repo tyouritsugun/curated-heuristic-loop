@@ -76,7 +76,7 @@ The FastAPI server is the sole authority for all data persistence, search operat
 **Responsibilities:**
 
 - SQLite database operations (CRUD, transactions)
-- Vector search (FAISS) and text search (SQLite FTS)
+- Vector search (FAISS) and text search (SQLite LIKE)
 - Background embedding worker (GPU mode only)
 - Google Sheets integration (import/export)
 - Web dashboards (Settings, Operations)
@@ -147,12 +147,12 @@ Prefer the API server for import/export/index operations; remaining scripts focu
 **API/UI jobs:**
 
 - Import from Google Sheets via `/operations` or `POST /api/v1/operations/import-sheets` (destructive; uses configured credentials/IDs)
-- Export the database snapshot via `/operations` or `GET /api/v1/entries/export` for JSON review/backup
+- Export the database snapshot via `/operations` (Google Sheets spreadsheet export) or the API export endpoints (`/api/v1/entries/export-csv`, `/api/v1/entries/export-excel`, `/api/v1/entries/export-excel-download`)
 - Rebuild index, refresh embeddings, and sync guidelines via `/operations` (jobs: `rebuild-index`, `sync-embeddings`, `guidelines`)
 
 **Maintenance scripts (HTTP orchestration):**
 
-- `rebuild_index.py` - Rebuild FAISS/FTS index
+- `rebuild_index.py` - Rebuild FAISS index (GPU) or refresh text search data (CPU)
 - `sync_embeddings.py` - Sync embeddings for all entries (GPU mode)
 - `scripts/ops/search_health.py` - Check search system health (falls back to direct DB/FAISS inspection only if the API is unreachable)
 - `seed_default_content.py` - Load starter content
@@ -270,10 +270,11 @@ The authoritative per-user store. Contains tables for:
   - Provenance: `source`, `sync_status`, `author`
   - Timestamps: `created_at`, `updated_at`, `synced_at`
 
-- `skills` - Long-form context and domain knowledge
-  - Fields: `id`, `category_code`, `title`, `content`, `summary`
+- `category_skills` - Long-form context and domain knowledge
+  - Fields: `id`, `category_code`, `name`, `description`, `content`
+  - Additional fields: `license`, `compatibility`, `metadata`, `allowed_tools`, `model`
   - Provenance: `source`, `sync_status`, `author`
-  - Timestamps: `created_at`, `updated_at`, `synced_at`
+  - Timestamps: `created_at`, `updated_at`, `synced_at`, `exported_at`
 
 - `embeddings` - Vector representations for search (GPU mode only)
   - Links to experiences/skills via `entity_id` and `entity_type`
@@ -284,7 +285,7 @@ The authoritative per-user store. Contains tables for:
 
 ### 4.2. Local FAISS Index (GPU Mode Only)
 
-Performance layer for efficient vector search. Index is keyed by `experience_id` and `skill_id` (legacy: `manual_id`) and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
+Performance layer for efficient vector search. Index is keyed by `experience_id` and `skill_id` and is updated through operator-driven workflows (web UI or `rebuild_index.py`).
 
 **Mode-Specific Behavior:**
 - **CPU Mode**: No FAISS index, search uses SQLite `LIKE` queries
@@ -415,7 +416,9 @@ The FastAPI server exposes a REST API for programmatic control and monitoring:
 - `/api/v1/entries/read` - Read entries with search
 - `/api/v1/entries/write` - Create entry
 - `/api/v1/entries/update` - Update entry
-- `/api/v1/entries/export` - Export all entries
+- `/api/v1/entries/export-csv` - Export entries as CSV (zip archive)
+- `/api/v1/entries/export-excel` - Export entries as Excel
+- `/api/v1/entries/export-excel-download` - Download Excel export
 - `/api/v1/operations/{job_type}` - Trigger operations jobs
 - `/api/v1/operations/jobs/{job_id}` - Get job status
 - `/api/v1/settings` - Manage application settings
@@ -442,11 +445,6 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 
 ### 8.1. API Server Runtime
 
-**Platform-Specific Installation:**
-- CPU-only: `requirements_cpu.txt` (no ML dependencies)
-- Apple Metal: `requirements_apple.txt` (Metal-accelerated ML)
-- NVIDIA GPU: `requirements_nvidia.txt` (CUDA-accelerated ML)
-
 **Core Dependencies:**
 - Storage: SQLite with SQLAlchemy ORM
 - Search (GPU mode): FAISS (`faiss-cpu`) for vector search
@@ -455,8 +453,6 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 - Web Framework: FastAPI with Uvicorn
 
 ### 8.2. MCP Server Runtime
-
-**Installation:** `uv sync --python 3.11` from `pyproject.toml`
 
 **Minimal Dependencies:**
 - MCP Protocol: `fastmcp>=0.3.0`
@@ -469,29 +465,7 @@ Configuration is managed by `src/common/config/config.py`, which loads settings 
 
 ### 9.1. Two-Tier Deployment Model
 
-**Tier 1: API Server (Platform-Specific Venv)**
-```bash
-# Example: CPU mode
-python -m venv .venv-cpu
-source .venv-cpu/bin/activate
-pip install -r requirements_cpu.txt
-python scripts/setup/check_api_env.py  # Select CPU mode - creates runtime_config.json
-uvicorn src.api.server:app --host 127.0.0.1 --port 8000
-# Backend auto-detected from data/runtime_config.json
-```
-
-**Tier 2: MCP Server (UV Managed)**
-```bash
-# Separate terminal
-uv sync --python 3.11
-uv run python -m src.mcp.server
-```
-
-**Scripts** run from API server venv:
-```bash
-source .venv-cpu/bin/activate
-python scripts/ops/rebuild_index.py  # example maintenance job (import/export run via /operations)
-```
+**Tier 1: API Server (Platform-Specific Venv)**\nSee `README.md` and `doc/install_env.md` for platform-specific setup.\n\n**Tier 2: MCP Server (UV Managed)**\nSee `README.md` for MCP setup and client configuration.\n\n**Scripts** run from the API server venv (see `doc/manual.md` for details).
 
 ### 9.2. Concurrency Model
 

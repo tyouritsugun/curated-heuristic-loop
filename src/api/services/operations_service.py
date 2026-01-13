@@ -1134,8 +1134,9 @@ class OperationsService:
         for skill in skills:
             skill_dir = base_dir / skill.name
             skill_dir.mkdir(parents=True, exist_ok=True)
-            skill_path = skill_dir / "SKILL.md"
-            if skill_path.exists() and not overwrite:
+            skills_path = skill_dir / "SKILLS.md"
+            legacy_path = skill_dir / "SKILL.md"
+            if (skills_path.exists() or legacy_path.exists()) and not overwrite:
                 skipped += 1
                 continue
             try:
@@ -1146,10 +1147,10 @@ class OperationsService:
                     if len(description) > 500:
                         raise ValueError("Codex export requires description <= 500 characters")
                 payload_text = build_skill_md(skill, allowed_tools_delimiter=allowed_tools_delimiter)
-                skill_path.write_text(payload_text, encoding="utf-8")
+                skills_path.write_text(payload_text, encoding="utf-8")
                 exported += 1
             except Exception as exc:
-                errors.append({"path": str(skill_path), "error": str(exc)})
+                errors.append({"path": str(skills_path), "error": str(exc)})
 
         message = f"Exported {exported} skills"
         if skipped:
@@ -1176,7 +1177,7 @@ class OperationsService:
         *,
         target: str,
     ) -> Dict[str, Any]:
-        """When skills are disabled, export SKILL.md folders to skills.csv for curation."""
+        """When skills are disabled, export SKILLS.md folders to skills.csv for curation."""
         import csv
         import json
         from src.common.storage.repository import get_author
@@ -1194,7 +1195,7 @@ class OperationsService:
             try:
                 data = parse_skill_md_loose(skill_path, require_dir_match=True)
             except Exception as exc:
-                logger.warning("Skipping SKILL.md parse error (%s): %s", skill_path, exc)
+                logger.warning("Skipping SKILLS.md parse error (%s): %s", skill_path, exc)
                 continue
             meta = data.get("metadata") or {}
             rows.append(
@@ -1256,7 +1257,7 @@ class OperationsService:
             try:
                 data = parse_skill_md_loose(skill_path, require_dir_match=True)
             except Exception as exc:
-                logger.warning("Skipping SKILL.md parse error (%s): %s", skill_path, exc)
+                logger.warning("Skipping SKILLS.md parse error (%s): %s", skill_path, exc)
                 continue
             meta = data.get("metadata") or {}
             rows.append(
@@ -1289,7 +1290,7 @@ class OperationsService:
         *,
         target: str,
     ) -> Dict[str, Any]:
-        """When skills are disabled, import skills.csv into SKILL.md folders."""
+        """When skills are disabled, import skills.csv into SKILLS.md folders."""
         import csv
         import yaml
         from src.common.storage.repository import get_author
@@ -1312,7 +1313,7 @@ class OperationsService:
                     continue
                 skill_dir = base_dir / name
                 skill_dir.mkdir(parents=True, exist_ok=True)
-                skill_path = skill_dir / "SKILL.md"
+                skill_path = skill_dir / "SKILLS.md"
                 skill_path.write_text(self._build_skill_md_from_row(row, yaml), encoding="utf-8")
                 imported += 1
 
@@ -1324,7 +1325,7 @@ class OperationsService:
         }
 
     def _import_skill_rows_to_external(self, skills_rows: list[dict], target: str) -> Dict[str, Any]:
-        """Write skill rows to external SKILL.md folders when skills are disabled."""
+        """Write skill rows to external SKILLS.md folders when skills are disabled."""
         import yaml
 
         target = (target or "").strip().lower()
@@ -1347,7 +1348,7 @@ class OperationsService:
                     continue
                 skill_dir = base_dir / name
                 skill_dir.mkdir(parents=True, exist_ok=True)
-                skill_path = skill_dir / "SKILL.md"
+                skill_path = skill_dir / "SKILLS.md"
                 skill_path.write_text(self._build_skill_md_from_row(row, yaml), encoding="utf-8")
                 written += 1
             total_written += written
@@ -1435,9 +1436,12 @@ class OperationsService:
             return []
         for child in base_dir.iterdir():
             if child.is_dir():
-                skill_md = child / "SKILL.md"
-                if skill_md.is_file():
-                    yield skill_md
+                skills_md = child / "SKILLS.md"
+                legacy_md = child / "SKILL.md"
+                if skills_md.is_file():
+                    yield skills_md
+                elif legacy_md.is_file():
+                    yield legacy_md
 
 
 __all__ = [

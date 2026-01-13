@@ -20,7 +20,6 @@ from src.common.config.config import Config
 from src.common.storage.database import Database
 from src.api.metrics import metrics
 from src.api.runtime_builder import build_mode_runtime
-from src.common.web_utils import docs as web_docs  # noqa: F401  # imported for side effects/router
 
 from src.api.routers.health import router as health_router
 from src.api.routers.categories import router as categories_router

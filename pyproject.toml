@@ -5,7 +5,7 @@
 # files (requirements_cpu.txt, requirements_apple.txt, requirements_cuda.txt).
 #
 # Installation:
-#   uv sync --python 3.11
+#   uv sync --python 3.13
 #
 # The MCP server requires the API server to be running at the configured base URL
 # (default: http://localhost:8000). See README.md for full setup instructions.
@@ -14,7 +14,7 @@
 name = "chl-mcp-server"
 version = "0.2.0"
 description = "Curated Heuristic Loop MCP Server - HTTP client for CHL API"
-requires-python = ">=3.10,<3.12"
+requires-python = ">=3.10,<3.14"
 dependencies = [
     # MCP protocol
     "fastmcp>=0.3.0",

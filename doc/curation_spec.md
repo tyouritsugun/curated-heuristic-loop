@@ -17,7 +17,7 @@ flowchart TD
   L -->|No| D
   L -->|Yes| G[Export approved TSVs]
   G --> H[Publish to team]
-  H --> I[Team import to local DB or external SKILL.md]
+  H --> I[Team import to local DB or external SKILLS.md]
 ```
 
 ## Architecture
@@ -28,7 +28,7 @@ flowchart TD
 
 1. **`merge_all.py`** - Data preparation and initial merge
    ```bash
-   python scripts/curation/experience/merge/merge_all.py
+   python scripts/curation/common/merge_all.py
    ```
    - Imports/merges experiences from main database to curation database
    - Prepares data for LLM-based curation
@@ -111,15 +111,15 @@ CHL includes built-in telemetry and audit logging to help operators monitor cura
 **Storage:** `audit_log` table in both `data/chl.db` (main) and `data/curation/chl_curation.db` (curation)
 
 **What's logged:**
-- **Operation type**: create, update, delete, merge
-- **Entity details**: entity_type (experience/skill), entity_id, category_code
-- **Changes**: old_value and new_value (JSON format) for updates
-- **Metadata**: timestamp, source (api/script/curation), reason (optional explanation)
+- **Event type**: free-form event string (e.g., operations.* or settings.*)
+- **Actor**: optional actor/user string
+- **Context**: optional JSON/text payload describing the event
+- **Timestamp**: `created_at`
 
 **Accessing audit logs:**
-- Via API: `GET /api/v1/admin/audit-log?limit=100&offset=0`
 - Via Settings dashboard: `http://localhost:8000/settings` → Audit Log section
-- Directly in SQLite: `SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100;`
+- Directly in SQLite: `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 100;`
+- Note: there is no public REST endpoint for audit logs; entries are written by API services and operations handlers.
 
 **Use cases:**
 - Track when experiences were merged during curation
@@ -140,9 +140,10 @@ CHL includes built-in telemetry and audit logging to help operators monitor cura
 - **Resource usage**: GPU memory utilization (when available)
 
 **Accessing telemetry:**
-- Via API: `GET /api/v1/telemetry/current` (current metrics), `GET /api/v1/telemetry/history` (time series)
+- Via API: `GET /api/v1/telemetry/snapshot`
+- Via SSE stream: `/ui/stream/telemetry`
 - Via Operations dashboard: `http://localhost:8000/operations` → Queue Status section
-- Direct database query: `SELECT * FROM telemetry_samples ORDER BY timestamp DESC LIMIT 100;`
+- Direct database query: `SELECT * FROM telemetry_samples ORDER BY recorded_at DESC LIMIT 100;`
 
 **Use cases:**
 - Monitor embedding queue during large imports

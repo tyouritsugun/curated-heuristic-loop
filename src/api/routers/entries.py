@@ -914,15 +914,18 @@ def export_entries_csv(
             skills = session.query(CategorySkill).all()
         else:
             if external_target and external_target != "none":
-                # Skills disabled: read from selected SKILL.md folder
+                # Skills disabled: read from selected SKILLS.md folder (with SKILL.md fallback)
                 def iter_skill_md_paths(base_dir: Path):
                     if not base_dir.exists():
                         return []
                     paths = []
                     for child in base_dir.iterdir():
                         if child.is_dir():
+                            skills_md = child / "SKILLS.md"
                             skill_md = child / "SKILL.md"
-                            if skill_md.is_file():
+                            if skills_md.is_file():
+                                paths.append(skills_md)
+                            elif skill_md.is_file():
                                 paths.append(skill_md)
                     return paths
 
@@ -943,7 +946,7 @@ def export_entries_csv(
                         try:
                             data = parse_skill_md_loose(skill_md, require_dir_match=True)
                         except Exception as exc:
-                            logger.warning("Skipping SKILL.md parse error (%s): %s", skill_md, exc)
+                            logger.warning("Skipping SKILLS.md parse error (%s): %s", skill_md, exc)
                             continue
                         name = data.get("name")
                         if not name or name in skills_by_name:

@@ -1,4 +1,4 @@
-"""Parse and emit SKILL.md files (YAML frontmatter + Markdown body)."""
+"""Parse and emit SKILLS.md files (YAML frontmatter + Markdown body)."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def parse_skill_md(
 
     if len(content.splitlines()) > 500:
         logger.warning(
-            "SKILL.md content exceeds 500 lines (path=%s). Recommended limit is <500 lines.",
+            "SKILLS.md content exceeds 500 lines (path=%s). Recommended limit is <500 lines.",
             path,
         )
 
@@ -113,7 +113,7 @@ def parse_skill_md_loose(
     *,
     require_dir_match: bool = True,
 ) -> Dict[str, Any]:
-    """Parse SKILL.md without requiring category_code."""
+    """Parse SKILLS.md without requiring category_code."""
     text = path.read_text(encoding="utf-8")
     yaml_text, content = _split_frontmatter(text)
     data = yaml.safe_load(yaml_text) or {}

@@ -25,6 +25,13 @@ Short sample flow for team members Alice, Bob, and a curator (Carlos) using the 
 - Carlos needs an LLM endpoint: either a cost‑effective commercial model (e.g., Gemini Flash) or a local model (e.g., ChatGPT OSS). Alice/Bob do not necessarily need these.
 - Stop the API server before running curation scripts to avoid database locks/errors.
 
+## LLM Access (Optional)
+- Only needed if you run the overnight curation. Choose one path:
+  1) **Commercial OpenAI-compatible API** (ChatGPT/Gemini): set the appropriate API key in `.env` (e.g., `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`). Use cheaper mini tiers; e.g., prefer `gpt-5-mini-2025-08-07` over `gpt-5.2-2025-12-11`, or prefer `gemini-3-flash-preview` over heavier Gemini models.
+  2) **Local endpoint (zero API cost, requires your GPU)**: LM Studio or Ollama on an OpenAI-compatible endpoint; set `api_base` in `scripts/scripts_config.yaml` to your local server (e.g., `http://localhost:11434/v1`), and set `LLM_API_KEY` to any placeholder if your local server ignores it. `gpt-oss-20b` is recommended.
+- Keep API keys in `.env` (see `.env.sample`); do not commit them.
+- Dependencies: `requirements_apple.txt` and `requirements_nvidia.txt` already include `autogen` + `autogen-ext[openai]` for the agent.
+
 ## 1) Member Export (Alice/Bob)
 - Start CHL(`./start-chl.sh`), open `http://127.0.0.1:8000/settings#configuration`,  click "Export CSV".
 - Each sends `{user}.export.zip` to the curator.
@@ -80,7 +87,7 @@ UI: Operations → Import from Google Sheet
 Import behavior:
 - **When CHL_SKILLS_ENABLED=true**: Experiences + skills import into CHL DB.
 - **When CHL_SKILLS_ENABLED=false**: Experiences import into CHL DB; skills are routed to external targets
-  (Claude/Codex) based on the import modal choice, and are written to SKILL.md files.
+  (Claude/Codex) based on the import modal choice, and are written to SKILLS.md files.
 
 ## Key Outputs
 ```
