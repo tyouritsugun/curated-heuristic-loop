@@ -43,6 +43,7 @@ Short sample flow for team members Alice, Bob, and a curator (Carlos) using the 
 Sample sheets (for warm‑up/testing):
 - Alice: `1XCa6P2_JL-exUJvaW1F9aHMYRs5yJPzMMlbZQdcDbTk`
 - Bob: `1PAGzcYCJSTjXl6r6KwUB7Ju5vvNT3e8WwT-SV6Wonxo`
+- Alternatively to download the csv files from google drive: `1MSve-fysMjg_Nse9eI5JK51db_gtKZIe`
 
 ## 2) Curator Merge + Import (wrapped) — Carlos
 After unzipping member exports into `data/curation/members/`, the file structure should be:
@@ -59,11 +60,6 @@ Then run:
 ```bash
 python scripts/curation/common/merge_all.py
 ```
-If you only need experiences, you can still use:
-```bash
-python scripts/curation/experience/merge/merge2db.py
-```
-This includes a quick LLM health check plus merge + import.
 
 ## 3) Run Overnight Curation (wrapped) — Carlos
 Note: Curation can take a while. For ~200 rows, start it before you leave (or overnight) and check results in the morning.
@@ -75,7 +71,7 @@ python scripts/curation/common/overnight_all.py
 [Incoming data is already atomic?](./curation_spec.md#is-it-possible-to-skip-the-atomicity-pre-pass-if-i-am-sure-the-experiences-and-skills-are-already-atomic).
 Operational defaults and knobs: see [Curation Spec architecture](curation_spec.md#architecture).
 
-## Community building (see spec) — See [Curation Spec community building](curation_spec.md#community-building)
+## Community building — See [Curation Spec community building](curation_spec.md#community-building)
 
 ## 4) Review and Publish (Spreadsheet) — Carlos
 - Copy `data/curation/approved/experiences.tsv` and `data/curation/approved/skills.tsv` to Excel or Google Sheets for a quick review.

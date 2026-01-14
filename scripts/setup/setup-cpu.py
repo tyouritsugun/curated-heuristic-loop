@@ -215,9 +215,15 @@ def setup_credentials(config) -> bool:
         # Target path for credentials
         target_path = cred_dir / "service-account.json"
 
-        # Copy credential file
+        # Copy credential file (skip if source is already the target)
         import shutil
-        shutil.copy2(source_path, target_path)
+        same_file = False
+        try:
+            same_file = source_path.resolve() == target_path.resolve()
+        except FileNotFoundError:
+            same_file = False
+        if not same_file:
+            shutil.copy2(source_path, target_path)
 
         # Set chmod 600 on copied credential file (owner read/write only)
         target_path.chmod(0o600)
