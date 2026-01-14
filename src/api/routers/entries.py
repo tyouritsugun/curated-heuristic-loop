@@ -881,18 +881,15 @@ def export_entries_csv(
     session: Session = Depends(get_db_session),
     config=Depends(get_config),
     external_skills_target: str | None = None,
-    external_skills_target: str | None = None,
 ):
     """Export all entries as CSV files in a zip archive for team curation workflow.
 
-    Returns a zip file named {username}_export.zip containing:
     Returns a zip file named {username}_export.zip containing:
     - {username}/experiences.csv
     - {username}/skills.csv
     """
     import csv
     import io
-    import json
     import json
     import tempfile
     import zipfile
@@ -901,15 +898,10 @@ def export_entries_csv(
     from src.common.storage.repository import get_author
     from src.common.storage.schema import Experience, CategorySkill
     from src.common.skills.skill_md import parse_skill_md_loose
-    from src.common.skills.skill_md import parse_skill_md_loose
 
     try:
         # Get username from system
         username = get_author() or "unknown"
-
-        external_target = (external_skills_target or "").strip().lower()
-        if external_target == "chatgpt":
-            external_target = "codex"
 
         external_target = (external_skills_target or "").strip().lower()
         if external_target == "chatgpt":
