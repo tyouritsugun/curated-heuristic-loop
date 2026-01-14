@@ -1,7 +1,8 @@
+[Return to README.md](../README.md)
 # Curated Heuristic Loop (CHL) Concept
 
 ## Overview
-Most code assistants forget. Useful context and hard‑won insights vanish between sessions or stay siloed with individuals. The **Curated Heuristic Loop (CHL)** adds a shared memory loop so assistants can reuse what worked—and teams can steadily refine it together. It’s inspired by work on agentic context engineering [1](https://arxiv.org/html/2510.04618v1), graph‑structured memory  [2](https://arxiv.org/html/2501.13956v1), and modern embedding/reranking [3](https://arxiv.org/html/2506.05176v3).
+Most code assistants forget. The **Curated Heuristic Loop (CHL)** adds a shared memory loop so assistants can reuse what worked and teams can refine it together. It’s inspired by work on agentic context engineering [1](https://arxiv.org/html/2510.04618v1), graph‑structured memory [2](https://arxiv.org/html/2501.13956v1), and modern embedding/reranking [3](https://arxiv.org/html/2506.05176v3).
 
 CHL runs as a simple loop involving three key roles:
 
@@ -13,9 +14,9 @@ CHL runs as a simple loop involving three key roles:
 Even with equal time and energy, results can diverge because much of software work depends on tacit knowledge. CHL turns personal wins into a collective memory that LLMs can surface at the moment of need, easing natural differences and reducing variance in outcomes. Every developer deserves a real path to top‑tier performance; CHL makes that path more accessible.
 
 ## Purpose
-While CHL is initially demonstrated as a tool for code assistants, its architecture is domain-agnostic. The core functionality—capturing, curating, and retrieving structured knowledge—can be applied to any field where tacit knowledge and evolving best practices are critical. By defining custom categories and populating them with relevant "experiences" and "skills," the system can serve as a shared memory for teams in domains such as legal research, scientific discovery, or design.
+CHL is shown here for code assistants, but the architecture is domain-agnostic. It captures, curates, and retrieves structured knowledge wherever tacit practices matter. Teams define custom categories and populate them with relevant experiences and skills.
 
-Give every developer a fast local loop for capturing task heuristics while preserving a reviewable, team-wide knowledge base. Each teammate works out of a local SQLite store + FAISS index; the curated dataset is exported to Google Sheets for collaborative review before being republished as the canonical shared sheet.
+CHL gives each developer a fast local loop for capturing task heuristics while preserving a reviewable, team-wide knowledge base. Teammates work from a local SQLite store + FAISS index; curated data is exported to Google Sheets for review and republished as the shared baseline.
 
 ## High-Level Workflow
 The CHL process is a continuous cycle of learning and refinement:

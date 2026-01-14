@@ -1,3 +1,4 @@
+[Return to README.md](../README.md)
 # CHL Operator Guide
 
 This guide covers the setup, daily workflows, and operational tasks for the Curated Heuristic Loop (CHL) system. For the project's philosophy, see [concept.md](./concept.md), and for technical details, see [architecture.md](./architecture.md).
@@ -28,8 +29,8 @@ See the [CPU-Only Mode](#9-cpu-only-mode) section below for details on running C
 
 The setup scripts initialize your local environment. Choose the appropriate script based on your setup:
 
-- `setup/setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
-- `setup/setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
+- `scripts/setup/setup-gpu.py`: For GPU-enabled systems with vector search (downloads ML models)
+- `scripts/setup/setup-cpu.py`: For CPU-only systems using SQLite keyword search (no ML dependencies)
 
 **Command (GPU mode):**
 ```bash
@@ -54,9 +55,9 @@ python scripts/setup/setup-cpu.py
 **What CPU-only setup does:**
 
 1. Creates the `data/` directory (no FAISS directory)
-3. Initializes the SQLite database (`chl.db`)
-4. Seeds default categories and sample entries
-5. Validates credential paths (non-fatal if missing)
+2. Initializes the SQLite database (`chl.db`)
+3. Seeds default categories and sample entries
+4. Validates credential paths (non-fatal if missing)
 
 **When to use:**
 
@@ -68,7 +69,8 @@ python scripts/setup/setup-cpu.py
 
 After setup, import the default content (sample entries) from Google Sheets:
 
-1. Ensure `IMPORT_SPREADSHEET_ID` is set in your `.env` (use the value from `.env.sample` for demo data)
+1. Ensure `IMPORT_SPREADSHEET_ID` is set in your `.env` (use the value from `.env.sample` for demo data).
+   - DataPipe demo sample ID: `1svFcLFiPsxPUDyhTbJs89yrMowR2de9UWVO-q7IE0Fg`
 2. Start the API server: `uvicorn src.api.server:app --host 127.0.0.1 --port 8000`
 3. Open the Settings dashboard: http://127.0.0.1:8000/settings
 4. Click **Import Spreadsheet**
@@ -271,7 +273,6 @@ Before running the demo, complete the main installation steps in the README:
 4. Start API server
 5. Install MCP server
 
-
 The demo script `scripts/setup/demo_datapipe_bug.py` is included in the repository and ready to run.
 
 ### Sample Data
@@ -363,25 +364,11 @@ Test sequence:
 ## 6. Reference
 
 ### 6.1. Category Index
-The system is pre-configured with the following categories. You can add more as needed.
-
-  - `figma_page_design` (`FPD`)
-  - `database_schema_design` (`DSD`)
-  - `page_specification` (`PGS`)
-  - `ticket_management` (`TMG`)
-  - `architecture_design` (`ADG`)
-  - `migration_code` (`MGC`)
-  - `frontend_html` (`FTH`)
-  - `laravel_php_web` (`LPW`)
-  - `python_agent`(`PGT`)
-  - `playwright_page_test` (`PPT`)
-  - `e2e_test` (`EET`)
-  - `pull_request` (`PRQ`)
+Categories are defined in code and seeded during setup. See the canonical list in `src/common/config/categories.py`.
 
 ### 6.2. Managing Categories
 
-Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
-Categories define the organizational "shelves" where experiences and skills are stored. Categories are now defined in code and validated on import; any CSV categories are ignored.
+Categories define the organizational "shelves" where experiences and skills are stored. Categories are defined in code and validated on import; any CSV categories are ignored.
 
 #### Adding New Categories
 
@@ -483,7 +470,12 @@ Since SQLite text search uses literal keyword matching:
 
 ### 7.5. Switching Modes
 
-Refer to [Mode Switching](../README.md#mode-switching)
+To switch between CPU and GPU modes:
+1. Stop the API server
+2. Run `python scripts/setup/check_api_env.py` and select target mode
+3. Create a new venv and install the corresponding requirements file
+4. GPU mode only: run `python scripts/setup/setup-gpu.py --download-models`
+5. Start the API server (uses `data/runtime_config.json`)
 
 ### 7.6. Limitations
 

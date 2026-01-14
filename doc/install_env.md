@@ -1,3 +1,4 @@
+[Return to README.md](../README.md)
 # Install Python Environment
 
 This guide covers API server installation per hardware platform. For the overall workflow, see `doc/manual.md`.
