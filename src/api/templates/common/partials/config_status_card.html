@@ -193,34 +193,33 @@
     let pendingImportMode = null;
     let pendingExportMode = null;
 
-    const skillsEnabled = {{ 'true' if skills_enabled else 'false' }};
-    let pendingImportMode = null;
-    let pendingExportMode = null;
-
     function triggerExcelFileSelect() {
       if (!skillsEnabled) {
         pendingImportMode = 'excel';
         openExternalSkillsModal();
         return;
       }
-      if (!skillsEnabled) {
-        pendingImportMode = 'excel';
-        openExternalSkillsModal();
-        return;
-      }
+      pauseConfigStatusRefresh(true);
       document.getElementById('excel_file').click();
     }
 
-    function handleExcelImport(event) {
+    function handleExcelImport(event, fileInput) {
       event.preventDefault();
       const form = document.getElementById('import-excel-form');
-      const fileInput = document.getElementById('excel_file');
+      const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+      if (!file) {
+        pauseConfigStatusRefresh(false);
+        alert('No file selected. Please choose an Excel file to upload.');
+        return;
+      }
+      const formData = new FormData();
+      formData.append('excel_file', file, file.name);
+      const targetInput = document.getElementById('external_skills_target');
+      if (targetInput && targetInput.value) {
+        formData.append('external_skills_target', targetInput.value);
+      }
 
-      // Submit the form normally (not via HTMX since it has file upload)
-      const formData = new FormData(form);
-
-      // Debug logging
-      console.log('Submitting Excel file:', fileInput.files[0] ? fileInput.files[0].name : 'No file');
+      console.log('Submitting Excel file:', file.name, file.size);
 
       fetch(form.action, {
         method: 'POST',
@@ -234,7 +233,6 @@
       })
       .then(html => {
         console.log('Received response from server, updating UI');
-        // Replace the config-status-card with the updated content
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const newCard = doc.querySelector('#config-status-card');
@@ -247,192 +245,19 @@
       .catch(error => {
         console.error('Error importing Excel:', error);
         alert('Error importing Excel file: ' + error.message);
+      })
+      .finally(() => {
+        pauseConfigStatusRefresh(false);
       });
     }
 
     function handleExcelFileSelect(inputElement) {
       if (inputElement.files.length > 0) {
-        // Pass a mock event to handleExcelImport to prevent default
         const mockEvent = { preventDefault: function() {} };
-        handleExcelImport(mockEvent);
+        handleExcelImport(mockEvent, inputElement);
+      } else {
+        pauseConfigStatusRefresh(false);
       }
-    }
-
-    function openExternalSkillsModal() {
-      const modal = document.getElementById('external-skills-modal');
-      if (modal) {
-        modal.style.display = 'block';
-      }
-      pauseConfigStatusRefresh(true);
-    }
-
-    function closeExternalSkillsModal() {
-      const modal = document.getElementById('external-skills-modal');
-      if (modal) {
-        modal.style.display = 'none';
-      }
-      pendingImportMode = null;
-      pauseConfigStatusRefresh(false);
-    }
-
-    function confirmExternalSkillsModal() {
-      const confirmBox = document.getElementById('external-skills-confirm');
-      if (!confirmBox || !confirmBox.checked) {
-        alert('Please confirm overwrite before proceeding.');
-        return;
-      }
-      const choice = document.querySelector('input[name="external_skills_choice"]:checked');
-      const value = choice ? choice.value : 'none';
-
-      if (pendingImportMode === 'excel') {
-        const targetInput = document.getElementById('external_skills_target');
-        if (targetInput) {
-          targetInput.value = value;
-        }
-        closeExternalSkillsModal();
-        document.getElementById('excel_file').click();
-        return;
-      }
-
-      if (pendingImportMode === 'sheet') {
-        const payloadInput = document.getElementById('import-sheet-payload');
-        if (payloadInput) {
-          payloadInput.value = JSON.stringify({ external_skills_target: value });
-        }
-        closeExternalSkillsModal();
-        const form = document.getElementById('import-sheet-form');
-        if (form) {
-          form.requestSubmit();
-        }
-        return;
-      }
-      closeExternalSkillsModal();
-    }
-
-    function handleSheetImportClick(event) {
-      if (!skillsEnabled) {
-        event.preventDefault();
-        pendingImportMode = 'sheet';
-        openExternalSkillsModal();
-      }
-    }
-
-    function openExternalSkillsExportModal() {
-      const modal = document.getElementById('external-skills-export-modal');
-      if (modal) {
-        modal.style.display = 'block';
-      }
-      pauseConfigStatusRefresh(true);
-    }
-
-    function closeExternalSkillsExportModal() {
-      const modal = document.getElementById('external-skills-export-modal');
-      if (modal) {
-        modal.style.display = 'none';
-      }
-      pendingExportMode = null;
-      pauseConfigStatusRefresh(false);
-    }
-
-    function pauseConfigStatusRefresh(shouldPause) {
-      const card = document.getElementById('config-status-card');
-      if (!card) {
-        return;
-      }
-      if (shouldPause) {
-        if (!card.dataset.originalHxTrigger) {
-          card.dataset.originalHxTrigger = card.getAttribute('hx-trigger') || '';
-        }
-        card.setAttribute('hx-trigger', 'ops-refresh from:body');
-      } else if (card.dataset.originalHxTrigger) {
-        card.setAttribute('hx-trigger', card.dataset.originalHxTrigger);
-      }
-    }
-
-    function isExternalModalOpen() {
-      const importModal = document.getElementById('external-skills-modal');
-      const exportModal = document.getElementById('external-skills-export-modal');
-      return (importModal && importModal.style.display === 'block')
-        || (exportModal && exportModal.style.display === 'block');
-    }
-
-    document.addEventListener('htmx:beforeSwap', function(event) {
-      const target = event.detail && event.detail.target;
-      if (target && target.id === 'config-status-card' && isExternalModalOpen()) {
-        event.detail.shouldSwap = false;
-      }
-    });
-
-    function confirmExternalSkillsExportModal() {
-      const choice = document.querySelector('input[name="external_skills_export_choice"]:checked');
-      const value = choice ? choice.value : 'none';
-
-      if (pendingExportMode === 'csv') {
-        const link = document.createElement('a');
-        link.href = `/api/v1/entries/export-csv?external_skills_target=${encodeURIComponent(value)}`;
-        link.download = '';
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        closeExternalSkillsExportModal();
-        return;
-      }
-
-      if (pendingExportMode === 'excel') {
-        closeExternalSkillsExportModal();
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = `/api/v1/entries/export-excel-download?external_skills_target=${encodeURIComponent(value)}`;
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 1000);
-        return;
-      }
-
-      if (pendingExportMode === 'sheet') {
-        const payloadInput = document.getElementById('export-sheet-payload');
-        if (payloadInput) {
-          payloadInput.value = JSON.stringify({ external_skills_target: value });
-        }
-        closeExternalSkillsExportModal();
-        const form = document.getElementById('export-sheet-form');
-        if (form) {
-          form.requestSubmit();
-        }
-        return;
-      }
-
-      closeExternalSkillsExportModal();
-    }
-
-    function handleSheetExportClick(event) {
-      if (!skillsEnabled) {
-        event.preventDefault();
-        pendingExportMode = 'sheet';
-        openExternalSkillsExportModal();
-      }
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-      const sheetButton = document.querySelector('#import-sheet-form button[type="submit"]');
-      if (sheetButton) {
-        sheetButton.addEventListener('click', handleSheetImportClick);
-      }
-      const exportSheetButton = document.querySelector('#export-sheet-form button[type="submit"]');
-      if (exportSheetButton) {
-        exportSheetButton.addEventListener('click', handleSheetExportClick);
-      }
-    });
-
-    function triggerCsvExportDownload() {
-      if (!skillsEnabled) {
-        pendingExportMode = 'csv';
-        openExternalSkillsExportModal();
-        return;
-      }
-      window.location.href = '/api/v1/entries/export-csv';
     }
 
     function openExternalSkillsModal() {
@@ -618,18 +443,10 @@
         openExternalSkillsExportModal();
         return;
       }
-      if (!skillsEnabled) {
-        pendingExportMode = 'excel';
-        openExternalSkillsExportModal();
-        return;
-      }
-      // Create a temporary iframe to handle the file download without leaving the page
       const iframe = document.createElement('iframe');
       iframe.style.display = 'none';
       iframe.src = '/api/v1/entries/export-excel-download';
       document.body.appendChild(iframe);
-
-      // Remove the iframe after a short delay
       setTimeout(() => {
         document.body.removeChild(iframe);
       }, 1000);
