@@ -94,7 +94,7 @@ def read_entries(
                     detail=f"Category '{request.category_code}' not found"
                 )
 
-        limit = request.limit if request.limit is not None else (config.read_details_limit if config else 10)
+        limit = request.limit if request.limit is not None else (config.read_details_limit if config else 100)
 
         # Determine snippet length (default 320, or from request)
         snippet_len = request.snippet_len if request.snippet_len is not None else 320
