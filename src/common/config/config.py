@@ -12,7 +12,7 @@ Example MCP configuration in ~/.cursor/mcp.json (using project venv):
     "env": {
       "CHL_EXPERIENCE_ROOT": "/absolute/path/to/curated-heuristic-loop/data",
       "CHL_DATABASE_PATH": "/absolute/path/to/curated-heuristic-loop/data/chl.db",
-      "CHL_READ_DETAILS_LIMIT": "10"
+      "CHL_READ_DETAILS_LIMIT": "100"
     }
   }
 }
@@ -21,7 +21,7 @@ Core environment variables:
 - CHL_EXPERIENCE_ROOT: Path to data directory (optional; default <project_root>/data, auto-created if missing)
 - CHL_DATABASE_PATH: Path to SQLite database file (optional; default: <experience_root>/chl.db; relative values resolve under <experience_root>)
 - CHL_DATABASE_ECHO: Enable SQLAlchemy SQL logging (optional, default: false)
-- CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 10)
+- CHL_READ_DETAILS_LIMIT: Max entries returned by read_entries (optional, default: 100)
 - CHL_SKILLS_ENABLED: Enable/disable skills feature entirely (optional, default: true)
   - false: All skill operations blocked (read AND write)
   - true: Skills enabled (read/write/import/export/curation)
@@ -176,7 +176,7 @@ class Config:
         self.database_echo = os.getenv("CHL_DATABASE_ECHO", "false").lower() == "true"
 
         # Optional settings with defaults
-        self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "10"))
+        self.read_details_limit = int(os.getenv("CHL_READ_DETAILS_LIMIT", "100"))
         self.skills_enabled = os.getenv("CHL_SKILLS_ENABLED", "true").lower() == "true"
 
         # Runtime configuration - determine backend from runtime_config.json

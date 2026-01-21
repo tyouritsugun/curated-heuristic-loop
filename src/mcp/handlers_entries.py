@@ -54,7 +54,7 @@ def read_entries(
     - `read_entries(entity_type='experience', query='[SEARCH] ... [TASK] ...')`
     - Omit category_code to search all categories.
 
-    Defaults: responses return previews unless you request body fields (e.g., fields=['playbook'] or ['content']); default limit is the server's read_details_limit (10). Listing everything with no category_code is blocked to avoid huge responses.
+    Defaults: responses return previews unless you request body fields (e.g., fields=['playbook'] or ['content']); default limit is the server's read_details_limit (100). Listing everything with no category_code is blocked to avoid huge responses.
     """
     try:
         if entity_type == "skill" and not getattr(runtime_config, "skills_enabled", True):
